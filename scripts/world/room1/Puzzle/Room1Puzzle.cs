@@ -20,10 +20,19 @@ public partial class Room1Puzzle : Area2D
 	// live for the whole run; GameState.NewGame clears them).
 	private static readonly int[] _savedDialValues = new int[5];
 
+	/// <summary>True once the player has pressed Unlock (not merely dialled the
+	/// combination). Drives the open-cabinet state back in the room's POV.</summary>
+	public static bool IsUnlocked { get; private set; }
+
+	private Button _unlockButton;
+	private bool _readyToUnlock;
+	private int _dialTicks;
+
 	/// <summary>Clears remembered dial positions (new game / fresh load).</summary>
 	public static void ResetSavedState()
 	{
 		System.Array.Clear(_savedDialValues, 0, _savedDialValues.Length);
+		IsUnlocked = false;
 	}
 
 	public override void _Ready()
@@ -45,13 +54,38 @@ public partial class Room1Puzzle : Area2D
 					if (_isSolved)
 						return;
 					AudioManager.Play(Sfx.DialTick, -5f, 0.88f + (float)value * 0.035f);
+					RegisterDialAttempt();
 					CheckPadlockSolution();
 				};
 			}
 		}
 
-		// Stepped away after solving but before taking the key? Re-open.
-		CheckPadlockSolution();
+		// The right combination no longer springs the drawer by itself: an
+		// explicit Unlock button appears under the dials, and the player does
+		// the unlocking. (It lives under Padlock, so Esc hides it too.)
+		var firstDial = GetNodeOrNull<SpinBox>("Padlock/padlock-0");
+		var lastDial = GetNodeOrNull<SpinBox>("Padlock/padlock-4");
+		Vector2 unlockPos = new Vector2(-85, 96);
+		if (firstDial != null && lastDial != null)
+		{
+			unlockPos = new Vector2(
+				(firstDial.Position.X + lastDial.Position.X + lastDial.Size.X) / 2f - 85f,
+				lastDial.Position.Y + lastDial.Size.Y + 16f);
+		}
+		_unlockButton = BuildUnlockButton(GetNode<Node2D>("Padlock"), unlockPos);
+		_unlockButton.Pressed += OnUnlockPressed;
+
+		if (IsUnlocked)
+		{
+			// Unlocked on an earlier visit — drawer open, key still waiting.
+			_isSolved = true;
+			PlayDrawerAnimation();
+		}
+		else
+		{
+			// The combination may already be dialled in from before stepping away.
+			CheckPadlockSolution();
+		}
 	}
 
 	public override void _UnhandledKeyInput(InputEvent @event)
@@ -226,13 +260,93 @@ public partial class Room1Puzzle : Area2D
 			}
 		}
 
-		if (isCorrect)
-		{
-			_isSolved = true;
-			AudioManager.Play(Sfx.LockOpen, -4f);
-			PlayDrawerAnimation();
-		}
+		SetReadyToUnlock(isCorrect);
+	}
 
+	/// <summary>Lots of turning without opening means a stuck player: point
+	/// them at the journal's clue cards first, then at the H hint.</summary>
+	private void RegisterDialAttempt()
+	{
+		if (_isSolved || _readyToUnlock)
+			return;
+
+		_dialTicks++;
+		if (_dialTicks == 30)
+			GameState.Instance?.Toast("The numbers you've seen are kept in your journal — J, then Notes & Clues.");
+		else if (_dialTicks == 70)
+			GameState.Instance?.Toast("Still turning? Press H — the hint names what's missing, then the order.");
+	}
+
+	private void SetReadyToUnlock(bool ready)
+	{
+		bool wasReady = _readyToUnlock;
+		_readyToUnlock = ready;
+		if (_unlockButton != null)
+			_unlockButton.Visible = ready;
+
+		if (ready && !wasReady)
+		{
+			AudioManager.Play(Sfx.WordChime, -9f);
+			GameState.Instance?.Toast("That feels right. Now unlock it.");
+			_unlockButton?.GrabFocus();
+		}
+	}
+
+	private void OnUnlockPressed()
+	{
+		if (!_readyToUnlock || _isSolved)
+			return;
+
+		_isSolved = true;
+		IsUnlocked = true;
+		_readyToUnlock = false;
+		if (_unlockButton != null)
+			_unlockButton.Visible = false;
+
+		AudioManager.Play(Sfx.LockOpen, -4f);
+		PlayDrawerAnimation();
+	}
+
+	private static Button BuildUnlockButton(Node parent, Vector2 position)
+	{
+		var button = new Button
+		{
+			Text = "Unlock",
+			Visible = false,
+			CustomMinimumSize = new Vector2(170, 46),
+			Position = position,
+		};
+		var font = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
+		if (font != null)
+			button.AddThemeFontOverride("font", font);
+		button.AddThemeFontSizeOverride("font_size", 26);
+		button.AddThemeColorOverride("font_color", new Color(0.96f, 0.9f, 0.78f));
+		button.AddThemeColorOverride("font_hover_color", new Color(1f, 0.97f, 0.88f));
+
+		var normal = new StyleBoxFlat
+		{
+			BgColor = new Color(0.16f, 0.11f, 0.07f, 0.94f),
+			BorderColor = new Color(0.8f, 0.66f, 0.42f, 0.9f),
+		};
+		normal.SetBorderWidthAll(2);
+		normal.SetCornerRadiusAll(6);
+		normal.SetContentMarginAll(8);
+		var hover = new StyleBoxFlat
+		{
+			BgColor = new Color(0.32f, 0.23f, 0.13f, 0.96f),
+			BorderColor = new Color(0.95f, 0.8f, 0.55f, 1f),
+		};
+		hover.SetBorderWidthAll(2);
+		hover.SetCornerRadiusAll(6);
+		hover.SetContentMarginAll(8);
+		button.AddThemeStyleboxOverride("normal", normal);
+		button.AddThemeStyleboxOverride("hover", hover);
+		button.AddThemeStyleboxOverride("pressed", hover);
+		button.AddThemeStyleboxOverride("focus", hover);
+
+		button.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -10f);
+		parent.AddChild(button);
+		return button;
 	}
 
 	private async void PlayDrawerAnimation()

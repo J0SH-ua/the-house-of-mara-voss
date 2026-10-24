@@ -19,6 +19,12 @@ public partial class GameManager : Node
             return;
         }
 
+        // SubViewports default physics_object_picking to OFF, which silently
+        // disables every CollisionObject2D._InputEvent inside the game view
+        // (brass key, room arrows, Room 7 slots) while GUI and _Input clicks
+        // keep working — the classic "fragment won't click" trap.
+        GameViewport.PhysicsObjectPicking = true;
+
         Logger.Info("Initializing Game Manager...");
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 

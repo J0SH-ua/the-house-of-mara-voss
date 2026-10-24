@@ -32,6 +32,7 @@ public partial class GameUI : CanvasLayer
     private HBoxContainer _clarityPips;
     private Label _shardLabel;
     private Label _toastLabel;
+    private PanelContainer _toastPanel;
     private Tween _toastTween;
     private double _toastUntilMsec;
 
@@ -671,6 +672,11 @@ public partial class GameUI : CanvasLayer
         var m = _toastLabel.Modulate;
         m.A = quiet ? 0.55f : 0.95f;
         _toastLabel.Modulate = m;
+        if (_toastPanel != null)
+        {
+            _toastPanel.Visible = true;
+            _toastPanel.Modulate = m;
+        }
         _toastUntilMsec = Time.GetTicksMsec() + (double)(seconds * 1000);
         _toastTween?.Kill();
     }
@@ -680,7 +686,14 @@ public partial class GameUI : CanvasLayer
         _toastTween?.Kill();
         _toastTween = CreateTween();
         _toastTween.TweenProperty(_toastLabel, "modulate:a", 0f, 0.5f);
-        _toastTween.TweenCallback(Callable.From(() => _toastLabel.Visible = false));
+        if (_toastPanel != null)
+            _toastTween.Parallel().TweenProperty(_toastPanel, "modulate:a", 0f, 0.5f);
+        _toastTween.TweenCallback(Callable.From(() =>
+        {
+            _toastLabel.Visible = false;
+            if (_toastPanel != null)
+                _toastPanel.Visible = false;
+        }));
     }
 
     // ================================================================= confirm
@@ -897,6 +910,25 @@ public partial class GameUI : CanvasLayer
         _hud.AddChild(statusPanel);
 
         // Toast (top-centre, under nothing else — dialogue owns the bottom).
+        // Toast text floats over bright rooms; sit it on a dark chip so hints
+        // stay readable against morning light.
+        _toastPanel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
+        var toastChip = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.78f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.3f),
+        };
+        toastChip.SetBorderWidthAll(1);
+        toastChip.SetCornerRadiusAll(4);
+        _toastPanel.AddThemeStyleboxOverride("panel", toastChip);
+        _toastPanel.AnchorLeft = 0.5f;
+        _toastPanel.AnchorRight = 0.5f;
+        _toastPanel.OffsetLeft = -440;
+        _toastPanel.OffsetRight = 440;
+        _toastPanel.OffsetTop = 138;
+        _toastPanel.OffsetBottom = 206;
+        _hud.AddChild(_toastPanel);
+
         _toastLabel = MakeLabel("", 23, new Color(0.96f, 0.9f, 0.78f, 0.95f));
         _toastLabel.AnchorLeft = 0.5f;
         _toastLabel.AnchorRight = 0.5f;
@@ -910,17 +942,32 @@ public partial class GameUI : CanvasLayer
         _toastLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
         _hud.AddChild(_toastLabel);
 
-        // Controls reminder (bottom-left, quiet).
+        // Controls reminder (bottom-left). Bare pale text washed out against
+        // the bright rooms, so it sits on a slim dark chip like the toasts.
+        var controlsChip = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        var controlsStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.78f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.3f),
+        };
+        controlsStyle.SetBorderWidthAll(1);
+        controlsStyle.SetCornerRadiusAll(4);
+        controlsStyle.ContentMarginLeft = 12;
+        controlsStyle.ContentMarginRight = 12;
+        controlsStyle.ContentMarginTop = 5;
+        controlsStyle.ContentMarginBottom = 5;
+        controlsChip.AddThemeStyleboxOverride("panel", controlsStyle);
+        controlsChip.AnchorTop = 1;
+        controlsChip.AnchorBottom = 1;
+        controlsChip.OffsetLeft = 12;
+        controlsChip.OffsetRight = 924;
+        controlsChip.OffsetTop = -40;
+        controlsChip.OffsetBottom = -8;
         var controls = MakeLabel("Hold Tab — look      C — clarity      H — hint      J — journal      Q — step back      Esc — pause",
-            16, new Color(0.85f, 0.8f, 0.72f, 0.5f));
-        controls.AnchorTop = 1;
-        controls.AnchorBottom = 1;
-        controls.OffsetLeft = 16;
-        controls.OffsetTop = -30;
-        controls.OffsetBottom = -8;
-        controls.OffsetRight = 920;
+            16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
         controls.MouseFilter = Control.MouseFilterEnum.Ignore;
-        _hud.AddChild(controls);
+        controlsChip.AddChild(controls);
+        _hud.AddChild(controlsChip);
     }
 
     private void BuildPausePanel()
@@ -1455,6 +1502,8 @@ public partial class GameUI : CanvasLayer
         _cutsceneCaption.HorizontalAlignment = HorizontalAlignment.Center;
         _cutsceneCaption.VerticalAlignment = VerticalAlignment.Center;
         _cutsceneCaption.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _cutsceneCaption.AnchorLeft = 0;
+        _cutsceneCaption.AnchorRight = 1;
         _cutsceneCaption.AnchorTop = 1;
         _cutsceneCaption.AnchorBottom = 1;
         _cutsceneCaption.OffsetLeft = 90;

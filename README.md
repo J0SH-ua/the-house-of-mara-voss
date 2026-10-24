@@ -62,7 +62,7 @@ while watching the memory **corrupt** the deeper you insist on looking.
 4. Room 1: HUD objective counts up as you examine; drawer explains its
    lock; hold Tab; press H three times; arm Clarity (C), right-click to
    release, then clarify the toast; over-examine to hear corruption rise.
-5. Padlock: dials tick; Esc backs out; `71483` opens. Key → Room 2.
+5. Padlock: dials tick; Esc backs out; dial `71483` → an **Unlock** button appears → drawer opens → **click the key** → Room 2. (Physics picking is switched on in GameManager — SubViewports default it off, which kills `_InputEvent` targets like the key/arrows.) Stepping back to the kitchen afterwards shows the cabinet still open.
 6. Wrong 4-letter word rattles; `HOME` opens. Photo → Room 3 → jars →
    Room 4; hover the photographs in order (chimes ascend).
 7. Esc → pause: save, journal, settings sliders (volumes should respond
