@@ -114,10 +114,14 @@ the house is meant to be figured out.
    by the far end of the hall (or Q).
 7. The Room 4 door close-up: with **Echo** armed, knock brass plate →
    keyhole beneath it, three pairs left-to-right (ordinary clicks examine).
-   Room 5: face everything, **Anchor (A)** the lamp, open the desk drawer
-   for the apology; click the rain window again to step into the
-   **Apartment, Now**, face its three looks, and leave by the entry door.
-   Then the wardrobe. Room 6: face each stop, then **Trace (T)** basket →
+   Room 5: inspect things and watch them — everything examined starts
+   **shifting** between its childhood and adult selves, except the lamp,
+   which never changes; nobody explains this. **Anchor (A)** the lamp (the
+   shifting stops), open the desk drawer for the apology; click the rain
+   window again to step into the **Apartment, Now**, face its three looks,
+   and leave by the entry door. With the letters in hand, the wardrobe's
+   inside — past the coats and the raincoat — has become the garden; click
+   it to go through. Room 6: face each stop, then **Trace (T)** basket →
    swing → gate → road; the road now bends to the **Porch** — face the lit
    window, steps and path, then take the front door. Step back into any
    finished room en route: it should be sealed quiet, with **Return →**
@@ -127,7 +131,7 @@ the house is meant to be figured out.
    all six stand together. In lived order, arm **Release (R)** and click
    the assembled memory: the **truth reveal** plays, then the choice.
    **Let Mara wake** → warm first-person Ida (listening/speaking/smiling),
-   a fade through light, the Waking ending, and Mara's smiling face last.
+   a fade through light, the Waking ending, and Mara last — seated on the steps, cheek on her hand, smiling into the distance.
    **Keep the house** → the same conversation gone gloomy (Ida turns away),
    a cut to black, the Kept House ending, and Mara curled in her corner
    last. The title card records the ending and clears only that run's save.
