@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmaramarasmile1"
-path="res://.godot/imported/Ending_Mara_Smile.png-776a2c6b318763b2a5e2f46e4ad4d603.ctex"
+uid="uid://dphsk23pldbog"
+path="res://.godot/imported/Ending_Mara_Smile.png-8acf6db9c18fecd09c2635a771461203.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/bgs/Ending_Mara_Smile.png"
-dest_files=["res://.godot/imported/Ending_Mara_Smile.png-776a2c6b318763b2a5e2f46e4ad4d603.ctex"]
+dest_files=["res://.godot/imported/Ending_Mara_Smile.png-8acf6db9c18fecd09c2635a771461203.ctex"]
 
 [params]
 

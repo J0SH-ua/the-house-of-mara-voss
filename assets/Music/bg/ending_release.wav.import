@@ -3,12 +3,12 @@
 importer="wav"
 type="AudioStreamWAV"
 uid="uid://cmaraendrel01"
-path="res://.godot/imported/ending_release.wav-505051e2be42d70d8e1f82c9b7705f7d.sample"
+path="res://.godot/imported/ending_release.wav-3ecc54f34a3ded8aaff6677118fd62cb.sample"
 
 [deps]
 
 source_file="res://assets/Music/bg/ending_release.wav"
-dest_files=["res://.godot/imported/ending_release.wav-505051e2be42d70d8e1f82c9b7705f7d.sample"]
+dest_files=["res://.godot/imported/ending_release.wav-3ecc54f34a3ded8aaff6677118fd62cb.sample"]
 
 [params]
 

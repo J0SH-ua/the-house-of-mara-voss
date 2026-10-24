@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cmaraidaga01"
-path="res://.godot/imported/Ending_Ida_Gloom_Away.png-77882b8df399da3d18d9e1ccbab1f466.ctex"
+path="res://.godot/imported/Ending_Ida_Gloom_Away.png-fc71ac86b1c38e523294b851a55b29f1.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/bgs/Ending_Ida_Gloom_Away.png"
-dest_files=["res://.godot/imported/Ending_Ida_Gloom_Away.png-77882b8df399da3d18d9e1ccbab1f466.ctex"]
+dest_files=["res://.godot/imported/Ending_Ida_Gloom_Away.png-fc71ac86b1c38e523294b851a55b29f1.ctex"]
 
 [params]
 

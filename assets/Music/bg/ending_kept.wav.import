@@ -3,12 +3,12 @@
 importer="wav"
 type="AudioStreamWAV"
 uid="uid://cmaraendkept1"
-path="res://.godot/imported/ending_kept.wav-5ae771bb504ed4191524b95151187073.sample"
+path="res://.godot/imported/ending_kept.wav-bda238426c42e3ab179aacbc27d5a4f0.sample"
 
 [deps]
 
 source_file="res://assets/Music/bg/ending_kept.wav"
-dest_files=["res://.godot/imported/ending_kept.wav-5ae771bb504ed4191524b95151187073.sample"]
+dest_files=["res://.godot/imported/ending_kept.wav-bda238426c42e3ab179aacbc27d5a4f0.sample"]
 
 [params]
 
