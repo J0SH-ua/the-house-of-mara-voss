@@ -79,6 +79,12 @@ public partial class Room4 : Node2D
 	private Area2D _doorClickArea;
 	private Area2D _mirrorCollisionArea;
 	private Area2D _drawerCollisionArea;
+	private Area2D _pic11Area;
+	private Area2D _pic12Area;
+	private bool _mirrorBusy;
+	private bool _framesBusy;
+
+	private const string FlashbackScenePath = "res://scenes/world/flashback_landing.tscn";
 	private bool _doorAnimationStarted = false;
 	private bool _doorUnlocked = false;
 	private Label _sentenceLabel;
@@ -107,6 +113,16 @@ public partial class Room4 : Node2D
 		_drawerCollisionArea = GetNodeOrNull<Area2D>("Drawer/Drawer");
 		if (_drawerCollisionArea != null)
 			_drawerCollisionArea.InputPickable = true;
+
+		// Pic 11 and Pic 12 were always on this wall with nothing to say:
+		// the two frames Mara turned to the wall. Now they are the hallway's
+		// third kept thing, beside the mirror and the drawer.
+		_pic11Area = GetNodeOrNull<Area2D>("Pic 11");
+		if (_pic11Area != null)
+			_pic11Area.InputPickable = true;
+		_pic12Area = GetNodeOrNull<Area2D>("Pic 12");
+		if (_pic12Area != null)
+			_pic12Area.InputPickable = true;
 
 		_doorClickArea = GetNodeOrNull<Area2D>(DoorClickAreaPath);
 		if (_doorClickArea == null)
@@ -259,13 +275,37 @@ public partial class Room4 : Node2D
 
 	private async void OnMirrorCollisionPressed()
 	{
-		RoomExamineTracker.RecordExamine("Room4", "Mirror");
-		AudioManager.Play(Sfx.ClarifyReveal, -12f, 0.8f);
-		var globalPosition = _mirrorCollisionArea.GlobalPosition;
-		await Dialogue.ShowText(this, "The hallway stretches back in the mirror. All those photographs, reversed. Ida at fourteen, mirrored, looking in the other direction.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
-		await Dialogue.ShowText(this, "The mirror is showing something different. A different version of this hallway. One where more has been taken down.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
-		await Dialogue.ShowText(this, "That's not this hallway. That's somewhere else.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
-		await Dialogue.ShowText(this, "There is a woman in the mirror. She is sitting on a floor. She is not here.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 28);
+		if (_mirrorBusy)
+			return;
+		_mirrorBusy = true;
+		try
+		{
+			bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "Mirror");
+			RoomExamineTracker.RecordExamine("Room4", "Mirror");
+			AudioManager.Play(Sfx.ClarifyReveal, -12f, 0.8f);
+			var globalPosition = _mirrorCollisionArea.GlobalPosition;
+
+			if (facedBefore)
+			{
+				// The second honest look: the mirror stops showing the
+				// evening and lets Mara stand in it.
+				await Dialogue.ShowText(this, "The woman on the floor has not moved. She will never move; that is not what she is for. The mirror is not showing Mara a picture. It is keeping a place.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
+				await Dialogue.ShowText(this, "Mara leans closer, the way she has refused to lean for twelve years — and the glass gives like cold water.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				AudioManager.Play(Sfx.ClarifyReveal, -8f, 0.65f);
+				SceneManager.ChangeScene(FlashbackScenePath);
+				return;
+			}
+
+			await Dialogue.ShowText(this, "The hallway stretches back in the mirror. All those photographs, reversed. Ida at fourteen, mirrored, looking in the other direction.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
+			await Dialogue.ShowText(this, "The mirror is showing something different. A different version of this hallway. One where more has been taken down.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
+			await Dialogue.ShowText(this, "That's not this hallway. That's somewhere else.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
+			await Dialogue.ShowText(this, "There is a woman in the mirror. She is sitting on a floor. She is not here.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 28);
+			await Dialogue.ShowText(this, "She is on a landing, under a light left burning for someone who did not come home. If Mara looks again — really looks — the mirror will let her stand in that evening. It is waiting to be allowed.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
+		}
+		finally
+		{
+			_mirrorBusy = false;
+		}
 	}
 
 	private async void OnDrawerCollisionPressed()
@@ -273,8 +313,55 @@ public partial class Room4 : Node2D
 		RoomExamineTracker.RecordExamine("Room4", "HallDrawer");
 		AudioManager.Play(Sfx.DrawerOpen, -7f);
 		var globalPosition = _drawerCollisionArea.GlobalPosition;
-		await Dialogue.ShowText(this, "A hall table drawer. Old wood, slightly sticky.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
-		await Dialogue.ShowText(this, "These were here. In the truth of the house, these tools were always here. Someone who lived here was a locksmith, or careful, or both.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
+		await Dialogue.ShowText(this, "A hall table drawer. Old wood, slightly sticky. In this memory it has been opened a hundred times and never once seen into — the house is gentle that way, and Mara has let it be.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+		await Dialogue.ShowText(this, "Inside: a locksmith's ring of blank keys, bright as new pennies. Their father cut keys for half of Eldfen at this table, and kept the uncut ones here, ready.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+		await Dialogue.ShowText(this, "One blank is tagged with string, lettered in a child's careful hand: FOR WHEN I'M TALLER. He never got to cut hers. The house kept the blanks bright so that Mara would not have to see them dull.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+	}
+
+	private async void OnTurnedFramesPressed(Area2D frameArea)
+	{
+		if (_framesBusy)
+			return;
+		_framesBusy = true;
+		try
+		{
+			bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "TurnedFrames");
+			RoomExamineTracker.RecordExamine("Room4", "TurnedFrames");
+			AudioManager.Play(Sfx.PhotoPickup, -8f);
+			var pos = frameArea.GlobalPosition;
+
+			if (facedBefore)
+			{
+				await Dialogue.ShowText(this, "Two frames, still facing the wall. Some things Mara is allowed to approach in her own order.", 4.0f, pos.X, pos.Y, HoverFontPath, 24);
+				return;
+			}
+
+			await Dialogue.ShowText(this, "Two frames at the end of the hall have been turned to the wall. Not taken down. Turned — the way you treat a face you cannot stop seeing but cannot bear to meet.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "The backs are brown paper and old tape. On one, in pencil, in their mother's hand: 'later.' On the other, nothing at all. Later has been twelve years now.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "Mara does not turn them around. Not yet. But she reads the word her mother left, and for the first time the hallway clock of her grief has something written on it besides four o'clock. Later. She is allowed a later.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+		}
+		finally
+		{
+			_framesBusy = false;
+		}
+	}
+
+	private bool TryHandleTurnedFramesCollision(InputEventMouseButton mouseButton)
+	{
+		if (Dialogue.IsInputBlocked)
+			return false;
+
+		Vector2 globalMouse = GetGlobalMousePosition();
+		foreach (var area in new[] { _pic11Area, _pic12Area })
+		{
+			if (area != null && IsInsideArea2D(area, globalMouse, 6f))
+			{
+				OnTurnedFramesPressed(area);
+				GetTree().Root.SetInputAsHandled();
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private bool TryHandleMirrorCollision(InputEventMouseButton mouseButton)
@@ -392,6 +479,9 @@ public partial class Room4 : Node2D
 			return;
 
 		if (TryHandleDrawerCollision(mouseButton))
+			return;
+
+		if (TryHandleTurnedFramesCollision(mouseButton))
 			return;
 
 		if (!_doorUnlocked)

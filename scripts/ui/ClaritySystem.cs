@@ -35,7 +35,9 @@ public static class ClaritySystem
         if (Globals.Instance.CLARITY_TOGGLE_COUNT <= 0)
         {
             AudioManager.Play(Sfx.Denied, -4f);
-            GameState.Instance?.Toast("No clarity remains. Finish a room to recover some.");
+            GameState.Instance?.Toast(GameState.Instance?.CollapseActive == true
+                ? "No clarity remains — and the house is counting. Find what's left. Open the lock."
+                : "No clarity remains. Finish a room to recover some.");
             Logger.Info("No clarity toggles left!");
             return false;
         }

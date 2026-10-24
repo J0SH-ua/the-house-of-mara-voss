@@ -74,6 +74,9 @@ public partial class Room5Final : MemoryRoomBase
         if (gs == null || gs.IsShardRecovered(4) || gs.HasFlag(AnchoredFlag))
             return;
 
+        await SayStoryLessonOnceAsync("story_monologue_room5_two_years",
+            "Before anything is held still, hear what this room has been saying in two voices. The girl who slept in this bed believed her big sister could do anything. The woman who cannot sleep in it has spent twelve years being sorry in her direction.",
+            "Mara left Eldfen at twenty-two and built a careful, quiet life she shows almost no one. But every night she comes back here to wait — the way Ida waited, in a garden, for someone who does not come. She has become the one on the swing. She only counts in years instead of minutes.");
         await SayStoryLessonOnceAsync("story_lesson_room5_all_faced",
             "Now Mara has looked at every contradiction once. Looking again will only fray them; the room is ready to be remembered another way.",
             "Choose Anchor — press A, or click Anchor in the Memory bar. The verb will stay in Mara's hands. Then click the one thing that was left on, in both years, for whoever came home late.");

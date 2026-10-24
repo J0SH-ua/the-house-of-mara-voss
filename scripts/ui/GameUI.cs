@@ -58,10 +58,10 @@ public partial class GameUI : CanvasLayer
     [
         "res://assets/images/core/shards/brass_key.png",
         "res://assets/images/core/shards/photo.png",
-        null,
-        null,
-        null,
-        null,
+        "res://assets/images/core/shards/fragment_jar.png",
+        "res://assets/images/core/shards/fragment_frame.png",
+        "res://assets/images/core/shards/fragment_letter.png",
+        "res://assets/images/core/shards/fragment_apple.png",
     ];
     private Label _toastLabel;
     private PanelContainer _toastPanel;
@@ -132,8 +132,19 @@ public partial class GameUI : CanvasLayer
     private Control _settingsPanel;
     private Control _journalPanel;
     private Control _menuSettingsButton;
-    private ConfirmationDialog _confirmDialog;
+    private Control _confirmPanel;
+    private Label _confirmTextLabel;
+    private Button _confirmOkButton;
+    private Button _confirmCancelButton;
     private Action _confirmAction;
+    private Action _confirmCancelAction;
+
+    // Clarity-collapse countdown overlay (house taking the room back)
+    private Control _collapseRoot;
+    private ColorRect _collapseTint;
+    private ShatterCrackOverlay _collapseCracks;
+    private Label _collapseTimerLabel;
+    private bool _collapseUiActive;
 
     // Journal widgets
     private VBoxContainer _journalList;
@@ -162,6 +173,7 @@ public partial class GameUI : CanvasLayer
         _font = GD.Load<FontFile>(FontPath);
 
         BuildCorruptionOverlay();
+        BuildCollapseOverlay();
         BuildHud();
         BuildBackButton();
         BuildBagButton();
@@ -176,15 +188,7 @@ public partial class GameUI : CanvasLayer
         BuildEndingOverlay();
         BuildRecollectionPanel();
         BuildShatterOverlay();
-
-        _confirmDialog = new ConfirmationDialog
-        {
-            ProcessMode = ProcessModeEnum.Always,
-            OkButtonText = "Yes, let it go",
-            CancelButtonText = "Not yet",
-        };
-        _confirmDialog.Confirmed += () => _confirmAction?.Invoke();
-        AddChild(_confirmDialog);
+        BuildConfirmPanel();
 
         if (GameState.Instance != null)
         {
@@ -199,6 +203,9 @@ public partial class GameUI : CanvasLayer
             gs.StoryFlagsChanged += RefreshHud;
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
+            gs.CollapseStarted += OnCollapseStarted;
+            gs.CollapseTicked += OnCollapseTicked;
+            gs.CollapseEnded += OnCollapseEnded;
             gs.Saved += () => ShowToast("Memory preserved.", quiet: true);
         }
         RoomExamineTracker.ExamineRecorded += (_, _) =>
@@ -240,6 +247,7 @@ public partial class GameUI : CanvasLayer
 
         RefreshBackButton();
         RefreshMemoryVerbBar();
+        UpdateCollapsePulse();
 
         // Arming Clarity in a nearly-known room offers the Recollection once
         // per arming — the player chooses: one reveal, or everything at once.
@@ -252,8 +260,11 @@ public partial class GameUI : CanvasLayer
         if (_corruptionMaterial != null && _corruptionRect.Visible)
         {
             float current = (float)_corruptionMaterial.GetShaderParameter("intensity").AsDouble();
-            float target = _shatterPlaying ? 1f : TargetCorruptionIntensity();
-            float next = Mathf.MoveToward(current, target, (float)delta * (_shatterPlaying ? 1.2f : 0.25f));
+            float target = _shatterPlaying ? 1f
+                : _collapseUiActive ? CollapseShaderTarget()
+                : TargetCorruptionIntensity();
+            float rate = _shatterPlaying ? 1.2f : _collapseUiActive ? 0.55f : 0.25f;
+            float next = Mathf.MoveToward(current, target, (float)delta * rate);
             if (Mathf.Abs(next - current) > 0.0005f)
                 _corruptionMaterial.SetShaderParameter("intensity", next);
         }
@@ -285,6 +296,41 @@ public partial class GameUI : CanvasLayer
         if (Settings.ReduceMotionOrDefault())
             v *= 0.45f;
         return Mathf.Clamp(v, 0f, 1f);
+    }
+
+    /// <summary>During the collapse the shader itself is the takeover: it
+    /// starts half-drowned and closes to full corruption as the count ends,
+    /// whatever the underlying corruption value says.</summary>
+    private float CollapseShaderTarget()
+    {
+        float left = GameState.Instance?.CollapseSecondsLeft ?? GameState.CollapseGraceSeconds;
+        float progress = 1f - Mathf.Clamp(left / GameState.CollapseGraceSeconds, 0f, 1f);
+        float v = 0.5f + progress * 0.5f;
+        if (Settings.ReduceMotionOrDefault())
+            v *= 0.6f;
+        return Mathf.Clamp(v * Settings.CorruptionIntensityOrDefault(), 0f, 1f);
+    }
+
+    /// <summary>True while any modal surface owns the screen. GameState asks
+    /// this so the collapse count never drains behind a menu.</summary>
+    public bool IsBlockingOverlayOpen() => AnyPanelOpen();
+
+    private void UpdateCollapsePulse()
+    {
+        if (!_collapseUiActive || GameState.Instance == null)
+            return;
+
+        float left = GameState.Instance.CollapseSecondsLeft;
+        float progress = 1f - Mathf.Clamp(left / GameState.CollapseGraceSeconds, 0f, 1f);
+
+        // Cracks spread with the count; the red drown pulses faster late.
+        _collapseCracks?.SetFracture(0.08f + progress * 0.84f);
+        double period = progress > 0.66f ? 130.0 : 230.0;
+        float pulse = Settings.ReduceMotionOrDefault()
+            ? 0.5f
+            : 0.5f + 0.5f * (float)Math.Sin(Time.GetTicksMsec() / period);
+        if (_collapseTint != null)
+            _collapseTint.Color = new Color(0.38f, 0.02f, 0.05f, 0.10f + progress * 0.17f + pulse * 0.05f);
     }
 
     // =================================================================== input
@@ -466,6 +512,13 @@ public partial class GameUI : CanvasLayer
 
     private void HandleEscape()
     {
+        if (_confirmPanel != null && _confirmPanel.Visible)
+        {
+            var cancel = _confirmCancelAction;
+            CloseConfirm();
+            cancel?.Invoke();
+            return;
+        }
         if (_tutorialPanel.Visible)
         {
             CloseTutorial();
@@ -524,7 +577,8 @@ public partial class GameUI : CanvasLayer
                || (_journalPanel?.Visible ?? false) || (_bagPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
                || (_cutsceneRoot?.Visible ?? false) || (_endingRoot?.Visible ?? false)
                || (_shatterRoot?.Visible ?? false)
-               || (_recollectionPanel?.Visible ?? false);
+               || (_recollectionPanel?.Visible ?? false)
+               || (_confirmPanel?.Visible ?? false);
     }
 
     private void RequestHint()
@@ -552,7 +606,7 @@ public partial class GameUI : CanvasLayer
 
         var normal = new StyleBoxFlat
         {
-            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.72f),
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.5f),
             BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.35f),
         };
         normal.SetBorderWidthAll(1);
@@ -593,7 +647,7 @@ public partial class GameUI : CanvasLayer
         _verbPanel = new PanelContainer { Visible = false, Name = "MemoryVerbBar" };
         var style = new StyleBoxFlat
         {
-            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.84f),
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.55f),
             BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.45f),
         };
         style.SetBorderWidthAll(1);
@@ -987,54 +1041,154 @@ public partial class GameUI : CanvasLayer
 
     // ================================================================= confirm
 
-    public void ShowConfirm(string text, Action onConfirm) => ShowConfirm(text, onConfirm, "Yes", "Cancel");
+    /// <summary>The game's own reminder card — parchment-dark panel and
+    /// Cormorant buttons like every other surface, never the engine's
+    /// default dialog. Used by New Game ("begin again?"), the first-run
+    /// tutorial question, and anywhere else a choice must be deliberate.</summary>
+    private void BuildConfirmPanel()
+    {
+        _confirmPanel = new Control { Visible = false, Name = "ConfirmPanel" };
+        _confirmPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _confirmPanel.AddChild(DimBackdrop());
+
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _confirmPanel.AddChild(center);
+
+        var panel = MakePanel();
+        panel.CustomMinimumSize = new Vector2(580, 0);
+        center.AddChild(panel);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 16);
+        panel.AddChild(vbox);
+
+        var eyebrow = MakeLabel("THE HOUSE ASKS", 16, new Color(0.82f, 0.72f, 0.54f, 0.9f));
+        eyebrow.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(eyebrow);
+
+        _confirmTextLabel = MakeLabel(string.Empty, 24);
+        _confirmTextLabel.AutowrapMode = TextServer.AutowrapMode.Word;
+        _confirmTextLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _confirmTextLabel.CustomMinimumSize = new Vector2(500, 0);
+        vbox.AddChild(_confirmTextLabel);
+
+        vbox.AddChild(new HSeparator());
+
+        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        row.AddThemeConstantOverride("separation", 14);
+        vbox.AddChild(row);
+
+        _confirmOkButton = MakeButton("Yes", 23);
+        _confirmOkButton.CustomMinimumSize = new Vector2(210, 48);
+        _confirmOkButton.Pressed += () =>
+        {
+            var action = _confirmAction;
+            CloseConfirm();
+            action?.Invoke();
+        };
+        row.AddChild(_confirmOkButton);
+
+        _confirmCancelButton = MakeButton("Cancel", 23);
+        _confirmCancelButton.CustomMinimumSize = new Vector2(210, 48);
+        _confirmCancelButton.Pressed += () =>
+        {
+            var action = _confirmCancelAction;
+            CloseConfirm();
+            action?.Invoke();
+        };
+        row.AddChild(_confirmCancelButton);
+
+        AddChild(_confirmPanel);
+    }
+
+    public void ShowConfirm(string text, Action onConfirm) => ShowConfirm(text, onConfirm, "Yes", "Cancel", null);
 
     public void ShowConfirm(string text, Action onConfirm, string okText, string cancelText)
+        => ShowConfirm(text, onConfirm, okText, cancelText, null);
+
+    public void ShowConfirm(string text, Action onConfirm, string okText, string cancelText, Action onCancel)
     {
-        _confirmDialog.DialogText = text;
-        _confirmDialog.OkButtonText = okText;
-        _confirmDialog.CancelButtonText = cancelText;
+        if (_confirmPanel == null)
+        {
+            onConfirm?.Invoke();
+            return;
+        }
+
+        _confirmTextLabel.Text = text;
+        _confirmOkButton.Text = okText;
+        _confirmCancelButton.Text = cancelText;
+        _confirmCancelButton.Visible = !string.IsNullOrEmpty(cancelText);
         _confirmAction = onConfirm;
-        _confirmDialog.PopupCentered();
+        _confirmCancelAction = onCancel;
+        _confirmPanel.Visible = true;
+        AudioManager.Play(Sfx.PageTurn, -11f, 0.95f);
+        _confirmOkButton.GrabFocus();
+    }
+
+    private void CloseConfirm()
+    {
+        if (_confirmPanel != null)
+            _confirmPanel.Visible = false;
+        _confirmAction = null;
+        _confirmCancelAction = null;
     }
 
     // ================================================================= bag UI
 
     private void BuildBagButton()
     {
-        _bagButton = MakeButton("Bag · 0 (B)", 22);
-        _bagButton.Name = "BagButton";
+        // Icon only — a worn satchel, no words. It lives under the top-right
+        // status panel (MEMORY / Clarity pips), clear of the room's own
+        // clarity eye at the bottom and of every world hotspot strip.
+        _bagButton = new Button { Name = "BagButton", Text = string.Empty };
+        _bagButton.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
+        var icon = GD.Load<Texture2D>("res://assets/images/core/ui/bag_icon.png");
+        if (icon != null)
+        {
+            _bagButton.Icon = icon;
+            _bagButton.ExpandIcon = true;
+        }
+        else
+        {
+            _bagButton.Text = "Bag"; // texture missing: never leave the bag unreachable
+            if (_font != null)
+                _bagButton.AddThemeFontOverride("font", _font);
+            _bagButton.AddThemeFontSizeOverride("font_size", 20);
+            _bagButton.AddThemeColorOverride("font_color", new Color(0.93f, 0.89f, 0.82f));
+        }
+
         _bagButton.AnchorLeft = 1;
         _bagButton.AnchorRight = 1;
-        _bagButton.AnchorTop = 1;
-        _bagButton.AnchorBottom = 1;
-        _bagButton.OffsetLeft = -190;
+        _bagButton.AnchorTop = 0;
+        _bagButton.AnchorBottom = 0;
+        _bagButton.OffsetLeft = -76;
         _bagButton.OffsetRight = -16;
-        _bagButton.OffsetTop = -90;
-        _bagButton.OffsetBottom = -46;
+        _bagButton.OffsetTop = 142;
+        _bagButton.OffsetBottom = 202;
         _bagButton.FocusMode = Control.FocusModeEnum.None;
-        _bagButton.TooltipText = "Open Mara's bag / inventory (B or I)";
 
         var normal = new StyleBoxFlat
         {
-            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.8f),
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.5f),
             BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.42f),
         };
         normal.SetBorderWidthAll(1);
-        normal.SetCornerRadiusAll(4);
-        normal.SetContentMarginAll(8);
+        normal.SetCornerRadiusAll(6);
+        normal.SetContentMarginAll(7);
         var hover = new StyleBoxFlat
         {
             BgColor = new Color(0.85f, 0.75f, 0.55f, 0.18f),
-            BorderColor = new Color(0.85f, 0.75f, 0.55f, 0.58f),
+            BorderColor = new Color(0.85f, 0.75f, 0.55f, 0.6f),
         };
         hover.SetBorderWidthAll(1);
-        hover.SetCornerRadiusAll(4);
-        hover.SetContentMarginAll(8);
+        hover.SetCornerRadiusAll(6);
+        hover.SetContentMarginAll(7);
         _bagButton.AddThemeStyleboxOverride("normal", normal);
         _bagButton.AddThemeStyleboxOverride("hover", hover);
         _bagButton.AddThemeStyleboxOverride("pressed", hover);
         _bagButton.AddThemeStyleboxOverride("focus", hover);
+        _bagButton.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -9f);
         _bagButton.Pressed += ToggleBag;
         _hud.AddChild(_bagButton);
         RefreshBagButton();
@@ -1194,8 +1348,9 @@ public partial class GameUI : CanvasLayer
         var gs = GameState.Instance;
         int carried = gs?.CountCarried() ?? 0;
         int recovered = gs?.CountRecovered() ?? 0;
-        _bagButton.Text = $"Bag · {carried} (B)";
-        _bagButton.TooltipText = $"Open Mara's bag — {carried} carried, {recovered}/6 recovered (B or I)";
+        // The button itself stays wordless (satchel icon); the count lives
+        // in the tooltip and in the bag panel.
+        _bagButton.TooltipText = $"Mara's bag — {carried} carried, {recovered}/6 recovered (B or I)";
     }
 
     private void RefreshBag(bool selectFirstUsable = false)
@@ -1284,6 +1439,7 @@ public partial class GameUI : CanvasLayer
             {
                 var image = new TextureRect
                 {
+                    TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
                     Texture = icon,
                     CustomMinimumSize = new Vector2(0, 58),
                     ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
@@ -1449,6 +1605,11 @@ public partial class GameUI : CanvasLayer
             label.AddThemeFontOverride("font", _font);
         label.AddThemeFontSizeOverride("font_size", size);
         label.AddThemeColorOverride("font_color", color ?? new Color(0.93f, 0.89f, 0.82f, 0.95f));
+        // A hair of shadow keeps HUD text readable now that the chips under
+        // it are translucent over bright rooms.
+        label.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 0.7f));
+        label.AddThemeConstantOverride("shadow_offset_x", 1);
+        label.AddThemeConstantOverride("shadow_offset_y", 1);
         return label;
     }
 
@@ -1484,6 +1645,28 @@ public partial class GameUI : CanvasLayer
         return b;
     }
 
+    /// <summary>Translucent sibling of MakePanel for surfaces that float
+    /// over the room itself (objective, MEMORY/Clarity status): the memory
+    /// stays visible underneath them. Modal panels keep the solid panel.</summary>
+    private static PanelContainer MakeHudPanel()
+    {
+        var sb = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.46f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.38f),
+        };
+        sb.SetBorderWidthAll(1);
+        sb.SetCornerRadiusAll(4);
+        sb.ContentMarginLeft = 14;
+        sb.ContentMarginRight = 14;
+        sb.ContentMarginTop = 9;
+        sb.ContentMarginBottom = 9;
+
+        var panel = new PanelContainer();
+        panel.AddThemeStyleboxOverride("panel", sb);
+        return panel;
+    }
+
     private static PanelContainer MakePanel()
     {
         var sb = new StyleBoxFlat
@@ -1508,6 +1691,146 @@ public partial class GameUI : CanvasLayer
         var rect = new ColorRect { Color = new Color(0, 0, 0, 0.55f), MouseFilter = Control.MouseFilterEnum.Stop };
         rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         return rect;
+    }
+
+    /// <summary>The house taking a room back: a drowning red tint, spreading
+    /// cracks, an explanation, and a huge corrupt count. Sits above the
+    /// world and the corruption shader, below the HUD chips and menus;
+    /// every part ignores the mouse so play never stops.</summary>
+    private void BuildCollapseOverlay()
+    {
+        _collapseRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore, Name = "CollapseOverlay" };
+        _collapseRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        AddChild(_collapseRoot);
+
+        _collapseTint = new ColorRect
+        {
+            Color = new Color(0.38f, 0.02f, 0.05f, 0f),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _collapseTint.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _collapseRoot.AddChild(_collapseTint);
+
+        _collapseCracks = new ShatterCrackOverlay { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _collapseCracks.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _collapseRoot.AddChild(_collapseCracks);
+
+        var warningPanel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        var warningStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(0.09f, 0.015f, 0.025f, 0.84f),
+            BorderColor = new Color(0.72f, 0.14f, 0.16f, 0.85f),
+        };
+        warningStyle.SetBorderWidthAll(1);
+        warningStyle.SetCornerRadiusAll(4);
+        warningStyle.ContentMarginLeft = 18;
+        warningStyle.ContentMarginRight = 18;
+        warningStyle.ContentMarginTop = 10;
+        warningStyle.ContentMarginBottom = 10;
+        warningPanel.AddThemeStyleboxOverride("panel", warningStyle);
+        warningPanel.AnchorLeft = 0.5f;
+        warningPanel.AnchorRight = 0.5f;
+        warningPanel.OffsetLeft = -452;
+        warningPanel.OffsetRight = 452;
+        warningPanel.OffsetTop = 76;
+        warningPanel.OffsetBottom = 146;
+        var warning = MakeLabel(
+            "CLARITY IS GONE — the house is taking this room back. Find what remains and open its lock before the count ends, or everything here corrupts.",
+            21, new Color(0.98f, 0.88f, 0.8f, 0.98f));
+        warning.AutowrapMode = TextServer.AutowrapMode.Word;
+        warning.HorizontalAlignment = HorizontalAlignment.Center;
+        warning.MouseFilter = Control.MouseFilterEnum.Ignore;
+        warningPanel.AddChild(warning);
+        _collapseRoot.AddChild(warningPanel);
+
+        var timerPanel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        var timerStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.008f, 0.014f, 0.88f),
+            BorderColor = new Color(0.8f, 0.18f, 0.2f, 0.9f),
+            ShadowColor = new Color(0.4f, 0.02f, 0.03f, 0.55f),
+            ShadowSize = 14,
+        };
+        timerStyle.SetBorderWidthAll(2);
+        timerStyle.SetCornerRadiusAll(6);
+        timerStyle.ContentMarginLeft = 22;
+        timerStyle.ContentMarginRight = 22;
+        timerStyle.ContentMarginTop = 2;
+        timerStyle.ContentMarginBottom = 6;
+        timerPanel.AddThemeStyleboxOverride("panel", timerStyle);
+        timerPanel.AnchorLeft = 0.5f;
+        timerPanel.AnchorRight = 0.5f;
+        timerPanel.OffsetLeft = -78;
+        timerPanel.OffsetRight = 78;
+        timerPanel.OffsetTop = 156;
+        timerPanel.OffsetBottom = 240;
+        _collapseTimerLabel = MakeLabel("15", 64, new Color(1f, 0.92f, 0.82f));
+        _collapseTimerLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _collapseTimerLabel.VerticalAlignment = VerticalAlignment.Center;
+        _collapseTimerLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        timerPanel.AddChild(_collapseTimerLabel);
+        _collapseRoot.AddChild(timerPanel);
+    }
+
+    private void OnCollapseStarted()
+    {
+        _collapseUiActive = true;
+        if (_collapseRoot != null)
+            _collapseRoot.Visible = true;
+        _collapseCracks?.ResetCracks();
+        _collapseCracks?.SetFracture(0.08f);
+
+        AudioManager.Play(Sfx.CorruptionGlitch, -4f, 0.8f);
+        AudioManager.Play(Sfx.ScreenCrack1, -6f);
+        AudioManager.Play(Sfx.CorruptionWhisper, -11f, 0.75f);
+        AudioManager.Instance?.PlayCollapseMusic();
+        UpdateCollapseTimer(GameState.CollapseGraceSeconds);
+    }
+
+    private void OnCollapseTicked(float secondsLeft)
+    {
+        UpdateCollapseTimer(secondsLeft);
+        int whole = Mathf.CeilToInt(Mathf.Max(secondsLeft, 0f));
+
+        // The count, audible — rising and louder as the room goes.
+        AudioManager.PlayVaried(Sfx.ClockTick, whole <= 5 ? -3.5f : -8f,
+            1f + (GameState.CollapseGraceSeconds - whole) * 0.02f, 0.01f);
+        if (whole == 10)
+            AudioManager.Play(Sfx.ScreenCrack2, -7f, 0.95f);
+        else if (whole == 5)
+        {
+            AudioManager.Play(Sfx.ScreenCrack2, -5f, 1.08f);
+            AudioManager.Play(Sfx.CorruptionWhisper, -10f, 0.85f);
+        }
+    }
+
+    private void UpdateCollapseTimer(float secondsLeft)
+    {
+        if (_collapseTimerLabel == null)
+            return;
+        int whole = Mathf.CeilToInt(Mathf.Max(secondsLeft, 0f));
+        _collapseTimerLabel.Text = whole.ToString();
+        float danger = 1f - Mathf.Clamp(secondsLeft / GameState.CollapseGraceSeconds, 0f, 1f);
+        _collapseTimerLabel.AddThemeColorOverride("font_color",
+            new Color(1f, Mathf.Lerp(0.92f, 0.3f, danger), Mathf.Lerp(0.82f, 0.2f, danger)));
+    }
+
+    private void OnCollapseEnded(bool rescued)
+    {
+        _collapseUiActive = false;
+        if (_collapseRoot != null)
+            _collapseRoot.Visible = false;
+        _collapseCracks?.ResetCracks();
+        if (_collapseTint != null)
+            _collapseTint.Color = new Color(0.38f, 0.02f, 0.05f, 0f);
+
+        if (rescued)
+        {
+            AudioManager.Instance?.RestoreSceneMusic();
+            AudioManager.Play(Sfx.ClarifyReveal, -6f, 0.9f);
+        }
+        // Not rescued: either the shatter sequence owns the audio now, or a
+        // scene change already picked the next room's score.
     }
 
     private void BuildCorruptionOverlay()
@@ -1542,21 +1865,21 @@ public partial class GameUI : CanvasLayer
         _hud.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         AddChild(_hud);
 
-        // Objective (top-left, parchment-dark chip).
-        var objectivePanel = MakePanel();
+        // Objective (top-left, parchment-dark chip — translucent over the room).
+        var objectivePanel = MakeHudPanel();
         objectivePanel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
         objectivePanel.OffsetLeft = 16;
         objectivePanel.OffsetTop = 14;
         objectivePanel.OffsetRight = 560;
-        objectivePanel.OffsetBottom = 66;
+        objectivePanel.OffsetBottom = 74;
         objectivePanel.MouseFilter = Control.MouseFilterEnum.Ignore;
         _objectiveLabel = MakeLabel("", 21);
         _objectiveLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         objectivePanel.AddChild(_objectiveLabel);
         _hud.AddChild(objectivePanel);
 
-        // Integrity + clarity (top-right).
-        var statusPanel = MakePanel();
+        // Integrity + clarity (top-right) — translucent over the room.
+        var statusPanel = MakeHudPanel();
         statusPanel.AnchorLeft = 1;
         statusPanel.AnchorRight = 1;
         statusPanel.OffsetLeft = -316;
@@ -1613,7 +1936,7 @@ public partial class GameUI : CanvasLayer
         _toastPanel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
         var toastChip = new StyleBoxFlat
         {
-            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.78f),
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.52f),
             BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.3f),
         };
         toastChip.SetBorderWidthAll(1);
@@ -1645,7 +1968,7 @@ public partial class GameUI : CanvasLayer
         var controlsChip = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         var controlsStyle = new StyleBoxFlat
         {
-            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.78f),
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.52f),
             BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.3f),
         };
         controlsStyle.SetBorderWidthAll(1);
@@ -2019,7 +2342,7 @@ public partial class GameUI : CanvasLayer
         ("Look Deeper — Gently",
          "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage.\n\nIf the MEMORY meter ever empties, the memory shatters. That is an ending — the hollow one."),
         ("Clarity",
-         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to show everything that remains in its true form and ring it in blue — and wake in the next room with fewer charges."),
+         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nBut spend the LAST charge in a room you haven't finished and the house starts taking the room back: fifteen seconds on a blood-red count to find what remains and open its lock before everything corrupts. The count holds while you read, think, or check your journal — it only drains while you could be acting.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to show everything that remains in its true form and ring it in blue — a chosen spending, so no count begins — and wake in the next room with fewer charges."),
         ("Memory Verbs — learned in the house",
          "The house teaches these one fragment at a time, in Mara's own words. When a way of remembering wakes, Mara writes it down under Journal (J) → Notes & Clues.\n\nTheir grammar never changes:\n1. Choose the verb — E/A/T/R, or its button in the bottom Memory bar.\n2. Touch the memory it belongs to.\n\nEcho listens in order. Anchor holds one unchanged thing still. Trace joins causes. Release answers a memory only after it is whole. A chosen verb stays in Mara's hands while she tries; right-click or Esc puts it down."),
         ("Finding Things",
@@ -2154,17 +2477,19 @@ public partial class GameUI : CanvasLayer
     private static readonly (string ImagePath, string Caption, float HoldSeconds)[] CutsceneShots =
     [
         ("",
-         "Four months ago, Mara Voss stopped opening her front door.", 4.5f),
+         "Mara Voss is thirty-four years old, and she has not truly slept in months.", 4.5f),
         ("res://assets/images/bgs/Room_1_BG.png",
-         "She doesn't know that. She wakes believing she is home — in Eldfen, in the kitchen light she grew up in.", 6.5f),
+         "So tonight her mind does what it has done since she was twenty-two: it takes her back to Eldfen — to the childhood house, kept exactly as warm as she needs it to be.", 7f),
         ("res://assets/images/bgs/Room2_no_objects.png",
-         "So her mind rebuilt the house around her. Warm. Kept. Almost right — except that it is empty.", 6f),
+         "Almost exactly. In the true house there was always someone else in the next room. Here, every chair is empty. It has been empty for twelve years.", 6.5f),
         ("res://assets/images/bgs/Room_3_BG.png",
-         "A memory cannot keep everything. Some of it was sealed away, labelled, and left where she would not have to look.", 6f),
+         "Her sister Ida died at fourteen, on an October afternoon when Mara was supposed to come for her at four o'clock — and forgot. That is the sentence this whole house was built to keep Mara from saying.", 8f),
         ("res://assets/images/bgs/BgRoom4.png",
-         "Seven rooms. In each one, a version of something that happened. Not all of them true.", 5.5f),
+         "Seven rooms. Six fragments of what actually happened. Some of what they show her is memory. Some of it is mercy, arranged nightly by a mind that loves her.", 6.5f),
+        ("res://assets/images/bgs/Room_6_Final.png",
+         "You are the part of Mara that still knows the difference. Walk the rooms. Face what each one is holding. Do not let the house be kind at the truth's expense.", 7f),
         ("res://assets/images/bgs/DoorCloseup.png",
-         "You are the part of her that still knows. Walk the rooms. Face what each one is holding. Recover the six fragments of the truth — and let Mara wake up.", 7.5f),
+         "Recover the six fragments. Put that day back in its order. And let Mara Voss wake up.", 6f),
     ];
 
     // =========================================================== recollection
@@ -2384,7 +2709,7 @@ public partial class GameUI : CanvasLayer
     {
         var gs = GameState.Instance;
         if (gs == null || _context != UiContext.Game || _shatterPlaying || _cutscenePlaying
-            || _recollectionVisualPlaying || Dialogue.IsShowing || AnyPanelOpen() || _confirmDialog.Visible)
+            || _recollectionVisualPlaying || Dialogue.IsShowing || AnyPanelOpen())
             return;
         if (!gs.CanRecollect(out var remaining, out int carry))
             return;
@@ -3057,6 +3382,9 @@ public partial class GameUI : CanvasLayer
         MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
     }
 
+    /// <summary>First entry into Room 1: the house ASKS before it teaches.
+    /// Either answer is remembered, so the question is only ever posed once;
+    /// the cards themselves stay replayable from the pause menu forever.</summary>
     private void MaybeAutoShowTutorial(string scenePath)
     {
         if (_tutorialAutoShown || Settings.Instance == null || Settings.Instance.TutorialSeen)
@@ -3065,7 +3393,22 @@ public partial class GameUI : CanvasLayer
             return;
 
         _tutorialAutoShown = true;
-        OpenTutorial();
+        GetTree().Paused = true;
+        ShowConfirm(
+            "Before the house settles around you — would you like to be shown how remembering works here? Six short cards: looking, Clarity, and what it costs when the light runs out.",
+            () => OpenTutorial(),
+            "Show me",
+            "I can find my way",
+            () =>
+            {
+                if (Settings.Instance != null && !Settings.Instance.TutorialSeen)
+                {
+                    Settings.Instance.TutorialSeen = true;
+                    Settings.Instance.Save();
+                }
+                GetTree().Paused = false;
+                ShowToast("As you were, then. How to Play waits in the pause menu (Esc) if the house gets strange.");
+            });
     }
 }
 

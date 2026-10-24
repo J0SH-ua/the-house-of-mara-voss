@@ -27,6 +27,7 @@ public partial class Room1Puzzle : Area2D
 	private Button _unlockButton;
 	private bool _readyToUnlock;
 	private int _dialTicks;
+	private int _wrongUnlocks;
 
 	/// <summary>Clears remembered dial positions (new game / fresh load).</summary>
 	public static void ResetSavedState()
@@ -60,9 +61,10 @@ public partial class Room1Puzzle : Area2D
 			}
 		}
 
-		// The right combination no longer springs the drawer by itself: an
-		// explicit Unlock button appears under the dials, and the player does
-		// the unlocking. (It lives under Padlock, so Esc hides it too.)
+		// The right combination no longer springs the drawer by itself: the
+		// player does the unlocking. The Unlock button is always there and
+		// always pressable — a wrong guess rattles and points at the journal
+		// instead of hiding the way forward. (Under Padlock: Esc hides it.)
 		var firstDial = GetNodeOrNull<SpinBox>("Padlock/padlock-0");
 		var lastDial = GetNodeOrNull<SpinBox>("Padlock/padlock-4");
 		Vector2 unlockPos = new Vector2(-85, 96);
@@ -282,20 +284,37 @@ public partial class Room1Puzzle : Area2D
 		bool wasReady = _readyToUnlock;
 		_readyToUnlock = ready;
 		if (_unlockButton != null)
-			_unlockButton.Visible = ready;
+		{
+			// Always visible, always pressable. Bright when the dials feel
+			// right, dimmer when they don't — never gone.
+			_unlockButton.Visible = true;
+			_unlockButton.Modulate = ready ? Colors.White : new Color(0.78f, 0.74f, 0.68f, 0.92f);
+		}
 
 		if (ready && !wasReady)
 		{
 			AudioManager.Play(Sfx.WordChime, -9f);
 			GameState.Instance?.Toast("That feels right. Now unlock it.");
-			_unlockButton?.GrabFocus();
 		}
 	}
 
 	private void OnUnlockPressed()
 	{
-		if (!_readyToUnlock || _isSolved)
+		if (_isSolved)
 			return;
+
+		if (!_readyToUnlock)
+		{
+			// A real attempt, honestly answered: it doesn't turn, and the
+			// way to the truth is the journal, not more guessing.
+			_wrongUnlocks++;
+			AudioManager.Play(Sfx.LockRattle, -5f);
+			AudioManager.Play(Sfx.Denied, -11f);
+			GameState.Instance?.Toast(_wrongUnlocks >= 2
+				? "Still not right. Your Journal (J) keeps the clues under Notes & Clues — or press H and the house will nudge you."
+				: "It doesn't turn — that isn't right. The combination is hidden in this room; what you've seen is kept in your Journal (J) → Notes & Clues.");
+			return;
+		}
 
 		_isSolved = true;
 		IsUnlocked = true;
@@ -303,6 +322,7 @@ public partial class Room1Puzzle : Area2D
 		if (_unlockButton != null)
 			_unlockButton.Visible = false;
 
+		GameState.Instance?.NotifyPuzzleSolved();
 		AudioManager.Play(Sfx.LockOpen, -4f);
 		PlayDrawerAnimation();
 	}
@@ -312,7 +332,7 @@ public partial class Room1Puzzle : Area2D
 		var button = new Button
 		{
 			Text = "Unlock",
-			Visible = false,
+			Visible = true,
 			CustomMinimumSize = new Vector2(170, 46),
 			Position = position,
 		};

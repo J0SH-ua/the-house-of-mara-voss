@@ -86,8 +86,9 @@ public partial class Room2Puzzle : Area2D
 		}
 		focusBox?.GrabFocus();
 
-		// The right word no longer springs the drawer by itself: an explicit
-		// Unlock button appears under the letters, and the player unlocks it.
+		// The right word no longer springs the drawer by itself: the player
+		// unlocks it. The Unlock button is always there and always pressable;
+		// judgement happens on the press, not while typing.
 		var firstBox = GetBox(0);
 		var lastBox = GetBox(3);
 		Vector2 unlockPos = new Vector2(-85, 96);
@@ -200,19 +201,8 @@ public partial class Room2Puzzle : Area2D
 		}
 
 		string attempt = new string(chars);
-		if (!string.Equals(attempt, TargetWord, StringComparison.Ordinal))
-		{
-			if (_readyToUnlock)
-			{
-				// Editing a word that was already right — un-ready, no rattle.
-				SetReadyToUnlock(false);
-				return;
-			}
-			WrongAttemptAsync();
-			return;
-		}
-
-		SetReadyToUnlock(true);
+		// Typing is never punished: the word is judged when Unlock is pressed.
+		SetReadyToUnlock(string.Equals(attempt, TargetWord, StringComparison.Ordinal));
 	}
 
 	private void SetReadyToUnlock(bool ready)
@@ -220,20 +210,45 @@ public partial class Room2Puzzle : Area2D
 		bool wasReady = _readyToUnlock;
 		_readyToUnlock = ready;
 		if (_unlockButton != null)
-			_unlockButton.Visible = ready;
+		{
+			// Always visible, always pressable. Bright when the word feels
+			// right, dimmer when it doesn't — never gone.
+			_unlockButton.Visible = true;
+			_unlockButton.Modulate = ready ? Colors.White : new Color(0.78f, 0.74f, 0.68f, 0.92f);
+		}
 
 		if (ready && !wasReady)
 		{
 			AudioManager.Play(Sfx.WordChime, -9f);
 			GameState.Instance?.Toast("That feels right. Now unlock it.");
-			_unlockButton?.GrabFocus();
 		}
 	}
 
 	private void OnUnlockPressed()
 	{
-		if (!_readyToUnlock || _isSolved)
+		if (_isSolved || _feedbackPlaying)
 			return;
+
+		if (!_readyToUnlock)
+		{
+			// Honest feedback at the press: incomplete, or simply not right.
+			int filled = 0;
+			foreach (var c in _savedLetters)
+			{
+				if (c != '\0')
+					filled++;
+			}
+			if (filled < 4)
+			{
+				AudioManager.Play(Sfx.LockRattle, -7f);
+				GameState.Instance?.Toast("It wants a whole word — four letters. What this room has told you is kept in your Journal (J) → Notes & Clues.");
+			}
+			else
+			{
+				WrongAttemptAsync();
+			}
+			return;
+		}
 
 		_isSolved = true;
 		IsUnlocked = true;
@@ -241,6 +256,7 @@ public partial class Room2Puzzle : Area2D
 		if (_unlockButton != null)
 			_unlockButton.Visible = false;
 
+		GameState.Instance?.NotifyPuzzleSolved();
 		SolveAsync();
 	}
 
@@ -249,7 +265,7 @@ public partial class Room2Puzzle : Area2D
 		var button = new Button
 		{
 			Text = "Unlock",
-			Visible = false,
+			Visible = true,
 			CustomMinimumSize = new Vector2(170, 46),
 			Position = position,
 		};
@@ -295,10 +311,12 @@ public partial class Room2Puzzle : Area2D
 		// Repeated wrong words mean a stuck player: point at the journal's
 		// clue cards first, then at the H hint.
 		_wrongAttempts++;
-		if (_wrongAttempts == 2)
-			GameState.Instance?.Toast("The word is in your journal — J, then Notes & Clues. Her parents' letter.");
+		if (_wrongAttempts == 1)
+			GameState.Instance?.Toast("The lock doesn't turn — that word isn't right. Something in this room has been saying the true one; your Journal (J) → Notes & Clues keeps it.");
+		else if (_wrongAttempts == 2)
+			GameState.Instance?.Toast("Still not right. Read her parents' letter again — J, then Notes & Clues.");
 		else if (_wrongAttempts == 4)
-			GameState.Instance?.Toast("Press H and the house will tell you plainly.");
+			GameState.Instance?.Toast("Press H and the house will nudge you closer.");
 
 		AudioManager.Play(Sfx.LockRattle, -5f);
 		AudioManager.Play(Sfx.Denied, -11f);

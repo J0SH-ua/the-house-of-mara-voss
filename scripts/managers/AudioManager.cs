@@ -63,6 +63,8 @@ public partial class AudioManager : Node
     public const string MusicRoom5 = "res://assets/Music/bg/room_5.wav";
     public const string MusicRoom6 = "res://assets/Music/bg/room_6.wav";
     public const string MusicFinale = "res://assets/Music/bg/conclusion.mp3";
+    /// <summary>Tense 15-second bed under the Clarity-collapse countdown.</summary>
+    public const string MusicCollapse = "res://assets/Music/bg/collapse.wav";
 
     private const string SfxDir = "res://assets/Music/SFX/";
     private const string AmbiencePath = SfxDir + "ambience_room_tone.wav";
@@ -301,7 +303,9 @@ public partial class AudioManager : Node
         bool puzzle = scene.Contains("puzzle");
         float volume = puzzle ? -15f : -11f;
 
-        if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
+        if (scene.Contains("flashback"))
+            PlayMusic(MusicRoom4, -16f);
+        else if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
             PlayMusic(MusicFinale, -6f);
         else if (scene.Contains("room_1"))
             PlayMusic(MusicRoom1, volume);
@@ -347,6 +351,12 @@ public partial class AudioManager : Node
         _ambiencePlayer.Stop();
         _heartbeatPlayer.Stop();
     }
+
+    /// <summary>Swap the room score for the countdown bed (collapse).</summary>
+    public void PlayCollapseMusic() => PlayMusic(MusicCollapse, -8f, 0.45f);
+
+    /// <summary>Restore whatever score the current scene calls for.</summary>
+    public void RestoreSceneMusic() => PlayMusicForScene(SceneManager.CurrentScenePath);
 
     /// <summary>Pause-menu ducking: pull the score down without touching Settings.</summary>
     public void SetPausedDuck(bool ducked)

@@ -184,8 +184,7 @@ public partial class Room4Puzzle : MemoryRoomBase
                 _ = CompleteDoorAsync();
             else
             {
-                string nextName = GetHotspot(KnockSequence[_knockProgress])?.DisplayName ?? "the next brass piece";
-                GameState.Instance?.Toast($"The knock holds ({_knockProgress}/{KnockSequence.Length}). Next, the door listens for: {nextName}.");
+                GameState.Instance?.Toast($"The knock holds ({_knockProgress}/{KnockSequence.Length}).");
             }
             return;
         }
@@ -199,7 +198,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             _knockProgress = 1;
             UpdateStatusLabel();
             QueueRedraw();
-            GameState.Instance?.Toast("The knock begins again at the bridge. Next: the keyhole beneath it.");
+            GameState.Instance?.Toast("The knock begins again where crossing begins.");
             return;
         }
 

@@ -466,7 +466,7 @@ public abstract partial class MemoryRoomBase : Node2D
         if (position.Y >= 606f)
             return true;
 
-        if (position.X >= 954f && position.X <= 1144f && position.Y >= 552f && position.Y <= 606f)
+        if (position.X >= 1070f && position.X <= 1144f && position.Y >= 136f && position.Y <= 208f) // icon-only Bag button, top-right
             return true;
 
         if (position.X >= 12f && position.X <= 276f && position.Y >= 552f &&

@@ -474,6 +474,54 @@ def build_room_music():
 
 # ------------------------------------------------------------------ the pack
 
+
+def build_collapse_music():
+    """The Clarity-collapse countdown bed: 15 seconds, looped seamlessly.
+
+    Same F-minor felt world as the room loops, but the grieving calm is gone:
+    a low F pedal pounds like a slow heart under a detuned music-box that
+    climbs F-Ab-C-Eb and never resolves, wood ticks mark the seconds, and a
+    warped-record sag keeps pulling the pitch down. Designed to sit under the
+    GameUI countdown ticks, not replace them.
+    """
+    print("Generating collapse music ->", os.path.normpath(BG_DIR))
+    dur = 17.0
+    track = zeros(dur)
+
+    # Low pounding pedal: felt-piano F every 0.75s, alternating weight.
+    t = 0.0
+    beat = 0
+    while t < dur - 1.0:
+        add_into(track, felt_piano(note("F", -1), 1.1, 0.42), t, 0.55 if beat % 2 == 0 else 0.34)
+        add_into(track, thump(49, 0.32, sweep_to=0.55), t, 0.42 if beat % 2 == 0 else 0.20)
+        t += 0.75
+        beat += 1
+
+    # Detuned music-box climb that never lands (two passes, second higher).
+    climb = [note("F", 1), note("Ab", 1), note("C", 2), note("Eb", 2), note("Db", 2), note("C", 2)]
+    for j, midi in enumerate(climb):
+        add_into(track, music_box(midi, 1.6, tau=0.5), 0.4 + j * 1.5, 0.30)
+        add_into(track, music_box(midi + 12, 1.4, tau=0.42), 8.2 + j * 1.35, 0.20)
+
+    # Wood ticks: one per second early, doubling late in the loop.
+    for sec_i in range(15):
+        add_into(track, aged_tick(1500, 0.05), sec_i * 1.0, 0.20)
+        if sec_i >= 10:
+            add_into(track, aged_tick(1750, 0.05), sec_i * 1.0 + 0.5, 0.16)
+
+    # Dissonant held cluster breathing underneath (F + Gb-ish neighbour).
+    for midi, g in [(note("F", 0), 0.16), (note("F", 0) + 1, 0.10), (note("Ab", 0), 0.11)]:
+        tone = tone_wow(mf(midi), dur, depth=0.006, rate=0.31)
+        env_ar(tone, 1.4, 1.8)
+        add_into(track, tone, 0, g)
+
+    add_into(track, crackle(dur, 60, gain=0.05), 0, 0.8)
+    track = sag_resample(track, min_rate=0.93, center=0.6, width=0.35)
+    track = (track + zeros(dur))[: sec(dur)]
+    track = seamless(track, 15.0, 2.0)
+    write_wav("collapse.wav", filt(track, "lp", 2800), peak=0.62, out_dir=BG_DIR)
+
+
 def build():
     print("Generating SFX pack v2 (F minor, felt & worn) ->", os.path.normpath(OUT_DIR))
 
@@ -694,6 +742,7 @@ def build():
 
     build_crack_sfx()
     build_room_music()
+    build_collapse_music()
 
     print("Done.")
 

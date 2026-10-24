@@ -29,6 +29,7 @@ public partial class SceneManager : Node
 		["room_3.tscn"] = ("res://scenes/world/room_2.tscn", "← Previous Room"),
 		["room_4.tscn"] = ("res://scenes/world/room_3.tscn", "← Previous Room"),
 		["Room_4_puzzle.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),
+		["flashback_landing.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),
 		["room_5.tscn"] = ("res://scenes/world/room_4.tscn", "← Previous Room"),
 		["room_6.tscn"] = ("res://scenes/world/room_5.tscn", "← Previous Room"),
 		["room_7.tscn"] = ("res://scenes/world/room_6.tscn", "← Previous Room"),

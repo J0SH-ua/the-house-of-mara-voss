@@ -33,6 +33,19 @@ public partial class Room7Final : Node2D
 
     private Font _font;
     private Texture2D _background;
+
+    /// <summary>Every fragment is a visible keepsake, in the tray and in its
+    /// frame — the same items Mara carries in her bag.</summary>
+    private static readonly string[] FragmentIconPaths =
+    [
+        "res://assets/images/core/shards/brass_key.png",
+        "res://assets/images/core/shards/photo.png",
+        "res://assets/images/core/shards/fragment_jar.png",
+        "res://assets/images/core/shards/fragment_frame.png",
+        "res://assets/images/core/shards/fragment_letter.png",
+        "res://assets/images/core/shards/fragment_apple.png",
+    ];
+    private readonly Texture2D[] _fragmentIcons = new Texture2D[GameState.MaxShards];
     private readonly Button[] _trayButtons = new Button[GameState.MaxShards];
     private readonly Label[] _frameNumerals = new Label[GameState.MaxShards];
     private readonly Label[] _frameTitles = new Label[GameState.MaxShards];
@@ -55,6 +68,8 @@ public partial class Room7Final : Node2D
 
         _font = GD.Load<FontFile>(FontPath);
         _background = GD.Load<Texture2D>(BackgroundPath);
+        for (int i = 0; i < GameState.MaxShards; i++)
+            _fragmentIcons[i] = GD.Load<Texture2D>(FragmentIconPaths[i]);
         if (_background == null)
             Logger.Error($"[Room7] Could not load background: {BackgroundPath}");
 
@@ -98,9 +113,10 @@ public partial class Room7Final : Node2D
             else
             {
                 await SaySequence(
+                    "You have carried six pieces of one girl through six rooms of one woman's unfinished night. Understand, before you touch a frame: nothing chosen here gives Ida back. It only decides what carrying her means.",
                     "Six hollow frames. Six pieces of one life, carried here in Mara's bag. This room is not another lock; it is Mara putting the morning back where she lived it.",
                     "Choose a fragment from the tray below, then click the hollow frame where it belongs. Gold means the piece stands in its lived place. Blue-grey means the house has accepted it somewhere kinder — click that filled frame to take it back and try again.",
-                    "If the order slips, the Bag (B) shows what Mara carries and the Journal (J) keeps “One morning, in order.” Release comes last: when all six stand I to VI, press R — or click Release — then click the assembled memory and choose what Mara does with the truth.");
+                    "If the order slips, the Bag (B) shows what Mara carries — numbered as she found them — and the Journal (J) keeps her notes. Release comes last: when all six stand where she lived them, press R — or click Release — then click the assembled memory and choose what Mara does with the truth.");
             }
 
             if (GodotObject.IsInstanceValid(this))
@@ -246,16 +262,29 @@ public partial class Room7Final : Node2D
             if (placed)
             {
                 Vector2 c = rect.GetCenter() + new Vector2(0, -8);
-                Vector2[] diamond =
-                [
-                    c + new Vector2(0, -27),
-                    c + new Vector2(20, 0),
-                    c + new Vector2(0, 27),
-                    c + new Vector2(-20, 0),
-                ];
-                DrawColoredPolygon(diamond,
-                    correct ? new Color(1f, 0.82f, 0.42f, 0.88f)
-                            : new Color(0.58f, 0.72f, 0.9f, 0.82f));
+                var iconTex = _fragmentIcons[placedShard];
+                if (iconTex != null)
+                {
+                    // The keepsake itself stands in the frame: true colours
+                    // where it was lived, cold where the house is being kind.
+                    DrawTextureRect(iconTex,
+                        new Rect2(c - new Vector2(28, 28), new Vector2(56, 56)),
+                        false,
+                        correct ? Colors.White : new Color(0.72f, 0.83f, 1f, 0.95f));
+                }
+                else
+                {
+                    Vector2[] diamond =
+                    [
+                        c + new Vector2(0, -27),
+                        c + new Vector2(20, 0),
+                        c + new Vector2(0, 27),
+                        c + new Vector2(-20, 0),
+                    ];
+                    DrawColoredPolygon(diamond,
+                        correct ? new Color(1f, 0.82f, 0.42f, 0.88f)
+                                : new Color(0.58f, 0.72f, 0.9f, 0.82f));
+                }
                 DrawArc(c, 31f, 0f, Mathf.Tau, 40, border, 1.4f, true);
                 DrawCircle(c, 3f, new Color(1f, 0.97f, 0.86f, 0.95f));
             }
@@ -308,6 +337,8 @@ public partial class Room7Final : Node2D
             int shard = i;
             var button = CreateButton(string.Empty, 16);
             button.Name = $"FragmentTray{shard}";
+            // Tray buttons keep their two-line names; the keepsake textures
+            // themselves appear in the frames above and in Mara's bag.
             button.Position = new Vector2(111 + shard * 155, 458);
             button.Size = new Vector2(150, 52);
             button.FocusMode = Control.FocusModeEnum.None;
@@ -890,7 +921,7 @@ public partial class Room7Final : Node2D
         if (position.Y >= 606f)
             return true;
 
-        if (position.X >= 954f && position.X <= 1144f && position.Y >= 552f && position.Y <= 606f)
+        if (position.X >= 1070f && position.X <= 1144f && position.Y >= 136f && position.Y <= 208f) // icon-only Bag button, top-right
             return true;
 
         if (position.X >= 12f && position.X <= 276f && position.Y >= 552f &&

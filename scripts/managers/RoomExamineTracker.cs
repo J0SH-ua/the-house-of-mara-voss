@@ -21,6 +21,8 @@ public partial class RoomExamineTracker : Node
             ["Room1"] = ["Window", "Cup2", "Toast", "Note", "Clock", "Calendar", "Drawing"],
             ["Room2"] = ["Bookshelf", "Phone", "RightChair", "LeftChair", "Painting", "Globe", "Letter"],
             ["Room3"] = ["Painting", "Bag", "Bed", "Note"],
+            ["Room4"] = ["Mirror", "HallDrawer", "TurnedFrames"],
+            ["Room4Flashback"] = ["LastPhotograph", "WallLight", "CarpetRunner"],
             ["Room5"] = ["RainWindow", "Bed", "Lamp", "Desk", "RotaryPhone", "Wardrobe"],
             ["Room6"] = ["AppleBasket", "Swing", "BrokenGate", "EmptyRoad"],
         };

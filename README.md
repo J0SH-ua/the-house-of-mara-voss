@@ -21,7 +21,7 @@ one of three endings.
 | Tab (hold) | Reveal remaining hotspots |
 | H | Hint (progressive: nudge → names the object → rings it) |
 | J / M | Memory Journal — fragments, echoes, auto-noted clues (incl. puzzle arrangements), and a free notes page kept in your save |
-| B / I or Bag button | Mara's Bag / inventory — carried, missing, and returned fragments plus learned Memory Verbs; available in every room |
+| B / I or the satchel icon (top-right) | Mara's Bag / inventory — every fragment is a visible keepsake (key, photograph, jar, frame, letter, apple); carried, missing, and returned fragments plus learned Memory Verbs; available in every room |
 | Q / Backspace | Step back — leave a puzzle for its room, or return to the previous room (also the on-screen Step Back button, bottom-left) |
 | Click / Esc (cutscene) | Advance / skip the post-Play memory cutscene (New Game only; Continue skips it) |
 | Esc / P | Pause menu (Esc first releases Clarity or a Memory Verb if armed) |
@@ -37,11 +37,13 @@ one of three endings.
 | Run state & saves | `scripts/managers/GameState.cs` | `user://mara_voss_save.json` (save v2) — carried/exactly placed fragments, examine progress, corruption, clarity, learned verbs and use counts, story flags, journal echoes/clues/notes, completed rooms and stats. Autosaves on scene change / fragment / room completion. `Globals.cs` remains the raw field store older scenes read directly. Endings already found persist across runs in settings. |
 | Clarity: Recollection | `GameState.CanRecollect/PerformRecollection`, `Hotspots.RefreshPersistent` | With ≥4 charges and a nearly-known room (≥60% examined, max 5), arming Clarity offers a choice: spend **all** charges in a custom in-game panel to reveal every remaining examinable in its true Clarify form, one by one, and ring it in clarity-blue until faced (same ring animation as Tab hints). The next room starts with (revealed + 1) Clarity. Rings and the carry persist in the save. Rooms 5–6 deliberately exclude Recollection because their authored Memory Verb puzzles should not be bypassed. |
 | Corruption | `GameState` tiers + `assets/shaders/corruption.gdshader` | Examining past an object's first layer adds corruption → tiers (Intact/Strained/Fractured/Shattered) drive the screen shader, dialogue text glitches, heartbeat and music decay. Clarity reveals also relieve corruption (−2). If corruption empties the MEMORY meter, the memory **shatters**: the room tears apart on screen, glass cracks spread across the screen in sync with crack/shatter sounds, and the bad ending (The Hollow Ending) plays, with a choice to gather the pieces (resume at 13 corruption) or let it go (menu). |
-| Clarity | `scripts/ui/ClaritySystem.cs` | Arm free, spend on reveal, cancel free, +1 charge per completed room (max 5). |
+| Clarity | `scripts/ui/ClaritySystem.cs` | Arm free, spend on reveal, cancel free, +1 charge per completed room (max 5). Spending the **last** charge in an unfinished TileMap room triggers the collapse (below). |
+| Clarity collapse | `GameState.TickCollapse`, `GameUI` collapse overlay, `assets/Music/bg/collapse.wav` | At 0 Clarity the house takes the room back: a visible **15-second** blood-red count with warning text, drowning red tint, spreading screen cracks, the corruption shader closing to full, tick/crack/whisper SFX and a tense generated F-minor bed (15 s seamless loop). Corruption seeps +1 every 3 s; solving the room's lock / recovering its fragment / regaining a charge rescues it; expiry forces the shatter (Hollow Ending). The count only drains while the player can act — never while paused, reading dialogue, or behind a panel. Fleeing the room ends it at +2 corruption. |
 | Dialogue | `scripts/ui/Dialogue.cs` | Click-to-advance typewriter with blips; `ShowText` API unchanged for existing call sites; calls serialise; every line is logged to the journal. |
-| HUD / menus | `scripts/ui/GameUI.cs` | Autoload `CanvasLayer`, everything built in code: objective, clarity pips, integrity meter, fragment counter, persistent Bag/inventory toggle, Memory Verb bar, toasts, pause, settings, journal, corruption overlay, Hollow shatter sequence, and the authored Waking / Kept House ending presentation. |
+| HUD / menus | `scripts/ui/GameUI.cs` | Autoload `CanvasLayer`, everything built in code: objective, clarity pips, integrity meter, fragment counter, icon-only Bag toggle, Memory Verb bar, toasts, pause, settings, journal, corruption + collapse overlays, Hollow shatter sequence, and the authored Waking / Kept House ending presentation. Floating HUD chips are translucent so the room stays visible under them; modal panels stay solid. All confirmations (New Game over a save, the first-run “would you like to be shown how remembering works?” tutorial question) use the game's own styled card — never the engine default dialog. The tutorial is **asked about**, once, after the New Game cutscene; either answer is remembered. |
 | Memory Verbs | `scripts/ui/MemoryVerbSystem.cs`, `GameState` | Four earned interaction modes with hotkeys and bottom-bar buttons: **Echo** (sound/order), **Anchor** (stabilise one truth), **Trace** (connect caused moments), and **Release** (resolve the assembled memory). Arming one disarms Clarity and vice versa; right-click/Esc cancels free. |
 | Final act | `scripts/world/final_act/MemoryRoomBase.cs`, `room4/Room4Puzzle.cs`, `room5/Room5Final.cs`, `room6/Room6Final.cs`, `room7/Room7Final.cs` | Room 4's hallway sentence and brass door-knock, Room 5's anchored lamp/apology, Room 6's traced last afternoon, and Room 7's exact six-fragment lived-order finale. |
+| Flashback: the Landing | `scripts/world/room4/FlashbackLanding.cs`, `scenes/world/flashback_landing.tscn` | A story location inside Room 4's mirror (look twice). The evening Ida didn't come home, in held-breath blue: the last photograph, the wall light their mother left burning, and the carpet runner where an illusion of Ida still slides in her socks. No puzzle — the gradual-reveal keystone between the hallway sentence and Rooms 5–7, whose monologues continue it. Writes “The landing, that evening” to Notes & Clues. Room 4 also gained its missing examinables: mirror, the locksmith's drawer of blank keys, and the two turned frames (Pic 11/12). |
 | Hotspots | `scripts/ui/Hotspots.cs` | Pulsing rings drawn with `_Draw`; hold-Tab reveal + level-3 hint pulse + examine click ripple. |
 
 ## Design rules implemented
@@ -49,7 +51,18 @@ one of three endings.
 - **Over-examining costs.** First look is free; deeper layers corrode the
   memory until text glitches, the score sours and you hear a heartbeat.
 - **Clarity is an economy.** Spend it to see truly *and* to steady the
-  memory; earn it back by finishing rooms.
+  memory; earn it back by finishing rooms. Spend the last of it too early
+  and the house gives you fifteen seconds to finish the room anyway.
+- **Clues never spell the answer.** Journal cards, objectives and all
+  three hint tiers point at where the truth is kept and how to read it;
+  combinations and words are only ever *read off the things themselves*
+  (a stopped clock, a letter's last line). Padlock **Unlock** buttons are
+  always visible and always pressable — a wrong code rattles, says so,
+  and sends you to the Journal (J) instead of hiding the way forward.
+- **The story is told in order, slowly.** A plain-spoken intro cutscene;
+  the house's kindnesses noticed one by one; Room 4's mirror opening onto
+  the landing flashback; Mara monologues at Rooms 5–7's thresholds;
+  suspicion aimed where it belongs — at a memory that edits, lovingly.
 - **Nothing fails silently.** Locked drawers explain themselves with
   progress (`3/7`), wrong padlock words rattle and clear, empty Clarity
   tells you how to recover it.
@@ -83,12 +96,16 @@ one of three endings.
 4. Room 1: HUD objective counts up as you examine; drawer explains its
    lock; hold Tab; press H three times; arm Clarity (C), right-click to
    release, then clarify the toast; press B to open/close the empty bag; over-examine to hear corruption rise.
-5. Padlock: dials tick; Esc backs out; dial `71483` → an **Unlock** button appears → drawer opens → **click the key** → the bottom-right Bag count becomes 1 → Room 2. (Physics picking is switched on in GameManager — SubViewports default it off, which kills `_InputEvent` targets like the key/arrows.) Stepping back to the kitchen afterwards shows the cabinet still open.
-6. Wrong 4-letter word rattles; `HOME` opens. Photo → Room 3 → jars give
+5. Padlock: dials tick; Esc backs out; **Unlock** is visible from the start — press it with a wrong code first (rattle + “check your Journal”), then dial `71483` → Unlock → drawer opens → **click the key** → open the satchel (top-right): the brass key is in the bag → Room 2. (Physics picking is switched on in GameManager — SubViewports default it off, which kills `_InputEvent` targets like the key/arrows.) Stepping back to the kitchen afterwards shows the cabinet still open.
+6. Type a wrong 4-letter word and press **Unlock** (typing alone is never judged): rattle + Journal pointer; `HOME` opens. To see the collapse: in Room 1 or 2, spend Clarity down to 0 before finishing — warning card + red 15-count + tension music; open the lock in time to be rescued, or let it expire into the shatter. Check the count holds while dialogue/journal are open. Photo → Room 3 → jars give
    Fragment III and teach **Echo** through Ida's preserved names. Room 4
    repeats the lesson in the mother's voice: ordinary photo hover only shows
    labels; arm **Echo (E)** and drift Pic 1→10 to hear the sentence and
    recover IV. Check Journal → Notes & Clues for “A way of remembering.”
+   In Room 4, also: open the hall drawer (blank keys), click the two dead-end
+   frames Pic 11/12 (turned frames), and click the mirror twice — the second
+   look steps into the **landing flashback**; face its three looks, then leave
+   by the far end of the hall (or Q).
 7. The Room 4 door opens its close-up and explains ordinary examining vs.
    Echo knocking: brass plate → keyhole beneath it, three pairs left-to-right.
    Room 5 first asks for ordinary examines, then its all-faced line hands the
@@ -108,6 +125,8 @@ one of three endings.
 
 - Continue restores progress/flags, but examine layers that freed
   themselves mid-room reappear visually (tracker still gates correctly).
+- The collapse countdown is runtime-only (not saved): quitting mid-count
+  and continuing resumes at 0 Clarity without the timer. Reloading is mercy.
 - This final-act pass was written and statically/syntax checked outside
   Godot. A local Godot .NET build and full playthrough remain necessary;
   in particular, confirm the generated Room 5/6 art aligns with the coded

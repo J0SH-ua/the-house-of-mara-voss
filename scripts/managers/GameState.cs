@@ -39,6 +39,32 @@ public partial class GameState : Node
     /// <summary>Fired once when the memory shatters. GameUI plays the bad ending.</summary>
     public event Action MemoryShattered;
     private bool _shattered;
+
+    // ------------------------------------------------------ clarity collapse
+    /// <summary>Seconds of grace after the last Clarity charge is spent in an
+    /// unfinished room before the house takes the room back entirely.</summary>
+    public const float CollapseGraceSeconds = 15f;
+
+    /// <summary>The countdown has begun (GameUI shows the takeover).</summary>
+    public event Action CollapseStarted;
+    /// <summary>Whole-second countdown updates for the on-screen timer.</summary>
+    public event Action<float> CollapseTicked;
+    /// <summary>Countdown over. True = the room was steadied in time.</summary>
+    public event Action<bool> CollapseEnded;
+
+    public bool CollapseActive { get; private set; }
+    public float CollapseSecondsLeft { get; private set; }
+    private string _collapseRoom;
+    private int _collapseLastWholeSecond = -1;
+    private float _collapseCorruptionAccumulator;
+
+    /// <summary>Story flags that mean "this puzzle just gave way" — any of
+    /// them steadies a collapsing room.</summary>
+    private static readonly HashSet<string> CollapseRescueFlags = new()
+    {
+        "room4_sentence_complete", "room4_door_opened",
+        "room5_anchored_lamp", "room5_drawer_opened",
+    };
     public bool IsShattered => _shattered;
 
     private static readonly string[] TierNames = ["Intact", "Strained", "Fractured", "Shattered"];
@@ -75,6 +101,7 @@ public partial class GameState : Node
         ["room_2_puzzle.tscn"] = "Room2",
         ["room_3.tscn"] = "Room3",
         ["room_4.tscn"] = "Room4",
+        ["flashback_landing.tscn"] = "Room4",
         ["Room_4_puzzle.tscn"] = "Room4",
         ["room_5.tscn"] = "Room5",
         ["room_6.tscn"] = "Room6",
@@ -114,6 +141,12 @@ public partial class GameState : Node
         ["Swing"] = "the swing",
         ["BrokenGate"] = "the broken garden gate",
         ["EmptyRoad"] = "the empty road",
+        ["Mirror"] = "the hallway mirror",
+        ["HallDrawer"] = "the hall table drawer",
+        ["TurnedFrames"] = "the two turned frames at the end of the hall",
+        ["LastPhotograph"] = "the last photograph",
+        ["WallLight"] = "the wall light",
+        ["CarpetRunner"] = "the carpet runner",
     };
 
     // -------------------------------------------------------------------- state
@@ -187,38 +220,42 @@ public partial class GameState : Node
 
     private static readonly System.Collections.Generic.Dictionary<string, (string Title, string Text)> ClueDefinitions = new()
     {
-        ["clock_hour"] = ("Kitchen clock — 7",
-            "Stopped at 7:42 — the time she left that morning. The hour: 7."),
-        ["calendar_day"] = ("Circled calendar — 14",
-            "October 14th, circled hard. The day: 14. Two digits — 1, then 4."),
-        ["drawing_eight"] = ("The drawing — 8",
-            "She drew the 8 the way you do when you've just learned how. Oversized. Pleased with it."),
-        ["cup_number"] = ("Ink on the cup — 3",
-            "A 3 written in ink on the base of the cup, like someone pressed the pen down too hard while writing something else nearby."),
+        ["clock_hour"] = ("The kitchen clock",
+            "Stopped at the time she left that morning. A lock that remembers a morning would keep the hour hand's number. (The clock itself is still on the kitchen wall — go and read it.)"),
+        ["calendar_day"] = ("The circled calendar",
+            "One October day, circled hard enough to tear the paper. A day of the month is not one number but two, side by side — it would take two dials to say it."),
+        ["drawing_eight"] = ("The drawing",
+            "She drew a number the way you do when you've just learned how — oversized, pleased with it, impossible to miss if you look at the drawing again."),
+        ["cup_number"] = ("Ink on the cup",
+            "A number written in ink on the base of a cup, like someone pressed the pen down too hard while writing something else nearby. Turn the cup over again if you need it told back to you."),
         ["morning_order"] = ("The morning, in order",
             "The drawer lock remembers that morning the way she does — in the order it happened:\n\n" +
             "the hour she left, the day circled on the calendar, the number she drew, the number under her cup.\n\n" +
             "(Five dials: the calendar gives two of them.)"),
-        ["letter_home"] = ("Her parents' letter — the word",
-            "\"Come home when you can — the house misses you.\"\n\n" +
-            "The table lock wants four letters, spelled the way the word is spelled."),
+        ["letter_home"] = ("Her parents' letter",
+            "Read how the letter ends: it begs her to come back to the one place a person never really leaves. The table lock wants that word — four letters, the warm word, not the building's name."),
         ["kept_names"] = ("The preserved names",
             "Ida named what frightened her and kept it where she could see it. Preservation was her courage. In Mara, it became a way not to say goodbye."),
         ["hallway_sentence"] = ("The hallway sentence",
             "\"She would have loved to see how far you've come.\"\n\n" +
             "Echo does not invent the words. It only lets them arrive in the order they were spoken."),
         ["anchor_lamp"] = ("What stayed lit",
-            "The bedside lamp is the one thing in Room 5 that never changes sides, colour, or hour. Mara's mother left a light on for whoever came home late. Mara still does.\n\n" +
+            "Something in that room was left on for whoever came home late — in the child's years and the woman's alike. It never changed sides, colour, or purpose.\n\n" +
             "Anchor remembers around what stays."),
         ["unsent_letters"] = ("The unsent apology",
             "Every October, another letter. Every letter begins, \"I should have been there at four.\" None was sent — an apology cannot be answered by the dead, so Mara addressed it to the house instead."),
         ["last_afternoon_trace"] = ("The way she went",
-            "The garden remembers in causes, not pictures:\n\n" +
-            "the apple basket she carried while she waited, the swing where she counted the minutes, the broken gate she finally slipped through, the empty road where Mara never appeared.\n\n" +
-            "Trace them in that order."),
+            "The garden remembers in causes, not pictures. Four stops, and each one told you its part: somewhere she waited with something gathered; somewhere she passed the minutes; somewhere she finally left; somewhere no one arrived.\n\n" +
+            "An afternoon only runs one way. Trace is asking you to walk it that way."),
         ["fragment_order"] = ("One morning, in order",
-            "The fragments belong in the order Mara lived them:\n\n" +
-            "I The Brass Key · II The Photograph · III The Preserved Names · IV The Hallway Sentence · V The Unsent Apology · VI The Last Afternoon."),
+            "The fragments belong in the order Mara lived them: a morning in the kitchen; a quiet room and someone breathing in it; a childhood kept and labelled; a sentence spoken in a hall; years of Octobers at a writing desk; one last afternoon.\n\n" +
+            "Your Bag (B) carries them numbered as she found them. Gold means a piece stands where it was lived."),
+        ["blank_keys"] = ("The blank keys",
+            "In the hall drawer: a locksmith's ring of keys that were never cut, and one key tag in a child's careful hand — \"for when I'm taller.\" Their father cut keys for half of Eldfen. He never got to cut hers.\n\n" +
+            "Mara has opened this drawer a hundred times in the memory and closed it without seeing them. That is what this house does with the sharpest things: it lets her look straight at them, gently."),
+        ["landing_evening"] = ("The landing, that evening",
+            "The mirror keeps one evening the hallway will not say out loud: their mother sat on the landing floor until morning, facing a door that did not open. Nobody in that house ever spoke about the night itself again — only around it, in sentences like the one the photographs are still trying to finish.\n\n" +
+            "And in every photograph on that wall, Ida's face is half-turned away. Not because she was shy. Because the memory can no longer give her back straight-on. Something in the house is editing — kindly, and constantly."),
         ["way_echo"] = ("A way of remembering — Echo: listen",
             "Ida named the spiders so fear could be spoken aloud. Echo is that courage turned into listening.\n\n" +
             "Choose Echo first (E, or its button in the Memory bar), then touch the memory. In the hallway, drift across the photographs rather than clicking them: a rising note means the next word of her mother's sentence. At the brass door, Echo turns clicks into knocks — picture first, then the keyhole beneath it.\n\n" +
@@ -228,10 +265,10 @@ public partial class GameState : Node
             "Look at a room normally first, so its contradictions can speak. Then choose Anchor (A, or its Memory-bar button) and click the one thing whose meaning never changed. A wrong Anchor does not spend the verb; the object will show why it slides. When the right thing is held, Anchor is spent and ordinary hands can work in the stillness it made."),
         ["way_trace"] = ("A way of remembering — Trace: connect",
             "An apology is not one missed minute. It is the minute, and every minute that followed because of it.\n\n" +
-            "Examine each stop normally first. When all of them have been faced, choose Trace (T, or its Memory-bar button) and click the same places again in causal order: waiting, then counting, then leaving, then the road. Rising notes and the gold line mean the memory is joining. A wrong click breaks the line, so begin again where the waiting began."),
+            "Examine each stop normally first. When all of them have been faced, choose Trace (T, or its Memory-bar button) and click the same places again in the order the afternoon actually happened — each stop already told you whether she was waiting, passing time, leaving, or gone. Rising notes and the gold line mean the memory is joining. A wrong click breaks the line, so begin again where the waiting began."),
         ["way_release"] = ("A way of remembering — Release: decide",
             "Release wakes only when Mara knows the way Ida went. It is not a better way to examine, and it cannot put a life in order for her.\n\n" +
-            "In the last room, choose a fragment from the tray, then click a hollow frame. Gold means that piece stands where she lived it; blue-grey means the house has accepted a kinder arrangement. Click any filled frame to take its fragment back. When all six stand I→VI, choose Release (R, or its Memory-bar button), click the assembled memory, and decide: wake with Ida carried forward, or keep the house that pretends she is coming back."),
+            "In the last room, choose a fragment from the tray, then click a hollow frame. Gold means that piece stands where she lived it; blue-grey means the house has accepted a kinder arrangement. Click any filled frame to take its fragment back. When every piece stands true, choose Release (R, or its Memory-bar button), click the assembled memory, and decide: wake with Ida carried forward, or keep the house that pretends she is coming back."),
     };
 
     // ---------------------------------------------------------------- lifecycle
@@ -253,12 +290,121 @@ public partial class GameState : Node
 
         if (SceneManager.Instance?.CurrentScene != null)
             PlayTimeSeconds += delta;
+
+        TickCollapse(delta);
+    }
+
+    /// <summary>The 15-second grace. Time only drains while Mara can actually
+    /// act: never while paused, mid-dialogue, behind a panel, or between
+    /// scenes. Corruption seeps in every few seconds while it runs.</summary>
+    private void TickCollapse(double delta)
+    {
+        if (!CollapseActive || _shattered)
+            return;
+        if (SceneManager.IsChanging || Dialogue.IsShowing)
+            return;
+        if (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen())
+            return;
+
+        CollapseSecondsLeft -= (float)delta;
+
+        _collapseCorruptionAccumulator += (float)delta;
+        if (_collapseCorruptionAccumulator >= 3f)
+        {
+            _collapseCorruptionAccumulator -= 3f;
+            AddCorruption(1); // may shatter early if the memory was already frayed
+            if (!CollapseActive)
+                return;
+        }
+
+        int whole = Mathf.CeilToInt(Mathf.Max(CollapseSecondsLeft, 0f));
+        if (whole != _collapseLastWholeSecond)
+        {
+            _collapseLastWholeSecond = whole;
+            CollapseTicked?.Invoke(CollapseSecondsLeft);
+        }
+
+        if (CollapseSecondsLeft <= 0f)
+            ExpireCollapse();
+    }
+
+    private void MaybeBeginCollapse()
+    {
+        if (CollapseActive || _shattered || ClarityCount > 0)
+            return;
+
+        string room = CurrentRoomName();
+        // Clarity only has false surfaces to lift in the TileMap rooms; the
+        // collapse is those rooms' punishment for spending the last charge
+        // before the room has been faced and its lock opened.
+        if (room is not ("Room1" or "Room2" or "Room3"))
+            return;
+        if (IsRoomCompleted(room))
+            return;
+        int shardIndex = room == "Room1" ? 0 : room == "Room2" ? 1 : 2;
+        if (IsShardRecovered(shardIndex))
+            return;
+
+        CollapseActive = true;
+        _collapseRoom = room;
+        CollapseSecondsLeft = CollapseGraceSeconds;
+        _collapseLastWholeSecond = (int)CollapseGraceSeconds;
+        _collapseCorruptionAccumulator = 0f;
+        CollapseStarted?.Invoke();
+        CollapseTicked?.Invoke(CollapseSecondsLeft);
+    }
+
+    /// <summary>Locks, drawers and doors call this when they give way: a
+    /// solved puzzle steadies the room before the house can take it.</summary>
+    public void NotifyPuzzleSolved()
+    {
+        if (CollapseActive)
+            EndCollapse(rescued: true);
+    }
+
+    private void EndCollapse(bool rescued, bool silent = false)
+    {
+        if (!CollapseActive)
+            return;
+        CollapseActive = false;
+        _collapseRoom = null;
+        CollapseEnded?.Invoke(rescued);
+        if (rescued && !silent)
+            Toast("The room steadies — barely. The house lets go of it, for now.");
+    }
+
+    private void ExpireCollapse()
+    {
+        EndCollapse(rescued: false, silent: true);
+        // The count ran out: the room is taken, and the taking breaks the
+        // whole memory with it.
+        int need = ShatterThreshold - (Globals.Instance?.CORRUPTION_COUNT ?? 0);
+        if (need > 0)
+            AddCorruption(need);
+        else if (!_shattered)
+        {
+            _shattered = true;
+            MemoryShattered?.Invoke();
+        }
     }
 
     private void OnSceneChanged(string scenePath)
     {
         AudioManager.Instance?.PlayMusicForScene(scenePath);
         EnsureFinalActProgress();
+
+        // Fleeing a collapsing room abandons it to the house (room <-> its
+        // puzzle close-up is the same room and never counts as fleeing).
+        if (CollapseActive)
+        {
+            string nowRoom = CurrentRoomName();
+            if (nowRoom != null && nowRoom != _collapseRoom)
+            {
+                EndCollapse(rescued: false, silent: true);
+                AddCorruption(2);
+                Toast("You leave that room to the house. It will not be the same when you return.");
+            }
+        }
 
         // A Recollection spent in the previous room sets this room's Clarity.
         string room = CurrentRoomName();
@@ -295,6 +441,7 @@ public partial class GameState : Node
             case ("Room1", "Drawing"): UnlockClue("drawing_eight"); break;
             case ("Room1", "CupExclude"): UnlockClue("cup_number"); break;
             case ("Room2", "Letter"): UnlockClue("letter_home"); break;
+            case ("Room4", "HallDrawer"): UnlockClue("blank_keys"); break;
             case ("Room3", "Jars"): UnlockClue("kept_names"); break;
             case ("Room5", "Lamp"): UnlockClue("anchor_lamp"); break;
             case ("Room5", "Desk"): UnlockClue("unsent_letters"); break;
@@ -304,6 +451,10 @@ public partial class GameState : Node
         // Ida's last afternoon has been faced.
         if (roomName == "Room6" && RoomExamineTracker.HasRoomBeenFullyExamined("Room6"))
             UnlockClue("last_afternoon_trace");
+
+        // The landing flashback writes itself down once all of it is faced.
+        if (roomName == "Room4Flashback" && RoomExamineTracker.HasRoomBeenFullyExamined("Room4Flashback"))
+            UnlockClue("landing_evening");
     }
 
     public bool HasClue(string clueId) => clueId != null && _unlockedClues.Contains(clueId);
@@ -434,10 +585,10 @@ public partial class GameState : Node
         if (room == null)
             return false;
 
-        // Rooms 5-6 are built around Memory Verbs and authored background
-        // hotspots, not TileMap Clarify layers. Never offer a Recollection
-        // there that Clarity could not visually fulfil.
-        if (room is "Room5" or "Room6")
+        // Rooms 4-6 are built around Memory Verbs and authored hotspots,
+        // not TileMap Clarify layers (Room 4's mirror/drawer/frames included).
+        // Never offer a Recollection Clarity could not visually fulfil.
+        if (room is "Room4" or "Room5" or "Room6")
             return false;
 
         remaining = GetRecollectionRemaining(room, out int examined, out int total);
@@ -558,9 +709,14 @@ public partial class GameState : Node
                     return "The sentence is whole. Take the door at the end of the hallway.";
                 if (HasFlag("room4_sentence_complete"))
                     return "The sentence is whole. The hallway door is a door again — click it.";
+                RoomExamineTracker.GetRoomProgress("Room4", out int r4Done, out int r4Total, out var r4Left);
+                if (r4Total > 0 && r4Left.Count > 0)
+                    return $"First face what this hallway keeps — its mirror, its drawer, its turned frames ({r4Done}/{r4Total}). The mirror keeps more than a reflection.";
                 return HasVerb(MemoryVerb.Echo)
                     ? "Echo (E): drift across the hallway photographs and hear their sentence in order."
                     : "Cross the hallway. The photographs are trying to say something in order.";
+            case "flashback_landing.tscn":
+                return "A memory inside the memory — the landing, that evening. Look at what it kept. The end of the hall leads back.";
             case "Room_4_puzzle.tscn":
                 return HasFlag("room4_door_opened")
                     ? "The way through stands open. Click the door to enter the room that will not stay one room."
@@ -601,10 +757,10 @@ public partial class GameState : Node
                 "Room3" => "Everything faced — open the jars, then take the hallway.",
                 "Room1" => "Fragment recovered. Onward: take the arrow to the sitting room.",
                 "Room2" => "Fragment recovered. Onward: through the table drawer.",
-                "Room5" when !IsShardRecovered(4) && !HasFlag("room5_anchored_lamp") => "Everything faced — Anchor (A) the bedside lamp, the one thing that stayed lit.",
+                "Room5" when !IsShardRecovered(4) && !HasFlag("room5_anchored_lamp") => "Everything faced — Anchor (A) the one thing whose meaning never changed between the child's room and the woman's.",
                 "Room5" when !IsShardRecovered(4) => "The room is holding still. Open the writing-desk drawer.",
                 "Room5" => "Fragment recovered. The wardrobe has remembered the garden — click it.",
-                "Room6" when !IsShardRecovered(5) => "Everything faced — Trace (T): click the stops again in causal order (waiting → counting → leaving → road). The arrangement is in your journal.",
+                "Room6" when !IsShardRecovered(5) => "Everything faced — Trace (T) the afternoon in the order it happened. Each stop told you its part; your journal (J) keeps their stories.",
                 "Room6" => "Fragment recovered. Follow the road beyond the broken gate.",
                 _ => string.Empty,
             };
@@ -629,16 +785,16 @@ public partial class GameState : Node
             {
                 1 => ("Numbers stay. A clock, a calendar, a drawing, a cup — the morning kept count. Your journal (J) keeps what you found.", null),
                 2 => (MorningClueStatus(), null),
-                _ => ("The morning in order: the hour she left (7), the circled day (1 · 4), the 8 she drew, the number under her cup (3).", null),
+                _ => ("Read the morning the way it happened: first the stopped clock's hour, then the circled day (it takes two dials), then the number in her drawing, last the ink under her cup. Every one of them is still in the kitchen where she left it — Step Back (Q) and read them off the things themselves.", null),
             };
         }
         if (file == "room_2_puzzle.tscn")
         {
             return NextHintLevel("Room2") switch
             {
-                1 => ("What did she call this place, before it was a house?", null),
-                2 => ("Her parents wrote it plainly, in the letter: \"Come home when you can.\" (It's noted in your journal — J.)", null),
-                _ => ("Four letters, spelled the way the word is spelled: H-O-M-E.", null),
+                1 => ("What did she call this place, before it was only a house?", null),
+                2 => ("Read how her parents' letter ends — the place it begs her to come back to. It's noted in your journal (J, Notes & Clues).", null),
+                _ => ("Four letters. Not the building's cold name — the warm word, the one this whole memory is trying to be. The letter in your journal (J) is your witness.", null),
             };
         }
         if (file == "room_4.tscn")
@@ -647,7 +803,7 @@ public partial class GameState : Node
             {
                 1 => ("The photographs are not separate captions. Together they are one sentence someone once said to Mara.", null),
                 2 => ("Press E for Echo, then move across the photographs from the first frame toward the last. Each correct word climbs one note.", null),
-                _ => ("The sentence is: \"She would have loved to see how far you've come.\" Begin with the first photograph on the left.", null),
+                _ => ("It is something a mother said, years later, about the daughter who is gone — a comfort meant for the one still here. Begin at the leftmost frame with Echo armed, and trust the notes: the true next word always sings higher.", null),
             };
         }
         if (file == "Room_4_puzzle.tscn")
@@ -658,7 +814,7 @@ public partial class GameState : Node
             {
                 1 => ("The three pictures are not a row to read once. Each one has a lock directly beneath it.", null),
                 2 => ("Think in pairs, left to right: cross and turn, enter and turn, close and turn. Echo must be armed for a click to count.", null),
-                _ => ("Press E, then click: bridge plate → left keyhole → little door plate → center keyhole → circle plate → right keyhole.", null),
+                _ => ("Echo armed (E): work left to right in pairs — touch a brass picture, then the keyhole directly beneath it. Three pairs, no skips. Examine each piece first and it will tell you its place in the pattern.", null),
             };
         }
         if (file == "room_5.tscn" && RoomExamineTracker.HasRoomBeenFullyExamined("Room5"))
@@ -668,8 +824,8 @@ public partial class GameState : Node
             return NextHintLevel("Room5") switch
             {
                 1 => ("One object in this room has the same purpose in childhood and adulthood: it was left on for whoever came home late.", null),
-                2 => ("Press A for Anchor, then click the bedside lamp. When the room stops sliding between years, the desk drawer will stay real long enough to open.", null),
-                _ => ("Anchor the lamp (A), then click the small drawer in the writing desk. The unsent apology is inside.", null),
+                2 => ("Anchor (A) must be chosen before the click. Choose the thing you examined that was warm in both years — the room will stop sliding around it.", null),
+                _ => ("What stays lit for latecomers, by a bed, in a child's room and a woman's? Anchor that. Afterwards ordinary hands will do: the writing desk keeps a drawer.", null),
             };
         }
         if (file == "room_6.tscn" && RoomExamineTracker.HasRoomBeenFullyExamined("Room6"))
@@ -679,8 +835,8 @@ public partial class GameState : Node
             return NextHintLevel("Room6") switch
             {
                 1 => ("Trace does not ask where Ida is in the garden. It asks what happened, one cause at a time.", null),
-                2 => ("She waited with the apples, counted on the swing, left through the broken gate, and met the empty road. Your journal (J) has the arrangement.", null),
-                _ => ("Press T, then click: apple basket → swing → broken gate → empty road.", null),
+                2 => ("Ask of each stop: was she waiting there, passing the minutes, leaving, or already gone? The stories they told you (J) hold the order.", null),
+                _ => ("Begin where waiting begins — where she stood with something gathered. End where no one is left to arrive. Let the rising notes confirm each step.", null),
             };
         }
         if (file == "room_7.tscn")
@@ -691,9 +847,12 @@ public partial class GameState : Node
             {
                 1 => ("A frame is not filled merely by having any memory in it. The order matters — and a placed fragment can be taken back.", null),
                 2 => ("Choose a carried fragment at the bottom, then click its hollow frame. Click a filled frame to reclaim it. The journal clue \"One morning, in order\" keeps the sequence.", null),
-                _ => ("Order: I Brass Key, II Photograph, III Preserved Names, IV Hallway Sentence, V Unsent Apology, VI Last Afternoon. Then press R and click the assembled memory — or choose the kept house.", null),
+                _ => ("Put them in the order Mara lived them — your Bag (B) carries them numbered as she found them, and gold means true. Then press R and click the assembled memory — or choose the kept house.", null),
             };
         }
+
+        if (file == "flashback_landing.tscn")
+            return ("Nothing here can be changed — only finally seen. The photograph, the light, the runner. The end of the hall leads back when you are ready.", null);
 
         if (room == null || !RoomExamineTracker.RoomHasRequirements(room))
             return ("Keep looking. The house notices being noticed.", null);
@@ -720,6 +879,8 @@ public partial class GameState : Node
         if (string.IsNullOrWhiteSpace(roomName) || !_roomsCompleted.Add(roomName))
             return;
 
+        if (CollapseActive && roomName == _collapseRoom)
+            EndCollapse(rescued: true);
         AudioManager.Play(Sfx.RoomComplete, -4f);
         if (RefillClarity(1))
             Toast("The room settles. Clarity +1.");
@@ -787,6 +948,7 @@ public partial class GameState : Node
         if (amount > 0 && !_shattered && Globals.Instance.CORRUPTION_COUNT >= ShatterThreshold)
         {
             _shattered = true;
+            EndCollapse(rescued: false, silent: true);
             MemoryShattered?.Invoke();
         }
     }
@@ -796,6 +958,7 @@ public partial class GameState : Node
     /// Clarity to stand on, saved. Also un-latches the shatter.</summary>
     public void RecoverFromShatter()
     {
+        EndCollapse(rescued: false, silent: true);
         if (Globals.Instance == null)
             return;
 
@@ -823,6 +986,10 @@ public partial class GameState : Node
         if ((Globals.Instance?.CORRUPTION_COUNT ?? 0) > 0)
             AddCorruption(-2);
         ObjectiveChanged?.Invoke();
+
+        // Spending the very last charge in an unfinished room starts the
+        // 15-second collapse: find what remains, open the lock, in time.
+        MaybeBeginCollapse();
     }
 
     /// <returns>True if a charge was actually restored.</returns>
@@ -834,6 +1001,8 @@ public partial class GameState : Node
         int before = Globals.Instance.CLARITY_TOGGLE_COUNT;
         Globals.Instance.CLARITY_TOGGLE_COUNT = Mathf.Min(Globals.MaxClarity, before + amount);
         ClarityChanged?.Invoke(Globals.Instance.CLARITY_TOGGLE_COUNT);
+        if (Globals.Instance.CLARITY_TOGGLE_COUNT > before && CollapseActive)
+            EndCollapse(rescued: true);
         return Globals.Instance.CLARITY_TOGGLE_COUNT > before;
     }
 
@@ -958,6 +1127,8 @@ public partial class GameState : Node
     {
         if (string.IsNullOrWhiteSpace(flag) || !_storyFlags.Add(flag))
             return false;
+        if (CollapseRescueFlags.Contains(flag))
+            NotifyPuzzleSolved();
         StoryFlagsChanged?.Invoke();
         ObjectiveChanged?.Invoke();
         if (save)
@@ -1105,6 +1276,8 @@ public partial class GameState : Node
             return false;
 
         Globals.SHARDS_COLLECTED[index] = true;
+        if (!silent)
+            NotifyPuzzleSolved();
         if (!silent)
         {
             AudioManager.Play(Sfx.ShardCollect, -3f);
@@ -1306,6 +1479,9 @@ public partial class GameState : Node
         _pendingClarityCarry = null;
         _lastRoomName = null;
         _shattered = false;
+        CollapseActive = false;
+        _collapseRoom = null;
+        CollapseSecondsLeft = 0f;
         _roomsCompleted.Clear();
         _hintLevelByRoom.Clear();
         PlayTimeSeconds = 0;
@@ -1569,6 +1745,9 @@ public partial class GameState : Node
         _pendingClarityCarry = null;
         _lastRoomName = null;
         _shattered = false;
+        CollapseActive = false;
+        _collapseRoom = null;
+        CollapseSecondsLeft = 0f;
         _roomsCompleted.Clear();
         _hintLevelByRoom.Clear();
         PlayTimeSeconds = 0;

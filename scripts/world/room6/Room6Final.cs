@@ -87,12 +87,16 @@ public partial class Room6Final : MemoryRoomBase
             return;
 
         string traceHand = MemoryVerbSystem.IsArmed(MemoryVerb.Trace)
-            ? "Trace is already in Mara's hands. Now click the stops again — not to examine them, but to join waiting to counting, counting to leaving, leaving to the road."
-            : "Now choose Trace — press T, or click Trace in the Memory bar — and click the stops again in that order: waiting, counting, leaving, road.";
+            ? "Trace is already in Mara's hands. Now click the stops again — not to examine them, but to join them in the order the afternoon actually happened. Each one has already told you its place in the day."
+            : "Now choose Trace — press T, or click Trace in the Memory bar — and click the stops again in the order the afternoon actually happened. Each one has already told you its place in the day.";
+        await SayStoryLessonOnceAsync("story_monologue_room6_afternoon",
+            "Now hear it whole, the way Mara has never once let herself hear it. Nothing monstrous happened in this garden. That is the unbearable part — there is no villain hiding in it for her to finally blame instead of herself.",
+            "A fourteen-year-old waited to be fetched by the person she trusted most in the world. The minutes went somewhere ordinary: a book, a friend's kitchen, a clock her sister simply did not look at. Ordinary minutes. Mara has been tried for them every night for twelve years, by the only court that sits.",
+            "Trace will not undo a single one of them. Trace is Mara finally walking the afternoon in the direction it actually went, instead of standing at the end of it, screaming backward.");
         await SayStoryLessonOnceAsync("story_lesson_room6_all_faced",
             "Now the garden has told four separate truths. Separately, Mara can survive them. Joined, they are the afternoon.",
             traceHand,
-            "A rising note and a gold line mean a cause has found the next moment. If the line breaks, begin where Ida waited. Mara's Journal (J) keeps the arrangement under Notes & Clues.");
+            "A rising note and a gold line mean a cause has found the next moment. If the line breaks, begin again where the waiting began. Mara's Journal (J) keeps each stop's story under Notes & Clues.");
     }
 
     protected override void OnHotspotClicked(Hotspot hotspot)
@@ -222,7 +226,7 @@ public partial class Room6Final : MemoryRoomBase
             }
             else
             {
-                gs?.Toast("Trace begins where Ida waited: the apple basket.");
+                gs?.Toast("Trace begins where Ida waited.");
             }
             return;
         }

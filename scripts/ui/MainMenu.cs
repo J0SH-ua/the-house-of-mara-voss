@@ -181,7 +181,9 @@ public partial class MainMenu : Control
 		{
 			GameUI.Instance.ShowConfirm(
 				"Begin again? The memory you preserved will be let go.",
-				StartNewGame);
+				StartNewGame,
+				"Yes, let it go",
+				"Not yet");
 			return;
 		}
 
