@@ -349,8 +349,9 @@ public partial class Room4 : Node2D
 		// the sequence out of order.
 		if (index == _currentSequenceIndex)
 		{
-			// Each correct word chimes one step higher — the sentence becomes a scale.
-			float[] steps = [1f, 1.122f, 1.26f, 1.335f, 1.498f, 1.682f, 1.888f, 2f, 2.245f, 2.52f];
+			// Each correct word chimes one step higher — an F natural-minor
+			// ladder (0,2,3,5,7,8,10,12,14,15 st) to match the score's key.
+			float[] steps = [1f, 1.122f, 1.189f, 1.335f, 1.498f, 1.587f, 1.782f, 2f, 2.245f, 2.378f];
 			float pitch = _currentSequenceIndex < steps.Length ? steps[_currentSequenceIndex] : 1f;
 			AudioManager.Play(Sfx.WordChime, -7f, pitch);
 			GameState.Instance?.Toast($"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
