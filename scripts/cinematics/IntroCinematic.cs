@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 /// <summary>
 /// Opening title sequence. Skippable with any click / Space / Enter / Esc
-/// (after a short grace period), with a quiet "click to skip" prompt.
+/// (after a short grace period), with a visible Skip button in the corner.
 /// Music goes through AudioManager so it crossfades into the menu theme
 /// instead of hard-cutting between two throwaway players.
 /// </summary>
@@ -22,7 +22,7 @@ public partial class IntroCinematic : Control
 	private Label _introText;
 	private Label _titleCard;
 	private ColorRect _whiteFlash;
-	private Label _skipPrompt;
+	private Button _skipButton;
 
 	private bool _finished;
 	private ulong _startedMsec;
@@ -48,7 +48,7 @@ public partial class IntroCinematic : Control
 		_titleCard.Modulate = new Color(1, 1, 1, 0);
 		_whiteFlash.Modulate = new Color(1, 1, 1, 0);
 
-		BuildSkipPrompt();
+		BuildSkipButton();
 		ApplyTypographyScale();
 		_startedMsec = Time.GetTicksMsec();
 
@@ -63,7 +63,7 @@ public partial class IntroCinematic : Control
 		}
 	}
 
-	public override void _UnhandledInput(InputEvent @event)
+	public override void _Input(InputEvent @event)
 	{
 		if (_finished)
 			return;
@@ -82,43 +82,72 @@ public partial class IntroCinematic : Control
 
 	public override void _Process(double delta)
 	{
-		if (_skipPrompt == null || _finished)
+		if (_skipButton == null || _finished)
 			return;
 
-		// The skip hint drifts in after a couple of seconds, then breathes.
+		// The Skip button drifts in after a couple of seconds, then breathes.
 		ulong elapsed = Time.GetTicksMsec() - _startedMsec;
 		float target = elapsed > 2200
-			? (Settings.ReduceMotionOrDefault() ? 0.5f : 0.35f + 0.2f * (float)Math.Sin(Time.GetTicksMsec() / 600.0))
+			? (Settings.ReduceMotionOrDefault() ? 0.9f : 0.8f + 0.15f * (float)Math.Sin(Time.GetTicksMsec() / 600.0))
 			: 0f;
-		var m = _skipPrompt.Modulate;
+		var m = _skipButton.Modulate;
 		m.A = Mathf.MoveToward(m.A, target, (float)delta * 0.6f);
-		_skipPrompt.Modulate = m;
+		_skipButton.Modulate = m;
 	}
 
-	private void BuildSkipPrompt()
+	private void BuildSkipButton()
 	{
-		_skipPrompt = new Label
+		_skipButton = new Button
 		{
-			Name = "SkipPrompt",
-			Text = "click to skip",
+			Name = "SkipButton",
+			Text = "Skip",
 			ZIndex = 4,
 			AnchorLeft = 1,
 			AnchorTop = 1,
 			AnchorRight = 1,
 			AnchorBottom = 1,
-			OffsetLeft = -220,
-			OffsetTop = -52,
+			OffsetLeft = -176,
+			OffsetTop = -66,
 			OffsetRight = -30,
-			OffsetBottom = -24,
-			HorizontalAlignment = HorizontalAlignment.Right,
+			OffsetBottom = -22,
+			FocusMode = FocusModeEnum.None,
 			Modulate = new Color(1, 1, 1, 0),
 		};
 		var font = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
 		if (font != null)
-			_skipPrompt.AddThemeFontOverride("font", font);
-		_skipPrompt.AddThemeFontSizeOverride("font_size", 20);
-		_skipPrompt.AddThemeColorOverride("font_color", new Color(0.85f, 0.82f, 0.78f));
-		AddChild(_skipPrompt);
+			_skipButton.AddThemeFontOverride("font", font);
+		_skipButton.AddThemeFontSizeOverride("font_size", 22);
+		_skipButton.AddThemeColorOverride("font_color", new Color(0.92f, 0.88f, 0.8f));
+		_skipButton.AddThemeColorOverride("font_hover_color", new Color(1f, 0.97f, 0.9f));
+
+		var normal = new StyleBoxFlat
+		{
+			BgColor = new Color(0.08f, 0.07f, 0.06f, 0.55f),
+			BorderColor = new Color(0.85f, 0.8f, 0.7f, 0.4f),
+		};
+		normal.SetBorderWidthAll(1);
+		normal.SetCornerRadiusAll(4);
+		normal.SetContentMarginAll(8);
+		var hover = new StyleBoxFlat
+		{
+			BgColor = new Color(0.85f, 0.78f, 0.62f, 0.22f),
+			BorderColor = new Color(0.92f, 0.87f, 0.76f, 0.75f),
+		};
+		hover.SetBorderWidthAll(1);
+		hover.SetCornerRadiusAll(4);
+		hover.SetContentMarginAll(8);
+		_skipButton.AddThemeStyleboxOverride("normal", normal);
+		_skipButton.AddThemeStyleboxOverride("hover", hover);
+		_skipButton.AddThemeStyleboxOverride("pressed", hover);
+		_skipButton.AddThemeStyleboxOverride("focus", hover);
+
+		_skipButton.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -10f);
+		_skipButton.Pressed += () =>
+		{
+			AudioManager.Play(Sfx.UiClick, -6f);
+			Finish();
+		};
+		AddChild(_skipButton);
 	}
 
 	private async Task RunSequence()
@@ -195,6 +224,8 @@ public partial class IntroCinematic : Control
 		rect.OffsetBottom = 0;
 		rect.Color = color;
 		rect.ZIndex = zIndex;
+		// Never swallow clicks: the any-input skip (and the button) must see them.
+		rect.MouseFilter = MouseFilterEnum.Ignore;
 	}
 
 	private void ApplyTypographyScale()

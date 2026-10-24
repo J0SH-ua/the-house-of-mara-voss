@@ -1526,6 +1526,28 @@ public partial class GameUI : CanvasLayer
         _cutsceneRoot.AddChild(hint);
 
         var skip = MakeButton("Skip", 20);
+        // MakeButton's normal state is transparent — invisible over the bright
+        // kitchen still. Give Skip the dark chip the Step Back button uses.
+        var skipNormal = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.72f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.35f),
+        };
+        skipNormal.SetBorderWidthAll(1);
+        skipNormal.SetCornerRadiusAll(4);
+        skipNormal.SetContentMarginAll(8);
+        var skipHover = new StyleBoxFlat
+        {
+            BgColor = new Color(0.85f, 0.75f, 0.55f, 0.16f),
+            BorderColor = new Color(0.85f, 0.75f, 0.55f, 0.5f),
+        };
+        skipHover.SetBorderWidthAll(1);
+        skipHover.SetCornerRadiusAll(4);
+        skipHover.SetContentMarginAll(8);
+        skip.AddThemeStyleboxOverride("normal", skipNormal);
+        skip.AddThemeStyleboxOverride("hover", skipHover);
+        skip.AddThemeStyleboxOverride("pressed", skipHover);
+        skip.AddThemeStyleboxOverride("focus", skipHover);
         skip.AnchorLeft = 1;
         skip.AnchorRight = 1;
         skip.OffsetLeft = -168;

@@ -117,7 +117,12 @@ public partial class MainMenu : Control
 
 	/// <summary>
 	/// A "Continue" button exists only when a memory has been preserved.
-	/// Added at runtime above Start so the original scene layout is untouched.
+	/// The menu buttons are TextureButtons cut from game_menu.png, so a plain
+	/// text Button can never align or behave like them — instead we duplicate
+	/// Start (identical layout flags, sizing, stretch and feedback) and swap
+	/// in CONTINUE art composed from the sheet's own glyphs
+	/// (assets/images/core/continue_normal.png / continue_hover.png).
+	/// Duplicate(0) copies properties only — no signal wiring rides along.
 	/// </summary>
 	private void BuildContinueButton()
 	{
@@ -128,19 +133,26 @@ public partial class MainMenu : Control
 		if (vbox == null)
 			return;
 
-		var button = new Button { Text = "CONTINUE", Name = "ContinueButton" };
-		var font = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
-		if (font != null)
-			button.AddThemeFontOverride("font", font);
-		button.AddThemeFontSizeOverride("font_size", 34);
-		button.AddThemeColorOverride("font_color", new Color(0.35f, 0.28f, 0.2f));
-		button.AddThemeColorOverride("font_hover_color", new Color(0.12f, 0.09f, 0.06f));
-		var flat = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0) };
-		button.AddThemeStyleboxOverride("normal", flat);
-		button.AddThemeStyleboxOverride("hover", flat);
-		button.AddThemeStyleboxOverride("pressed", flat);
-		button.AddThemeStyleboxOverride("focus", flat);
-		button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		if (_startButton.Duplicate(0) is not TextureButton button)
+		{
+			Logger.Warning("MainMenu: StartButton is not a TextureButton; Continue not built.");
+			return;
+		}
+
+		button.Name = "ContinueButton";
+		var normal = GD.Load<Texture2D>("res://assets/images/core/continue_normal.png");
+		var hover = GD.Load<Texture2D>("res://assets/images/core/continue_hover.png");
+		if (normal != null)
+			button.TextureNormal = normal;
+		if (hover != null)
+		{
+			// The sheet reuses the same key+tan art for hover and pressed.
+			button.TextureHover = hover;
+			button.TexturePressed = hover;
+			button.TextureFocused = hover;
+		}
+		if (normal == null && hover == null)
+			Logger.Warning("MainMenu: CONTINUE art failed to load; button keeps Start's textures.");
 
 		button.Pressed += OnContinuePressed;
 		HookButtonSounds(button);
