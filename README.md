@@ -17,7 +17,7 @@ while watching the memory **corrupt** the deeper you insist on looking.
 | C | Arm / release Clarity (or click the eye toggle in-room) |
 | Tab (hold) | Reveal remaining hotspots |
 | H | Hint (progressive: nudge → names the object → rings it) |
-| J / M | Memory Journal (fragments + recent dialogue, stats) |
+| J / M | Memory Journal — fragments, echoes, auto-noted clues (incl. puzzle arrangements), and a free notes page kept in your save |
 | Q / Backspace | Step back — leave a puzzle for its room, or return to the previous room (also the on-screen Step Back button, bottom-left) |
 | Click / Esc (cutscene) | Advance / skip the post-Play memory cutscene (New Game only; Continue skips it) |
 | Esc / P | Pause menu (Esc first releases Clarity if armed) |

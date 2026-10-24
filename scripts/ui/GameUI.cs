@@ -65,7 +65,10 @@ public partial class GameUI : CanvasLayer
     private VBoxContainer _journalList;
     private RichTextLabel _journalBody;
     private Label _journalStats;
-    private bool _journalShowingEchoes;
+    private int _journalTab; // 0 fragments · 1 echoes · 2 notes & clues
+    private VBoxContainer _notesBox;
+    private TextEdit _notesEdit;
+    private bool _notesDirty;
 
     // Settings widgets (refreshed on open)
     private readonly List<(HSlider slider, Action<float> apply)> _settingsRefreshers = new();
@@ -543,6 +546,13 @@ public partial class GameUI : CanvasLayer
 
     private void CloseJournal(bool backToPause)
     {
+        if (_notesDirty && GameState.Instance != null && _notesEdit != null)
+        {
+            GameState.Instance.SetPlayerNotes(_notesEdit.Text);
+            GameState.Instance.SaveGame("player notes");
+            _notesDirty = false;
+        }
+
         _journalPanel.Visible = false;
         AudioManager.Play(Sfx.UiBack, -6f);
         if (!backToPause && !_pausePanel.Visible && _context == UiContext.Game)
@@ -557,7 +567,7 @@ public partial class GameUI : CanvasLayer
         var gs = GameState.Instance;
         _journalStats.Text = gs?.StatsSummary() ?? string.Empty;
 
-        if (!_journalShowingEchoes)
+        if (_journalTab == 0)
         {
             for (int i = 0; i < GameState.MaxShards; i++)
             {
@@ -583,13 +593,53 @@ public partial class GameUI : CanvasLayer
             _journalBody.Text = "[i]Choose a fragment. What was recovered can be re-read; " +
                                 "what is still missing keeps its silence.[/i]";
         }
-        else
+        else if (_journalTab == 1)
         {
             var btnAll = MakeButton("All echoes");
             btnAll.Pressed += () => ShowEchoes(gs, null);
             _journalList.AddChild(btnAll);
             ShowEchoes(gs, null);
         }
+        else
+        {
+            RefreshNotesTab(gs);
+        }
+
+        _notesBox.Visible = _journalTab == 2;
+    }
+
+    private void RefreshNotesTab(GameState gs)
+    {
+        if (gs == null || gs.UnlockedClues.Count == 0)
+        {
+            var none = MakeLabel("No clues noted yet.\nExamine things closely —\nwhat matters will be kept here.", 19,
+                new Color(0.85f, 0.8f, 0.72f, 0.75f));
+            none.AutowrapMode = TextServer.AutowrapMode.Word;
+            _journalList.AddChild(none);
+        }
+        else
+        {
+            foreach (var clueId in gs.UnlockedClues)
+            {
+                if (!gs.TryGetClue(clueId, out string title, out string text))
+                    continue;
+                var btn = MakeButton(title, 20);
+                btn.Pressed += () =>
+                {
+                    AudioManager.Play(Sfx.PageTurn, -10f);
+                    _journalBody.Text = $"[b]{title}[/b]\n\n{text}";
+                };
+                _journalList.AddChild(btn);
+            }
+        }
+
+        _journalBody.Text = "[i]What the house has shown you, kept in one place. " +
+                            "Choose a clue — and use the page below for your own reckoning.[/i]";
+
+        // Sync the free-notes page; clear dirty AFTER setting Text in case
+        // the assignment itself raises TextChanged synchronously.
+        _notesEdit.Text = gs?.PlayerNotes ?? string.Empty;
+        _notesDirty = false;
     }
 
     private void ShowEchoes(GameState gs, int? _)
@@ -1086,11 +1136,14 @@ public partial class GameUI : CanvasLayer
         var tabs = new HBoxContainer();
         tabs.AddThemeConstantOverride("separation", 8);
         var fragTab = MakeButton("Fragments", 22);
-        fragTab.Pressed += () => { _journalShowingEchoes = false; RefreshJournal(); };
+        fragTab.Pressed += () => { _journalTab = 0; RefreshJournal(); };
         var echoTab = MakeButton("Echoes (recent words)", 22);
-        echoTab.Pressed += () => { _journalShowingEchoes = true; RefreshJournal(); };
+        echoTab.Pressed += () => { _journalTab = 1; RefreshJournal(); };
+        var notesTab = MakeButton("Notes & Clues", 22);
+        notesTab.Pressed += () => { _journalTab = 2; RefreshJournal(); };
         tabs.AddChild(fragTab);
         tabs.AddChild(echoTab);
+        tabs.AddChild(notesTab);
         vbox.AddChild(tabs);
 
         var split = new HBoxContainer();
@@ -1102,8 +1155,16 @@ public partial class GameUI : CanvasLayer
         _journalList.AddThemeConstantOverride("separation", 6);
         split.AddChild(_journalList);
 
-        var scroll = new ScrollContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        split.AddChild(scroll);
+        var rightCol = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        rightCol.AddThemeConstantOverride("separation", 8);
+        split.AddChild(rightCol);
+
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        rightCol.AddChild(scroll);
 
         _journalBody = new RichTextLabel
         {
@@ -1121,6 +1182,36 @@ public partial class GameUI : CanvasLayer
         _journalBody.AddThemeFontSizeOverride("normal_font_size", 21);
         _journalBody.AddThemeColorOverride("default_color", new Color(0.93f, 0.89f, 0.82f));
         scroll.AddChild(_journalBody);
+
+        // The player's own notes page (Notes & Clues tab only).
+        _notesBox = new VBoxContainer { Visible = false };
+        _notesBox.AddThemeConstantOverride("separation", 6);
+        _notesBox.AddChild(new HSeparator());
+        _notesBox.AddChild(MakeLabel("Your notes — kept with this memory", 18, new Color(0.85f, 0.8f, 0.7f, 0.85f)));
+        _notesEdit = new TextEdit
+        {
+            CustomMinimumSize = new Vector2(0, 110),
+            PlaceholderText = "Write what you want to remember — numbers, names, suspicions…",
+            WrapMode = TextEdit.LineWrappingMode.Boundary,
+        };
+        if (_font != null)
+            _notesEdit.AddThemeFontOverride("font", _font);
+        _notesEdit.AddThemeFontSizeOverride("font_size", 20);
+        _notesEdit.AddThemeColorOverride("font_color", new Color(0.95f, 0.91f, 0.83f));
+        _notesEdit.AddThemeColorOverride("font_placeholder_color", new Color(0.75f, 0.7f, 0.62f, 0.6f));
+        var notesBg = new StyleBoxFlat
+        {
+            BgColor = new Color(0.1f, 0.09f, 0.075f, 0.85f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.35f),
+        };
+        notesBg.SetBorderWidthAll(1);
+        notesBg.SetCornerRadiusAll(4);
+        notesBg.SetContentMarginAll(10);
+        _notesEdit.AddThemeStyleboxOverride("normal", notesBg);
+        _notesEdit.AddThemeStyleboxOverride("focus", notesBg);
+        _notesEdit.TextChanged += () => _notesDirty = true;
+        _notesBox.AddChild(_notesEdit);
+        rightCol.AddChild(_notesBox);
 
         vbox.AddChild(new HSeparator());
         var close = MakeButton("Close the journal");
@@ -1181,7 +1272,7 @@ public partial class GameUI : CanvasLayer
         ("Clarity",
          "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little."),
         ("Finding Things",
-         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments recovered, and everything that has been said.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
+         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
         ("What You Are Doing Here",
          "Recover the six fragments of what actually happened, and return them in the last room.\n\nSome of what the house shows you is a kindness Mara is doing herself. Your work is to tell the difference."),
     ];

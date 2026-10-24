@@ -100,6 +100,50 @@ public partial class GameState : Node
     private readonly System.Collections.Generic.Dictionary<string, int> _hintLevelByRoom = new();
     private string _lastHintKey = string.Empty;
 
+    // ------------------------------------------------------------ clues & notes
+    // The Memory Journal's working pages: clues the house has shown you are
+    // auto-noted here as you examine their sources (digits, dates, the word),
+    // and the arrangement clue assembles them once all four morning numbers
+    // are found — puzzles should be solved by remembering, not guessing.
+
+    private readonly List<string> _unlockedClues = new();
+    public IReadOnlyList<string> UnlockedClues => _unlockedClues;
+    public event Action CluesChanged;
+
+    /// <summary>Free-form player notes (journal), persisted with the save.</summary>
+    public string PlayerNotes { get; private set; } = string.Empty;
+
+    /// <summary>The four numbers hidden in Room 1's morning, in padlock order.</summary>
+    private static readonly string[] MorningClueIds = ["clock_hour", "calendar_day", "drawing_eight", "cup_number"];
+
+    /// <summary>Where each morning number hides (for "still to find" hints).</summary>
+    private static readonly System.Collections.Generic.Dictionary<string, string> MorningClueSources = new()
+    {
+        ["clock_hour"] = "the kitchen clock",
+        ["calendar_day"] = "the circled calendar",
+        ["drawing_eight"] = "the child's drawing",
+        ["cup_number"] = "the cup with ink on its base (easy to pass by — it isn't one of the room's seven)",
+    };
+
+    private static readonly System.Collections.Generic.Dictionary<string, (string Title, string Text)> ClueDefinitions = new()
+    {
+        ["clock_hour"] = ("Kitchen clock — 7",
+            "Stopped at 7:42 — the time she left that morning. The hour: 7."),
+        ["calendar_day"] = ("Circled calendar — 14",
+            "October 14th, circled hard. The day: 14. Two digits — 1, then 4."),
+        ["drawing_eight"] = ("The drawing — 8",
+            "She drew the 8 the way you do when you've just learned how. Oversized. Pleased with it."),
+        ["cup_number"] = ("Ink on the cup — 3",
+            "A 3 written in ink on the base of the cup, like someone pressed the pen down too hard while writing something else nearby."),
+        ["morning_order"] = ("The morning, in order",
+            "The drawer lock remembers that morning the way she does — in the order it happened:\n\n" +
+            "the hour she left, the day circled on the calendar, the number she drew, the number under her cup.\n\n" +
+            "(Five dials: the calendar gives two of them.)"),
+        ["letter_home"] = ("Her parents' letter — the word",
+            "\"Come home when you can — the house misses you.\"\n\n" +
+            "The table lock wants four letters, spelled the way the word is spelled."),
+    };
+
     // ---------------------------------------------------------------- lifecycle
 
     public override void _Ready()
@@ -133,6 +177,125 @@ public partial class GameState : Node
         ExaminesPerformed++;
         _hintLevelByRoom.Remove(roomName); // progress resets progressive hints
         ObjectiveChanged?.Invoke();
+
+        // Examining a clue's source notes it in the journal automatically.
+        switch ((roomName, objectName))
+        {
+            case ("Room1", "Clock"): UnlockClue("clock_hour"); break;
+            case ("Room1", "Calendar"): UnlockClue("calendar_day"); break;
+            case ("Room1", "Drawing"): UnlockClue("drawing_eight"); break;
+            case ("Room1", "CupExclude"): UnlockClue("cup_number"); break;
+            case ("Room2", "Letter"): UnlockClue("letter_home"); break;
+        }
+    }
+
+    public bool HasClue(string clueId) => clueId != null && _unlockedClues.Contains(clueId);
+
+    public bool TryGetClue(string clueId, out string title, out string text)
+    {
+        if (clueId != null && ClueDefinitions.TryGetValue(clueId, out var def))
+        {
+            title = def.Title;
+            text = def.Text;
+            return true;
+        }
+        title = string.Empty;
+        text = string.Empty;
+        return false;
+    }
+
+    /// <summary>Notes a clue in the journal (idempotent). When the fourth
+    /// morning number lands, the arrangement clue assembles itself.</summary>
+    public bool UnlockClue(string clueId)
+    {
+        if (string.IsNullOrEmpty(clueId) || !ClueDefinitions.ContainsKey(clueId) || _unlockedClues.Contains(clueId))
+            return false;
+
+        _unlockedClues.Add(clueId);
+        CluesChanged?.Invoke();
+        AudioManager.Play(Sfx.PageTurn, -11f, 1.15f);
+        Toast(clueId == "morning_order"
+            ? "The arrangement is in your journal (J)."
+            : _unlockedClues.Count == 1 ? "Clue noted — J opens your journal." : "Noted in your journal.");
+        SaveGame($"clue {clueId}");
+
+        if (clueId != "morning_order")
+        {
+            bool allMorning = true;
+            foreach (var id in MorningClueIds)
+            {
+                if (!_unlockedClues.Contains(id))
+                {
+                    allMorning = false;
+                    break;
+                }
+            }
+            if (allMorning)
+                UnlockClue("morning_order");
+        }
+
+        return true;
+    }
+
+    /// <summary>Saves written before the clue journal existed: derive noted
+    /// clues from examine progress so returning players aren't locked out of
+    /// clues whose layers they already clicked. (Uses raw clicked-layer data:
+    /// HasObjectBeenFullyExamined always says yes for *Exclude objects.)</summary>
+    private void BackfillCluesFromProgress()
+    {
+        void AddIfExamined(string room, string obj, string clueId)
+        {
+            if (RoomExamineTracker.GetClickedLayers(room, obj) != null
+                && ClueDefinitions.ContainsKey(clueId) && !_unlockedClues.Contains(clueId))
+                _unlockedClues.Add(clueId);
+        }
+
+        AddIfExamined("Room1", "Clock", "clock_hour");
+        AddIfExamined("Room1", "Calendar", "calendar_day");
+        AddIfExamined("Room1", "Drawing", "drawing_eight");
+        AddIfExamined("Room1", "CupExclude", "cup_number");
+        AddIfExamined("Room2", "Letter", "letter_home");
+
+        bool allMorning = true;
+        foreach (var id in MorningClueIds)
+        {
+            if (!_unlockedClues.Contains(id))
+            {
+                allMorning = false;
+                break;
+            }
+        }
+        if (allMorning && !_unlockedClues.Contains("morning_order"))
+            _unlockedClues.Add("morning_order");
+    }
+
+    public void SetPlayerNotes(string text) => PlayerNotes = text ?? string.Empty;
+
+    private int NextHintLevel(string key)
+    {
+        int level = Mathf.Min(_hintLevelByRoom.GetValueOrDefault(key, 0) + 1, 3);
+        _hintLevelByRoom[key] = level;
+        return level;
+    }
+
+    /// <summary>Level-2 padlock hint: what the journal holds vs what is missing.</summary>
+    private string MorningClueStatus()
+    {
+        var found = new List<string>();
+        var missing = new List<string>();
+        foreach (var id in MorningClueIds)
+        {
+            if (HasClue(id) && TryGetClue(id, out string title, out _))
+                found.Add(title);
+            else
+                missing.Add(MorningClueSources[id]);
+        }
+
+        if (missing.Count == 0)
+            return "All four numbers are noted in your journal (J, Notes & Clues). What order did the morning happen in?";
+
+        string foundText = found.Count > 0 ? $"Noted: {string.Join(" · ", found)}. " : string.Empty;
+        return $"{foundText}Still to find: {string.Join(", ", missing)}. Step Back (Q) and look again — your journal (J) keeps what you find.";
     }
 
     // -------------------------------------------------------------------- rooms
@@ -228,9 +391,23 @@ public partial class GameState : Node
         string file = FileNameOf(SceneManager.CurrentScenePath ?? string.Empty);
 
         if (file == "room_1_puzzle.tscn")
-            return ("Numbers stay. A clock, a calendar, a drawing — the morning kept count.", null);
+        {
+            return NextHintLevel("Room1") switch
+            {
+                1 => ("Numbers stay. A clock, a calendar, a drawing, a cup — the morning kept count. Your journal (J) keeps what you found.", null),
+                2 => (MorningClueStatus(), null),
+                _ => ("The morning in order: the hour she left (7), the circled day (1 · 4), the 8 she drew, the number under her cup (3).", null),
+            };
+        }
         if (file == "room_2_puzzle.tscn")
-            return ("What did she call this place, before it was a house?", null);
+        {
+            return NextHintLevel("Room2") switch
+            {
+                1 => ("What did she call this place, before it was a house?", null),
+                2 => ("Her parents wrote it plainly, in the letter: \"Come home when you can.\" (It's noted in your journal — J.)", null),
+                _ => ("Four letters, spelled the way the word is spelled: H-O-M-E.", null),
+            };
+        }
         if (file == "room_4.tscn")
             return ("The photographs are a sentence. Drift along them, in order, and listen.", null);
         if (file == "room_7.tscn")
@@ -247,9 +424,7 @@ public partial class GameState : Node
 
         string next = remaining[0];
         string pretty = PrettyObjectName(next);
-        int level = _hintLevelByRoom.GetValueOrDefault(room, 0);
-        level = Mathf.Min(level + 1, 3);
-        _hintLevelByRoom[room] = level;
+        int level = NextHintLevel(room);
 
         return level switch
         {
@@ -482,7 +657,7 @@ public partial class GameState : Node
         int mins = (int)(PlayTimeSeconds / 60);
         int secs = (int)(PlayTimeSeconds % 60);
         return $"Time in the house: {mins}:{secs:00}   ·   Examined: {ExaminesPerformed}   ·   " +
-               $"Clarity used: {ClarifiesUsed}   ·   Memory integrity: {TierDisplayName(CurrentTier)}";
+               $"Clarity used: {ClarifiesUsed}   ·   Memory integrity: {TierDisplayName(CurrentTier)}   ·   Clues noted: {_unlockedClues.Count}";
     }
 
     // ------------------------------------------------------------- save / load
@@ -514,6 +689,8 @@ public partial class GameState : Node
             PlacedShardBySlot[i] = -1;
         }
         EchoLog.Clear();
+        _unlockedClues.Clear();
+        PlayerNotes = string.Empty;
         _roomsCompleted.Clear();
         _hintLevelByRoom.Clear();
         PlayTimeSeconds = 0;
@@ -581,6 +758,12 @@ public partial class GameState : Node
         foreach (var e in EchoLog)
             echoes.Add(e);
         data["echoes"] = echoes;
+
+        var clues = new Array<string>();
+        foreach (var c in _unlockedClues)
+            clues.Add(c);
+        data["clues"] = clues;
+        data["player_notes"] = PlayerNotes;
 
         using var file = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
         if (file == null)
@@ -657,8 +840,22 @@ public partial class GameState : Node
                 LogEcho(v.AsString());
         }
 
+        if (Get(data, "clues").VariantType == Variant.Type.Array)
+        {
+            foreach (var v in data["clues"].AsGodotArray())
+            {
+                string id = v.AsString();
+                if (ClueDefinitions.ContainsKey(id) && !_unlockedClues.Contains(id))
+                    _unlockedClues.Add(id);
+            }
+        }
+        PlayerNotes = Get(data, "player_notes", string.Empty).AsString();
+        CluesChanged?.Invoke();
+
         if (Get(data, "progress").VariantType == Variant.Type.Dictionary)
             RoomExamineTracker.ImportProgress(data["progress"].AsGodotDictionary());
+
+        BackfillCluesFromProgress();
 
         AudioManager.Instance?.SetCorruption01(Corruption01);
         CorruptionChanged?.Invoke(Globals.Instance.CORRUPTION_COUNT, CurrentTier);
@@ -694,6 +891,8 @@ public partial class GameState : Node
             PlacedShardBySlot[i] = -1;
         }
         EchoLog.Clear();
+        _unlockedClues.Clear();
+        PlayerNotes = string.Empty;
         _roomsCompleted.Clear();
         _hintLevelByRoom.Clear();
         PlayTimeSeconds = 0;
