@@ -275,6 +275,10 @@ public abstract partial class MemoryRoomBase : Node2D
         RoomExamineTracker.GetRoomProgress(RoomName, out done, out total, out _);
     }
 
+    /// <summary>The room painting itself, for rooms (Room 5) that redraw
+    /// pieces of it changed.</summary>
+    protected Texture2D BackgroundTexture => _backgroundTexture;
+
     protected void SetBackgroundTint(Color tint)
     {
         _backgroundTint = tint;

@@ -164,6 +164,58 @@ public partial class GameState : Node
     /// <summary>Shard index placed in each Room 7 slot, -1 = empty.</summary>
     public int[] PlacedShardBySlot { get; } = [-1, -1, -1, -1, -1, -1];
 
+    /// <summary>Display position → shard index for the Bag, the Journal's
+    /// fragment list and Room 7's tray. Mara carries the fragments jumbled:
+    /// where a piece happens to sit in her bag says nothing about where it
+    /// belongs in her life, so the last room cannot be solved by reading
+    /// left to right. Shuffled once per run (never the lived order itself),
+    /// saved with the run, and re-shuffled on New Game.</summary>
+    private int[] _fragmentDisplayOrder;
+
+    public int[] FragmentDisplayOrder => EnsureFragmentDisplayOrder();
+
+    private int[] EnsureFragmentDisplayOrder()
+    {
+        if (!IsValidDisplayOrder(_fragmentDisplayOrder))
+            _fragmentDisplayOrder = ShuffledDisplayOrder();
+        return _fragmentDisplayOrder;
+    }
+
+    private static bool IsValidDisplayOrder(int[] order)
+    {
+        if (order == null || order.Length != MaxShards)
+            return false;
+        var seen = new bool[MaxShards];
+        bool identity = true;
+        for (int i = 0; i < MaxShards; i++)
+        {
+            int shard = order[i];
+            if (shard < 0 || shard >= MaxShards || seen[shard])
+                return false;
+            seen[shard] = true;
+            if (shard != i)
+                identity = false;
+        }
+        return !identity;
+    }
+
+    private static int[] ShuffledDisplayOrder()
+    {
+        var order = new int[MaxShards];
+        var rng = new Random();
+        do
+        {
+            for (int i = 0; i < MaxShards; i++)
+                order[i] = i;
+            for (int i = MaxShards - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (order[i], order[j]) = (order[j], order[i]);
+            }
+        } while (!IsValidDisplayOrder(order));
+        return order;
+    }
+
     /// <summary>Recent dialogue lines (the journal's "Echoes"). Oldest first.</summary>
     public List<string> EchoLog { get; } = new();
 
@@ -1648,6 +1700,7 @@ public partial class GameState : Node
         CorruptionPeak = 0;
         _pendingStartScene = null;
         _furthestScenePath = string.Empty;
+        _fragmentDisplayOrder = ShuffledDisplayOrder();
 
         AudioManager.Instance?.SetCorruption01(0f);
         CorruptionChanged?.Invoke(0, CorruptionTier.Calm);
@@ -1700,6 +1753,11 @@ public partial class GameState : Node
         data["shards_placed"] = shardsPlaced;
         data["placed_by_slot"] = placedBySlot;
         data["fragments"] = fragments;
+
+        var displayOrder = new Array<int>();
+        foreach (int shardIndex in FragmentDisplayOrder)
+            displayOrder.Add(shardIndex);
+        data["fragment_display_order"] = displayOrder;
 
         var rooms = new Array<string>();
         foreach (var r in _roomsCompleted)
@@ -1801,6 +1859,18 @@ public partial class GameState : Node
             for (int i = 0; i < MaxShards && i < arr.Count; i++)
                 ShardFragments[i] = arr[i].AsString();
         }
+
+        if (Get(data, "fragment_display_order").VariantType == Variant.Type.Array)
+        {
+            var arr = data["fragment_display_order"].AsGodotArray();
+            var loaded = new int[MaxShards];
+            for (int i = 0; i < MaxShards && i < arr.Count; i++)
+                loaded[i] = arr[i].AsInt32();
+            if (IsValidDisplayOrder(loaded))
+                _fragmentDisplayOrder = loaded;
+        }
+        if (_fragmentDisplayOrder == null)
+            _fragmentDisplayOrder = ShuffledDisplayOrder();
 
         if (Get(data, "rooms_completed").VariantType == Variant.Type.Array)
         {
@@ -1910,6 +1980,7 @@ public partial class GameState : Node
         _pendingClarityCarry = null;
         _lastRoomName = null;
         _furthestScenePath = string.Empty;
+        _fragmentDisplayOrder = null;
         _shattered = false;
         CollapseActive = false;
         _collapseRoom = null;
