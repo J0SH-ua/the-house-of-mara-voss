@@ -31,6 +31,14 @@ public partial class GameState : Node
     /// <summary>CORRUPTION_COUNT at which each tier begins (index = tier).</summary>
     private static readonly int[] TierThresholds = [0, 5, 11, 18];
 
+    /// <summary>Corruption at which the MEMORY meter is empty (Corruption01 = 1).</summary>
+    public static int ShatterThreshold => TierThresholds[^1] + 6;
+
+    /// <summary>Fired once when the memory shatters. GameUI plays the bad ending.</summary>
+    public event Action MemoryShattered;
+    private bool _shattered;
+    public bool IsShattered => _shattered;
+
     private static readonly string[] TierNames = ["Intact", "Strained", "Fractured", "Shattered"];
 
     public static readonly string[] ShardTitles =
@@ -113,6 +121,18 @@ public partial class GameState : Node
     /// <summary>Free-form player notes (journal), persisted with the save.</summary>
     public string PlayerNotes { get; private set; } = string.Empty;
 
+    // Recollection (spend-all Clarity reveal): rings persist across saves,
+    // and the next room's Clarity is set by how much was revealed.
+    private readonly HashSet<string> _persistentReveals = new(); // "Room|Object"
+    private int? _pendingClarityCarry;
+    private string _lastRoomName;
+
+    /// <summary>Extra examinables a Recollection can ring beyond the required set.</summary>
+    private static readonly System.Collections.Generic.Dictionary<string, string[]> RecollectionExtrasByRoom = new()
+    {
+        ["Room1"] = ["CupExclude"],
+    };
+
     /// <summary>The four numbers hidden in Room 1's morning, in padlock order.</summary>
     private static readonly string[] MorningClueIds = ["clock_hour", "calendar_day", "drawing_eight", "cup_number"];
 
@@ -168,6 +188,24 @@ public partial class GameState : Node
     private void OnSceneChanged(string scenePath)
     {
         AudioManager.Instance?.PlayMusicForScene(scenePath);
+
+        // A Recollection spent in the previous room sets this room's Clarity.
+        string room = CurrentRoomName();
+        if (room != null && room != _lastRoomName)
+        {
+            // First room after a load/new game: just note it. A pending carry
+            // belongs to the NEXT room, never the one it was spent in.
+            bool firstRoomSinceLoad = _lastRoomName == null;
+            if (!firstRoomSinceLoad && _pendingClarityCarry.HasValue && Globals.Instance != null)
+            {
+                Globals.Instance.CLARITY_TOGGLE_COUNT = Mathf.Clamp(_pendingClarityCarry.Value, 0, Globals.MaxClarity);
+                _pendingClarityCarry = null;
+                ClarityChanged?.Invoke(ClarityCount);
+                Toast($"The remembering cost you. Clarity here: {ClarityCount}.");
+            }
+            _lastRoomName = room;
+        }
+
         ObjectiveChanged?.Invoke();
         SaveGame("scene change");
     }
@@ -270,6 +308,83 @@ public partial class GameState : Node
     }
 
     public void SetPlayerNotes(string text) => PlayerNotes = text ?? string.Empty;
+
+    public bool IsRevealedPersistent(string roomName, string objectName)
+        => roomName != null && objectName != null && _persistentReveals.Contains($"{roomName}|{objectName}");
+
+    /// <summary>Everything in this room a Recollection could ring: required
+    /// objects plus clue sources, minus what has already been examined.</summary>
+    public List<string> GetRecollectionRemaining(string roomName, out int examinedCount, out int totalCount)
+    {
+        var remaining = new List<string>();
+        examinedCount = 0;
+        totalCount = 0;
+        if (roomName == null || !RoomExamineTracker.RequiredObjectsByRoom.TryGetValue(roomName, out var required))
+            return remaining;
+
+        var all = new List<string>(required);
+        if (RecollectionExtrasByRoom.TryGetValue(roomName, out var extras))
+            all.AddRange(extras);
+
+        totalCount = all.Count;
+        foreach (var obj in all)
+        {
+            if (RoomExamineTracker.GetClickedLayers(roomName, obj) != null)
+                examinedCount++;
+            else
+                remaining.Add(obj);
+        }
+        return remaining;
+    }
+
+    /// <summary>The offer appears when Clarity is armed: a nearly-known room
+    /// (at least 60% examined, never more than 5 required) and >= 4 charges.</summary>
+    public bool CanRecollect(out List<string> remaining, out int nextRoomClarity)
+    {
+        remaining = new List<string>();
+        nextRoomClarity = 0;
+        if (_shattered || ClarityCount < 4)
+            return false;
+
+        string room = CurrentRoomName();
+        if (room == null)
+            return false;
+
+        remaining = GetRecollectionRemaining(room, out int examined, out int total);
+        if (total == 0 || remaining.Count == 0)
+            return false;
+
+        int need = Mathf.Min(5, Mathf.CeilToInt(total * 0.6f));
+        if (examined < need)
+            return false;
+
+        nextRoomClarity = Mathf.Clamp(remaining.Count + 1, 0, Globals.MaxClarity);
+        return true;
+    }
+
+    /// <summary>Spend ALL Clarity: ring everything left in this room until it
+    /// is faced. The next room's Clarity is set to (revealed + 1): one
+    /// revealed, two; two revealed, three. Returns how many were revealed.</summary>
+    public int PerformRecollection()
+    {
+        if (Globals.Instance == null || !CanRecollect(out var remaining, out int carry))
+            return 0;
+
+        string room = CurrentRoomName();
+        foreach (var obj in remaining)
+            _persistentReveals.Add($"{room}|{obj}");
+
+        Globals.Instance.CLARITY_TOGGLE_COUNT = 0;
+        ClarifiesUsed++;
+        _pendingClarityCarry = carry;
+        ClarityChanged?.Invoke(0);
+        AudioManager.Play(Sfx.ClarifyReveal, -3f);
+        Toast(remaining.Count == 1
+            ? "One last thing shows itself. All Clarity spent."
+            : $"The room gives up its remaining {remaining.Count} secrets. All Clarity spent.");
+        SaveGame("recollection");
+        return remaining.Count;
+    }
 
     private int NextHintLevel(string key)
     {
@@ -481,7 +596,7 @@ public partial class GameState : Node
 
     public void AddCorruption(int amount)
     {
-        if (Globals.Instance == null || amount == 0)
+        if (Globals.Instance == null || amount == 0 || _shattered)
             return;
 
         var before = CurrentTier;
@@ -503,6 +618,32 @@ public partial class GameState : Node
                 _ => string.Empty,
             });
         }
+
+        if (amount > 0 && !_shattered && Globals.Instance.CORRUPTION_COUNT >= ShatterThreshold)
+        {
+            _shattered = true;
+            MemoryShattered?.Invoke();
+        }
+    }
+
+    /// <summary>After the bad ending: pull the memory back from the brink —
+    /// still Fractured (the house doesn't forget being dropped), a little
+    /// Clarity to stand on, saved. Also un-latches the shatter.</summary>
+    public void RecoverFromShatter()
+    {
+        if (Globals.Instance == null)
+            return;
+
+        Globals.Instance.CORRUPTION_COUNT = 13;
+        _shattered = false;
+        AudioManager.Instance?.SetCorruption01(Corruption01);
+        CorruptionChanged?.Invoke(Globals.Instance.CORRUPTION_COUNT, CurrentTier);
+        if (ClarityCount < 2)
+        {
+            Globals.Instance.CLARITY_TOGGLE_COUNT = 2;
+            ClarityChanged?.Invoke(ClarityCount);
+        }
+        SaveGame("shatter recovery");
     }
 
     // ------------------------------------------------------------------ clarity
@@ -691,6 +832,10 @@ public partial class GameState : Node
         EchoLog.Clear();
         _unlockedClues.Clear();
         PlayerNotes = string.Empty;
+        _persistentReveals.Clear();
+        _pendingClarityCarry = null;
+        _lastRoomName = null;
+        _shattered = false;
         _roomsCompleted.Clear();
         _hintLevelByRoom.Clear();
         PlayTimeSeconds = 0;
@@ -765,6 +910,12 @@ public partial class GameState : Node
         data["clues"] = clues;
         data["player_notes"] = PlayerNotes;
 
+        var reveals = new Array<string>();
+        foreach (var r in _persistentReveals)
+            reveals.Add(r);
+        data["reveals"] = reveals;
+        data["clarity_carry"] = _pendingClarityCarry ?? -1;
+
         using var file = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
         if (file == null)
         {
@@ -801,6 +952,9 @@ public partial class GameState : Node
         NewGameStateOnly();
 
         Globals.Instance.CORRUPTION_COUNT = Get(data, "corruption", 0).AsInt32();
+        if (Globals.Instance.CORRUPTION_COUNT >= ShatterThreshold)
+            Globals.Instance.CORRUPTION_COUNT = 13; // never load straight into the ending
+        _shattered = false;
         Globals.Instance.CLARITY_TOGGLE_COUNT = Mathf.Clamp(
             Get(data, "clarity", Globals.MaxClarity).AsInt32(), 0, Globals.MaxClarity);
         Globals.Instance.PHOTO1_COLLECTED = Get(data, "photo1", false).AsBool();
@@ -850,6 +1004,14 @@ public partial class GameState : Node
             }
         }
         PlayerNotes = Get(data, "player_notes", string.Empty).AsString();
+
+        if (Get(data, "reveals").VariantType == Variant.Type.Array)
+        {
+            foreach (var v in data["reveals"].AsGodotArray())
+                _persistentReveals.Add(v.AsString());
+        }
+        int carry = Get(data, "clarity_carry", -1).AsInt32();
+        _pendingClarityCarry = carry >= 0 ? carry : null;
         CluesChanged?.Invoke();
 
         if (Get(data, "progress").VariantType == Variant.Type.Dictionary)
@@ -893,6 +1055,10 @@ public partial class GameState : Node
         EchoLog.Clear();
         _unlockedClues.Clear();
         PlayerNotes = string.Empty;
+        _persistentReveals.Clear();
+        _pendingClarityCarry = null;
+        _lastRoomName = null;
+        _shattered = false;
         _roomsCompleted.Clear();
         _hintLevelByRoom.Clear();
         PlayTimeSeconds = 0;

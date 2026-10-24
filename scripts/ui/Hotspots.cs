@@ -66,6 +66,7 @@ public partial class HotspotMarker : Node2D
 public static class Hotspots
 {
     private static readonly List<HotspotMarker> ActiveMarkers = new();
+    private static readonly Dictionary<string, HotspotMarker> PersistentMarkers = new(); // "Room|Object"
     private static Node _markerScene;
 
     public static bool IsRevealing => ActiveMarkers.Count > 0;
@@ -144,6 +145,70 @@ public static class Hotspots
             HideAll();
         else if (_markerScene != null && _markerScene != SceneManager.Instance?.CurrentScene)
             HideAll();
+    }
+
+    /// <summary>Rings left by a Recollection: clarity-blue, they stay until
+    /// their object is faced, and reappear when the room is re-entered.
+    /// Driven by GameState's persistent reveal set; call on scene change and
+    /// whenever an examine lands. (HideAll deliberately leaves these alone.)</summary>
+    public static void RefreshPersistent()
+    {
+        var scene = SceneManager.Instance?.CurrentScene;
+        string room = GameState.CurrentRoomName();
+        var gs = GameState.Instance;
+        if (scene == null || room == null || gs == null)
+        {
+            ClearPersistentMarkers();
+            return;
+        }
+
+        var stale = new List<string>();
+        foreach (var (key, marker) in PersistentMarkers)
+        {
+            string obj = key.Substring(key.IndexOf('|') + 1);
+            bool wanted = key.StartsWith(room + "|")
+                          && GodotObject.IsInstanceValid(marker)
+                          && marker.GetParent() == scene
+                          && gs.IsRevealedPersistent(room, obj)
+                          && RoomExamineTracker.GetClickedLayers(room, obj) == null;
+            if (!wanted)
+                stale.Add(key);
+        }
+        foreach (var key in stale)
+        {
+            if (GodotObject.IsInstanceValid(PersistentMarkers[key]))
+                PersistentMarkers[key].QueueFree();
+            PersistentMarkers.Remove(key);
+        }
+
+        foreach (var layer in FindExamineLayers(scene))
+        {
+            string obj = layer.GetParent()?.Name.ToString() ?? string.Empty;
+            string key = $"{room}|{obj}";
+            if (!gs.IsRevealedPersistent(room, obj) || PersistentMarkers.ContainsKey(key))
+                continue;
+            if (RoomExamineTracker.GetClickedLayers(room, obj) != null)
+                continue;
+            if (!IsLayerActive(layer))
+                continue;
+
+            var marker = SpawnMarker(scene, LayerCenter(layer), oneShot: false, track: false);
+            if (marker != null)
+            {
+                marker.RingColor = new Color(0.72f, 0.88f, 1f, 0.95f);
+                PersistentMarkers[key] = marker;
+            }
+        }
+    }
+
+    private static void ClearPersistentMarkers()
+    {
+        foreach (var marker in PersistentMarkers.Values)
+        {
+            if (GodotObject.IsInstanceValid(marker))
+                marker.QueueFree();
+        }
+        PersistentMarkers.Clear();
     }
 
     // ------------------------------------------------------------------ helpers

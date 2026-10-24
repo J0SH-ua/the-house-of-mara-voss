@@ -19,6 +19,7 @@ public static class Sfx
     public const string WordChime = "word_chime";
     public const string CorruptionGlitch = "corruption_glitch";
     public const string CorruptionWhisper = "corruption_whisper";
+    public const string MemoryShatter = "memory_shatter";
     public const string DialTick = "dial_tick";
     public const string KeyType = "key_type";
     public const string LockOpen = "lock_open";

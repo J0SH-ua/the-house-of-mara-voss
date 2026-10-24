@@ -44,6 +44,16 @@ public partial class GameUI : CanvasLayer
     // Post-Play memory cutscene
     private Control _cutsceneRoot;
     private TextureRect _cutsceneImage;
+
+    // Bad ending (memory shatter) overlay
+    private Control _shatterRoot;
+    private ColorRect _shatterBlack;
+    private Label _shatterCaption;
+    private Label _shatterTitle;
+    private HBoxContainer _shatterChoices;
+    private bool _shatterPlaying;
+    private bool _shatterAdvanceRequested;
+    private bool _wasClarityArmed;
     private Label _cutsceneCaption;
     private Tween _cutsceneTween;
     private bool _cutscenePlaying;
@@ -97,6 +107,7 @@ public partial class GameUI : CanvasLayer
         BuildMenuButton();
         BuildTutorialPanel();
         BuildCutscene();
+        BuildShatterOverlay();
 
         _confirmDialog = new ConfirmationDialog
         {
@@ -115,15 +126,21 @@ public partial class GameUI : CanvasLayer
             gs.ShardsChanged += RefreshHud;
             gs.ObjectiveChanged += RefreshHud;
             gs.ToastRequested += ShowToast;
+            gs.MemoryShattered += OnMemoryShattered;
             gs.Saved += () => ShowToast("Memory preserved.", quiet: true);
         }
-        RoomExamineTracker.ExamineRecorded += (_, _) => RefreshHud();
+        RoomExamineTracker.ExamineRecorded += (_, _) =>
+        {
+            RefreshHud();
+            Hotspots.RefreshPersistent(); // a faced recollection ring goes dark
+        };
         SceneManager.SceneChanged += scenePath =>
         {
             Hotspots.HideAll();
             ClaritySystem.RefreshToggleTiles();
             RefreshHud();
             MaybePlayCutsceneThenTutorial(scenePath);
+            Hotspots.RefreshPersistent();
         };
         if (Settings.Instance != null)
             Settings.Instance.Changed += RefreshCorruptionShader;
@@ -145,12 +162,19 @@ public partial class GameUI : CanvasLayer
 
         RefreshBackButton();
 
+        // Arming Clarity in a nearly-known room offers the Recollection once
+        // per arming — the player chooses: one reveal, or everything at once.
+        bool armedNow = ClaritySystem.IsArmed;
+        if (armedNow && !_wasClarityArmed)
+            MaybeOfferRecollection();
+        _wasClarityArmed = armedNow;
+
         // Corruption overlay follows the live value, easing toward it.
         if (_corruptionMaterial != null && _corruptionRect.Visible)
         {
             float current = (float)_corruptionMaterial.GetShaderParameter("intensity").AsDouble();
-            float target = TargetCorruptionIntensity();
-            float next = Mathf.MoveToward(current, target, (float)delta * 0.25f);
+            float target = _shatterPlaying ? 1f : TargetCorruptionIntensity();
+            float next = Mathf.MoveToward(current, target, (float)delta * (_shatterPlaying ? 1.2f : 0.25f));
             if (Mathf.Abs(next - current) > 0.0005f)
                 _corruptionMaterial.SetShaderParameter("intensity", next);
         }
@@ -225,6 +249,17 @@ public partial class GameUI : CanvasLayer
             else if (@event.IsActionPressed(InputSetup.PauseGame) || @event.IsActionPressed(InputSetup.SkipDialogue))
             {
                 _cutsceneSkipRequested = true;
+                GetViewport().SetInputAsHandled();
+            }
+            return;
+        }
+
+        if (_shatterPlaying)
+        {
+            if (@event.IsActionPressed(InputSetup.AdvanceDialogue)
+                || (@event is InputEventMouseButton smb && smb.Pressed && smb.ButtonIndex == MouseButton.Left))
+            {
+                _shatterAdvanceRequested = true;
                 GetViewport().SetInputAsHandled();
             }
             return;
@@ -321,7 +356,7 @@ public partial class GameUI : CanvasLayer
     {
         return (_pausePanel?.Visible ?? false) || (_settingsPanel?.Visible ?? false)
                || (_journalPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
-               || (_cutsceneRoot?.Visible ?? false);
+               || (_cutsceneRoot?.Visible ?? false) || (_shatterRoot?.Visible ?? false);
     }
 
     private void RequestHint()
@@ -698,9 +733,13 @@ public partial class GameUI : CanvasLayer
 
     // ================================================================= confirm
 
-    public void ShowConfirm(string text, Action onConfirm)
+    public void ShowConfirm(string text, Action onConfirm) => ShowConfirm(text, onConfirm, "Yes", "Cancel");
+
+    public void ShowConfirm(string text, Action onConfirm, string okText, string cancelText)
     {
         _confirmDialog.DialogText = text;
+        _confirmDialog.OkButtonText = okText;
+        _confirmDialog.CancelButtonText = cancelText;
         _confirmAction = onConfirm;
         _confirmDialog.PopupCentered();
     }
@@ -1315,9 +1354,9 @@ public partial class GameUI : CanvasLayer
         ("The House",
          "This is Mara's childhood home as she remembers it — which is not the same as how it was.\n\nClick objects to examine them. The objective at the top-left keeps count: face everything a room is holding, and its locked place will open."),
         ("Look Deeper — Gently",
-         "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage."),
+         "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage.\n\nIf the MEMORY meter ever empties, the memory shatters. That is an ending — the hollow one."),
         ("Clarity",
-         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little."),
+         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to ring everything that remains — and wake in the next room with fewer charges."),
         ("Finding Things",
          "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
         ("What You Are Doing Here",
@@ -1462,6 +1501,216 @@ public partial class GameUI : CanvasLayer
         ("res://assets/images/bgs/DoorCloseup.png",
          "You are the part of her that still knows. Walk the rooms. Face what each one is holding. Recover the six fragments of the truth — and let Mara wake up.", 7.5f),
     ];
+
+    // =========================================================== recollection
+
+    private void MaybeOfferRecollection()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || _context != UiContext.Game || _shatterPlaying || _cutscenePlaying
+            || Dialogue.IsShowing || AnyPanelOpen() || _confirmDialog.Visible)
+            return;
+        if (!gs.CanRecollect(out var remaining, out int carry))
+            return;
+
+        int charges = gs.ClarityCount;
+        ShowConfirm(
+            $"This room is almost known to you.\n\nSpend ALL {charges} Clarity to remember the remaining {remaining.Count} thing(s) at once? They will be ringed in blue until you face them.\n\nThe remembering will cost you: you will enter the next room with {carry} Clarity.",
+            () =>
+            {
+                if (gs.PerformRecollection() > 0)
+                {
+                    ClaritySystem.Disarm(silent: true);
+                    Hotspots.RefreshPersistent();
+                    RefreshHud();
+                }
+            },
+            "Remember it all", "One at a time");
+    }
+
+    // ============================================================ bad ending
+
+    private static readonly string[] ShatterCards =
+    [
+        "You looked, and looked, until looking was all that was left.",
+        "A memory can be handled only so many times before it handles you.",
+        "The rooms fold inward. The light goes out of the kitchen first.",
+        "Somewhere, in an apartment whose door never opens, Mara Voss sits down in the dark — and does not get up.",
+    ];
+
+    private void BuildShatterOverlay()
+    {
+        _shatterRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop };
+        _shatterRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        AddChild(_shatterRoot);
+
+        _shatterBlack = new ColorRect { Color = new Color(0, 0, 0, 0), MouseFilter = Control.MouseFilterEnum.Ignore };
+        _shatterBlack.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _shatterRoot.AddChild(_shatterBlack);
+
+        _shatterTitle = MakeLabel(string.Empty, 54, new Color(0.85f, 0.72f, 0.55f));
+        _shatterTitle.HorizontalAlignment = HorizontalAlignment.Center;
+        _shatterTitle.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _shatterTitle.AnchorLeft = 0.5f; _shatterTitle.AnchorRight = 0.5f;
+        _shatterTitle.AnchorTop = 0.5f; _shatterTitle.AnchorBottom = 0.5f;
+        _shatterTitle.OffsetLeft = -520; _shatterTitle.OffsetRight = 520;
+        _shatterTitle.OffsetTop = -250; _shatterTitle.OffsetBottom = -170;
+        _shatterRoot.AddChild(_shatterTitle);
+
+        _shatterCaption = MakeLabel(string.Empty, 32, new Color(0.94f, 0.9f, 0.82f));
+        _shatterCaption.AutowrapMode = TextServer.AutowrapMode.Word;
+        _shatterCaption.HorizontalAlignment = HorizontalAlignment.Center;
+        _shatterCaption.VerticalAlignment = VerticalAlignment.Center;
+        _shatterCaption.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _shatterCaption.AnchorLeft = 0.5f; _shatterCaption.AnchorRight = 0.5f;
+        _shatterCaption.AnchorTop = 0.5f; _shatterCaption.AnchorBottom = 0.5f;
+        _shatterCaption.OffsetLeft = -520; _shatterCaption.OffsetRight = 520;
+        _shatterCaption.OffsetTop = -150; _shatterCaption.OffsetBottom = 80;
+        _shatterRoot.AddChild(_shatterCaption);
+
+        _shatterChoices = new HBoxContainer { Visible = false, Alignment = BoxContainer.AlignmentMode.Center };
+        _shatterChoices.AddThemeConstantOverride("separation", 28);
+        _shatterChoices.AnchorLeft = 0.5f; _shatterChoices.AnchorRight = 0.5f;
+        _shatterChoices.AnchorTop = 0.5f; _shatterChoices.AnchorBottom = 0.5f;
+        _shatterChoices.OffsetLeft = -340; _shatterChoices.OffsetRight = 340;
+        _shatterChoices.OffsetTop = 120; _shatterChoices.OffsetBottom = 180;
+        var gather = MakeButton("Gather the pieces", 24);
+        gather.Pressed += OnGatherPiecesPressed;
+        var letGo = MakeButton("Let it go", 24);
+        letGo.Pressed += OnLetGoPressed;
+        _shatterChoices.AddChild(gather);
+        _shatterChoices.AddChild(letGo);
+        _shatterRoot.AddChild(_shatterChoices);
+
+        _shatterRoot.GuiInput += @event =>
+        {
+            if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                _shatterAdvanceRequested = true;
+        };
+    }
+
+    private async void OnMemoryShattered()
+    {
+        if (_shatterPlaying)
+            return;
+        _shatterPlaying = true;
+
+        // The world comes apart first — still live behind the effect.
+        Dialogue.NotifySkipPressed();
+        ClaritySystem.Disarm(silent: true);
+        Hotspots.HideAll();
+        _shatterRoot.Visible = true;
+        _shatterChoices.Visible = false;
+        _shatterCaption.Text = string.Empty;
+        _shatterTitle.Text = string.Empty;
+        SetShatterBlack(0f);
+
+        AudioManager.Play(Sfx.MemoryShatter, -3f);
+        AudioManager.Play(Sfx.CorruptionGlitch, -5f, 0.8f);
+        AudioManager.Instance?.SetCorruption01(1f);
+
+        // ~2.4s of the room tearing itself apart (intensity ramps in _Process).
+        for (int i = 0; i < 6; i++)
+        {
+            _corruptionMaterial?.SetShaderParameter("frozen", i % 2 == 0 ? 1f : 0f);
+            SetShatterBlack(i % 2 == 0 ? 0.28f : 0.06f);
+            await ShatterTimer(0.4f);
+        }
+
+        // Then the dark takes it.
+        AudioManager.Instance?.StopMusic(0.8f);
+        AudioManager.Play(Sfx.CorruptionWhisper, -12f, 0.7f);
+        var fade = CreateTween();
+        fade.TweenMethod(Callable.From<float>(SetShatterBlack), 0.1f, 1f, 1.4f);
+        await ToSignal(fade, Tween.SignalName.Finished);
+        GetTree().Paused = true;
+        AudioManager.Instance?.PlayMusic(AudioManager.MusicFinale, -12f, 2.5f);
+
+        foreach (var card in ShatterCards)
+        {
+            _shatterCaption.Text = card;
+            _shatterCaption.Modulate = new Color(1, 1, 1, 0);
+            var t = CreateTween(); t.SetPauseMode(Tween.TweenPauseMode.Process);
+            t.TweenProperty(_shatterCaption, "modulate:a", 1f, 1.1f);
+            await ShatterWaitAdvance(5.5f);
+            var t2 = CreateTween(); t2.SetPauseMode(Tween.TweenPauseMode.Process);
+            t2.TweenProperty(_shatterCaption, "modulate:a", 0f, 0.7f);
+            await ToSignal(t2, Tween.SignalName.Finished);
+        }
+
+        _shatterTitle.Text = "THE HOLLOW ENDING";
+        _shatterCaption.Text = "The memory, shattered.";
+        _shatterTitle.Modulate = new Color(1, 1, 1, 0);
+        _shatterCaption.Modulate = new Color(1, 1, 1, 0);
+        var t3 = CreateTween(); t3.SetPauseMode(Tween.TweenPauseMode.Process);
+        t3.TweenProperty(_shatterTitle, "modulate:a", 1f, 1.6f);
+        t3.Parallel().TweenProperty(_shatterCaption, "modulate:a", 0.9f, 1.6f);
+        await ToSignal(t3, Tween.SignalName.Finished);
+        await ShatterWaitAdvance(2.5f);
+
+        _shatterChoices.Visible = true;
+    }
+
+    private void SetShatterBlack(float alpha)
+    {
+        if (_shatterBlack != null)
+            _shatterBlack.Color = new Color(0, 0, 0, Mathf.Clamp(alpha, 0f, 1f));
+    }
+
+    private async System.Threading.Tasks.Task ShatterTimer(float seconds)
+    {
+        await ToSignal(GetTree().CreateTimer(seconds, true), SceneTreeTimer.SignalName.Timeout);
+    }
+
+    private async System.Threading.Tasks.Task ShatterWaitAdvance(float seconds)
+    {
+        _shatterAdvanceRequested = false;
+        ulong deadline = Time.GetTicksMsec() + (ulong)(seconds * 1000f);
+        while (Time.GetTicksMsec() < deadline && !_shatterAdvanceRequested)
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        _shatterAdvanceRequested = false;
+    }
+
+    private void OnGatherPiecesPressed()
+    {
+        AudioManager.Play(Sfx.ClarifyReveal, -6f);
+        GameState.Instance?.RecoverFromShatter();
+        EndShatter(toMenu: false);
+    }
+
+    private void OnLetGoPressed()
+    {
+        // Recover first so a later Continue never loads into the ending.
+        GameState.Instance?.RecoverFromShatter();
+        EndShatter(toMenu: true);
+    }
+
+    private async void EndShatter(bool toMenu)
+    {
+        _shatterChoices.Visible = false;
+        _shatterTitle.Text = string.Empty;
+        _shatterCaption.Text = toMenu ? string.Empty : "Steady. Breathe. The house holds — barely.";
+        GetTree().Paused = false;
+        RefreshCorruptionShader();
+
+        if (toMenu)
+        {
+            _shatterPlaying = false;
+            _shatterRoot.Visible = false;
+            QuitToMenu();
+            return;
+        }
+
+        AudioManager.Instance?.PlayMusicForScene(SceneManager.CurrentScenePath);
+        var fade = CreateTween();
+        fade.TweenMethod(Callable.From<float>(SetShatterBlack), 1f, 0f, 1.6f);
+        fade.Parallel().TweenProperty(_shatterCaption, "modulate:a", 0f, 1.6f);
+        await ToSignal(fade, Tween.SignalName.Finished);
+        _shatterRoot.Visible = false;
+        _shatterPlaying = false;
+        RefreshHud();
+        Hotspots.RefreshPersistent();
+    }
 
     private void BuildCutscene()
     {

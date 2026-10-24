@@ -510,6 +510,24 @@ def build():
                     env_exp(sine(480, 0.04), 0.001, 0.014), 0, 0.5)
     write_wav("clock_tick.wav", tick, peak=0.36)
 
+    # ---- memory_shatter.wav: the bad ending. A music-box phrase sags out of
+    #      tune while glassy pings scatter down, then the floor drops out.
+    sh = zeros(3.8)
+    phrase = zeros(3.8)
+    for j, nm in enumerate(["F", "Ab", "C", "Eb", "Db"]):
+        add_into(phrase, music_box(note(nm, 1), 1.6, tau=0.5), 0.16 * j, 0.5)
+    phrase = sag_resample(phrase, min_rate=0.8, center=0.7, width=0.4)
+    phrase = (phrase + zeros(3.8))[: sec(3.8)]
+    add_into(sh, phrase, 0, 0.8)
+    rng_sh = random.Random(41)
+    for k in range(9):
+        f = 3200 * (0.93 ** k) * rng_sh.uniform(0.97, 1.03)
+        add_into(sh, env_exp(sine(f, 0.2), 0.001, 0.045), 0.5 + 0.11 * k * rng_sh.uniform(0.8, 1.3), 0.14)
+    add_into(sh, crackle(3.0, 55, gain=0.055), 0.4, 0.8)
+    add_into(sh, thump(46, 0.8, sweep_to=0.45), 0.55, 0.95)
+    sh = dropout(sh, [(0.95, 0.07, 0.85), (1.4, 0.05, 0.7), (2.1, 0.09, 0.9)])
+    write_wav("memory_shatter.wav", filt(sh, "lp", 5200), peak=0.6)
+
     print("Done.")
 
 

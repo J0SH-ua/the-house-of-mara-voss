@@ -96,6 +96,33 @@ public partial class ExamineHandler : TileMapLayer
         return GetCellSourceId(cell) != -1;
     }
 
+    /// <summary>What this object sounds like when examined. An explicit
+    /// per-scene ExamineSfxId wins; otherwise the object name picks a fitting
+    /// sound/pitch from the pack, so a clock ticks and paper rustles.</summary>
+    private (string id, float pitch) ResolveExamineSound()
+    {
+        if (!string.IsNullOrWhiteSpace(ExamineSfxId) && ExamineSfxId != Sfx.Examine)
+            return (ExamineSfxId, 1f);
+
+        string obj = GetParent()?.Name.ToString() ?? string.Empty;
+        return obj switch
+        {
+            "Clock" => (Sfx.ClockTick, 1f),
+            "Calendar" or "Note" or "Letter" or "Drawing" or "Bookshelf" => (Sfx.PageTurn, 1f),
+            "Cup" or "Cup2" or "CupExclude" => (Sfx.DialTick, 1.7f), // ceramic tick
+            "Toast" => (Sfx.Examine, 1.1f),
+            "Window" => (Sfx.Examine, 1.2f),
+            "Phone" => (Sfx.KeyType, 0.85f),                          // mechanical click
+            "Globe" => (Sfx.Examine, 0.8f),                           // heavy wood
+            "Painting" => (Sfx.Examine, 0.95f),
+            "LeftChair" or "RightChair" => (Sfx.Examine, 0.85f),
+            "Jars" => (Sfx.WordChime, 1.3f),                          // glass
+            "Bag" => (Sfx.PageTurn, 0.75f),                           // soft rustle
+            "Bed" => (Sfx.Examine, 0.7f),                             // muffled cloth
+            _ => (Sfx.Examine, 1f),
+        };
+    }
+
     /// <summary>Faint paper-brush tick on hover-enter, throttled so sweeping
     /// the mouse across a crowded shelf doesn't machine-gun.</summary>
     private static void PlayHoverTick()
@@ -136,7 +163,8 @@ public partial class ExamineHandler : TileMapLayer
             return;
         }
 
-        AudioManager.PlayVaried(string.IsNullOrWhiteSpace(ExamineSfxId) ? Sfx.Examine : ExamineSfxId, -3f, 1f, 0.05f);
+        var (sfxId, sfxPitch) = ResolveExamineSound();
+        AudioManager.PlayVaried(sfxId, -3f, sfxPitch, 0.05f);
         Hotspots.SpawnRipple(GetGlobalMousePosition());
 
         ExamineHelper.CycleExamine(this);
