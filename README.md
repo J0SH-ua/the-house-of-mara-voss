@@ -21,6 +21,7 @@ one of three endings.
 | Tab (hold) | Reveal remaining hotspots |
 | H | Hint (progressive: nudge → names the object → rings it) |
 | J / M | Memory Journal — fragments, echoes, auto-noted clues (incl. puzzle arrangements), and a free notes page kept in your save |
+| B / I or Bag button | Mara's Bag / inventory — carried, missing, and returned fragments plus learned Memory Verbs; available in every room |
 | Q / Backspace | Step back — leave a puzzle for its room, or return to the previous room (also the on-screen Step Back button, bottom-left) |
 | Click / Esc (cutscene) | Advance / skip the post-Play memory cutscene (New Game only; Continue skips it) |
 | Esc / P | Pause menu (Esc first releases Clarity or a Memory Verb if armed) |
@@ -38,7 +39,7 @@ one of three endings.
 | Corruption | `GameState` tiers + `assets/shaders/corruption.gdshader` | Examining past an object's first layer adds corruption → tiers (Intact/Strained/Fractured/Shattered) drive the screen shader, dialogue text glitches, heartbeat and music decay. Clarity reveals also relieve corruption (−2). If corruption empties the MEMORY meter, the memory **shatters**: the room tears apart on screen, glass cracks spread across the screen in sync with crack/shatter sounds, and the bad ending (The Hollow Ending) plays, with a choice to gather the pieces (resume at 13 corruption) or let it go (menu). |
 | Clarity | `scripts/ui/ClaritySystem.cs` | Arm free, spend on reveal, cancel free, +1 charge per completed room (max 5). |
 | Dialogue | `scripts/ui/Dialogue.cs` | Click-to-advance typewriter with blips; `ShowText` API unchanged for existing call sites; calls serialise; every line is logged to the journal. |
-| HUD / menus | `scripts/ui/GameUI.cs` | Autoload `CanvasLayer`, everything built in code: objective, clarity pips, integrity meter, fragment counter, Memory Verb bar, toasts, pause, settings, journal, corruption overlay, Hollow shatter sequence, and the authored Waking / Kept House ending presentation. |
+| HUD / menus | `scripts/ui/GameUI.cs` | Autoload `CanvasLayer`, everything built in code: objective, clarity pips, integrity meter, fragment counter, persistent Bag/inventory toggle, Memory Verb bar, toasts, pause, settings, journal, corruption overlay, Hollow shatter sequence, and the authored Waking / Kept House ending presentation. |
 | Memory Verbs | `scripts/ui/MemoryVerbSystem.cs`, `GameState` | Four earned interaction modes with hotkeys and bottom-bar buttons: **Echo** (sound/order), **Anchor** (stabilise one truth), **Trace** (connect caused moments), and **Release** (resolve the assembled memory). Arming one disarms Clarity and vice versa; right-click/Esc cancels free. |
 | Final act | `scripts/world/final_act/MemoryRoomBase.cs`, `room4/Room4Puzzle.cs`, `room5/Room5Final.cs`, `room6/Room6Final.cs`, `room7/Room7Final.cs` | Room 4's hallway sentence and brass door-knock, Room 5's anchored lamp/apology, Room 6's traced last afternoon, and Room 7's exact six-fragment lived-order finale. |
 | Hotspots | `scripts/ui/Hotspots.cs` | Pulsing rings drawn with `_Draw`; hold-Tab reveal + level-3 hint pulse + examine click ripple. |
@@ -54,6 +55,9 @@ one of three endings.
   tells you how to recover it.
 - **Everything read can be re-read** in the Memory Journal (J), including
   lines from examine layers that free themselves.
+- **Inventory is global.** The old inventory icons were duplicated inside
+  Rooms 1–3 only; Mara's Bag (B/I) is part of the persistent HUD and works
+  in every room, distinguishing fragments still carried from ones returned.
 - **Collection is idempotent.** Shards go through
   `GameState.CollectShard` (this fixed a double-fired brass-key handler
   and an arrow that granted the shard for free).
@@ -73,8 +77,8 @@ one of three endings.
 3. Play: intro (click to skip) → menu music + Settings button → Start.
 4. Room 1: HUD objective counts up as you examine; drawer explains its
    lock; hold Tab; press H three times; arm Clarity (C), right-click to
-   release, then clarify the toast; over-examine to hear corruption rise.
-5. Padlock: dials tick; Esc backs out; dial `71483` → an **Unlock** button appears → drawer opens → **click the key** → Room 2. (Physics picking is switched on in GameManager — SubViewports default it off, which kills `_InputEvent` targets like the key/arrows.) Stepping back to the kitchen afterwards shows the cabinet still open.
+   release, then clarify the toast; press B to open/close the empty bag; over-examine to hear corruption rise.
+5. Padlock: dials tick; Esc backs out; dial `71483` → an **Unlock** button appears → drawer opens → **click the key** → the bottom-right Bag count becomes 1 → Room 2. (Physics picking is switched on in GameManager — SubViewports default it off, which kills `_InputEvent` targets like the key/arrows.) Stepping back to the kitchen afterwards shows the cabinet still open.
 6. Wrong 4-letter word rattles; `HOME` opens. Photo → Room 3 → jars give
    Fragment III/Echo. In Room 4, ordinary photo hover only shows labels;
    arm **Echo (E)** and drift Pic 1→10 to hear the sentence and recover IV.

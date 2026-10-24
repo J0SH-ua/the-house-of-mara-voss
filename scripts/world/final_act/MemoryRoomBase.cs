@@ -412,6 +412,9 @@ public abstract partial class MemoryRoomBase : Node2D
         if (position.Y >= 606f)
             return true;
 
+        if (position.X >= 954f && position.X <= 1144f && position.Y >= 552f && position.Y <= 606f)
+            return true;
+
         if (position.X >= 12f && position.X <= 276f && position.Y >= 552f &&
             SceneManager.TryGetBackTarget(SceneManager.CurrentScenePath, out _, out _))
             return true;

@@ -31,6 +31,38 @@ public partial class GameUI : CanvasLayer
     private ProgressBar _integrityBar;
     private HBoxContainer _clarityPips;
     private Label _shardLabel;
+
+    // Bag / inventory (global replacement for the old per-room inventory sprites)
+    private Button _bagButton;
+    private Control _bagPanel;
+    private GridContainer _bagGrid;
+    private Label _bagSummary;
+    private Label _bagDetailTitle;
+    private Label _bagDetailStatus;
+    private RichTextLabel _bagDetailBody;
+    private Label _bagVerbsLabel;
+    private int _bagSelectedIndex = -1;
+    private bool _openedBagFromPause;
+
+    private static readonly string[] BagShortNames =
+    [
+        "Brass Key",
+        "Photograph",
+        "Preserved Names",
+        "Hallway Sentence",
+        "Unsent Apology",
+        "Last Afternoon",
+    ];
+    private static readonly string[] BagRomanNumerals = ["I", "II", "III", "IV", "V", "VI"];
+    private static readonly string[] BagIconPaths =
+    [
+        "res://assets/images/core/shards/brass_key.png",
+        "res://assets/images/core/shards/photo.png",
+        null,
+        null,
+        null,
+        null,
+    ];
     private Label _toastLabel;
     private PanelContainer _toastPanel;
     private Tween _toastTween;
@@ -132,10 +164,12 @@ public partial class GameUI : CanvasLayer
         BuildCorruptionOverlay();
         BuildHud();
         BuildBackButton();
+        BuildBagButton();
         BuildMemoryVerbBar();
         BuildPausePanel();
         BuildSettingsPanel();
         BuildJournalPanel();
+        BuildBagPanel();
         BuildMenuButton();
         BuildTutorialPanel();
         BuildCutscene();
@@ -158,8 +192,10 @@ public partial class GameUI : CanvasLayer
             gs.CorruptionChanged += (_, _) => RefreshHud();
             gs.ClarityChanged += _ => RefreshHud();
             gs.ShardsChanged += RefreshHud;
+            gs.ShardsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.ObjectiveChanged += RefreshHud;
             gs.VerbsChanged += RefreshMemoryVerbBar;
+            gs.VerbsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.StoryFlagsChanged += RefreshHud;
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
@@ -174,6 +210,9 @@ public partial class GameUI : CanvasLayer
         {
             MemoryVerbSystem.Cancel(silent: true);
             Hotspots.HideAll();
+            if (_bagPanel != null)
+                _bagPanel.Visible = false;
+            _openedBagFromPause = false;
             ClaritySystem.RefreshToggleTiles();
             RefreshHud();
             MaybePlayCutsceneThenTutorial(scenePath);
@@ -351,6 +390,13 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
+        if (@event.IsActionPressed(InputSetup.ToggleBag) && !FocusIsTextEditing())
+        {
+            ToggleBag();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         if (@event.IsActionPressed(InputSetup.PauseGame))
         {
             HandleEscape();
@@ -425,6 +471,11 @@ public partial class GameUI : CanvasLayer
             CloseTutorial();
             return;
         }
+        if (_bagPanel.Visible)
+        {
+            CloseBag(backToPause: _openedBagFromPause);
+            return;
+        }
         if (_settingsPanel.Visible)
         {
             CloseSettings(backToPause: _pausePanel.Visible);
@@ -470,7 +521,7 @@ public partial class GameUI : CanvasLayer
     private bool AnyPanelOpen()
     {
         return (_pausePanel?.Visible ?? false) || (_settingsPanel?.Visible ?? false)
-               || (_journalPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
+               || (_journalPanel?.Visible ?? false) || (_bagPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
                || (_cutsceneRoot?.Visible ?? false) || (_endingRoot?.Visible ?? false)
                || (_shatterRoot?.Visible ?? false)
                || (_recollectionPanel?.Visible ?? false);
@@ -691,6 +742,8 @@ public partial class GameUI : CanvasLayer
                 ResumeGame();
             _pausePanel.Visible = false;
             _journalPanel.Visible = false;
+            _bagPanel.Visible = false;
+            _openedBagFromPause = false;
             if (_cutscenePlaying)
                 _cutsceneSkipRequested = true;
             if (next == UiContext.Intro)
@@ -723,6 +776,8 @@ public partial class GameUI : CanvasLayer
         GetTree().Paused = false;
         _pausePanel.Visible = false;
         _journalPanel.Visible = false;
+        _bagPanel.Visible = false;
+        _openedBagFromPause = false;
         _settingsPanel.Visible = false;
         AudioManager.Instance?.SetPausedDuck(false);
     }
@@ -943,6 +998,408 @@ public partial class GameUI : CanvasLayer
         _confirmDialog.PopupCentered();
     }
 
+    // ================================================================= bag UI
+
+    private void BuildBagButton()
+    {
+        _bagButton = MakeButton("Bag · 0 (B)", 22);
+        _bagButton.Name = "BagButton";
+        _bagButton.AnchorLeft = 1;
+        _bagButton.AnchorRight = 1;
+        _bagButton.AnchorTop = 1;
+        _bagButton.AnchorBottom = 1;
+        _bagButton.OffsetLeft = -190;
+        _bagButton.OffsetRight = -16;
+        _bagButton.OffsetTop = -90;
+        _bagButton.OffsetBottom = -46;
+        _bagButton.FocusMode = Control.FocusModeEnum.None;
+        _bagButton.TooltipText = "Open Mara's bag / inventory (B or I)";
+
+        var normal = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.8f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.42f),
+        };
+        normal.SetBorderWidthAll(1);
+        normal.SetCornerRadiusAll(4);
+        normal.SetContentMarginAll(8);
+        var hover = new StyleBoxFlat
+        {
+            BgColor = new Color(0.85f, 0.75f, 0.55f, 0.18f),
+            BorderColor = new Color(0.85f, 0.75f, 0.55f, 0.58f),
+        };
+        hover.SetBorderWidthAll(1);
+        hover.SetCornerRadiusAll(4);
+        hover.SetContentMarginAll(8);
+        _bagButton.AddThemeStyleboxOverride("normal", normal);
+        _bagButton.AddThemeStyleboxOverride("hover", hover);
+        _bagButton.AddThemeStyleboxOverride("pressed", hover);
+        _bagButton.AddThemeStyleboxOverride("focus", hover);
+        _bagButton.Pressed += ToggleBag;
+        _hud.AddChild(_bagButton);
+        RefreshBagButton();
+    }
+
+    private void BuildBagPanel()
+    {
+        _bagPanel = new Control { Visible = false, Name = "BagPanel" };
+        _bagPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _bagPanel.AddChild(DimBackdrop());
+
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _bagPanel.AddChild(center);
+
+        var panel = MakePanel();
+        panel.CustomMinimumSize = new Vector2(940, 560);
+        center.AddChild(panel);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 10);
+        panel.AddChild(vbox);
+
+        var title = MakeLabel("Mara's Bag", 34);
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(title);
+
+        _bagSummary = MakeLabel("", 19, new Color(0.85f, 0.79f, 0.67f, 0.9f));
+        _bagSummary.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(_bagSummary);
+        vbox.AddChild(new HSeparator());
+
+        var split = new HBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+        split.AddThemeConstantOverride("separation", 16);
+        vbox.AddChild(split);
+
+        _bagGrid = new GridContainer
+        {
+            Columns = 3,
+            CustomMinimumSize = new Vector2(520, 290),
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        _bagGrid.AddThemeConstantOverride("h_separation", 8);
+        _bagGrid.AddThemeConstantOverride("v_separation", 8);
+        split.AddChild(_bagGrid);
+
+        var detail = new VBoxContainer
+        {
+            CustomMinimumSize = new Vector2(340, 0),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        detail.AddThemeConstantOverride("separation", 8);
+        split.AddChild(detail);
+
+        _bagDetailTitle = MakeLabel("", 27);
+        _bagDetailTitle.AutowrapMode = TextServer.AutowrapMode.Word;
+        detail.AddChild(_bagDetailTitle);
+
+        _bagDetailStatus = MakeLabel("", 19, new Color(0.95f, 0.82f, 0.55f, 0.95f));
+        _bagDetailStatus.AutowrapMode = TextServer.AutowrapMode.Word;
+        detail.AddChild(_bagDetailStatus);
+
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        detail.AddChild(scroll);
+
+        _bagDetailBody = new RichTextLabel
+        {
+            BbcodeEnabled = true,
+            FitContent = true,
+            ScrollActive = false,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        if (_font != null)
+        {
+            _bagDetailBody.AddThemeFontOverride("normal_font", _font);
+            _bagDetailBody.AddThemeFontOverride("bold_font", _font);
+            _bagDetailBody.AddThemeFontOverride("italics_font", _font);
+        }
+        _bagDetailBody.AddThemeFontSizeOverride("normal_font_size", 21);
+        _bagDetailBody.AddThemeColorOverride("default_color", new Color(0.93f, 0.89f, 0.82f));
+        scroll.AddChild(_bagDetailBody);
+
+        _bagVerbsLabel = MakeLabel("", 18, new Color(0.82f, 0.78f, 0.68f, 0.9f));
+        _bagVerbsLabel.AutowrapMode = TextServer.AutowrapMode.Word;
+        _bagVerbsLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(_bagVerbsLabel);
+
+        vbox.AddChild(new HSeparator());
+        var close = MakeButton("Close the bag");
+        close.Pressed += () => CloseBag(backToPause: _openedBagFromPause);
+        vbox.AddChild(close);
+
+        AddChild(_bagPanel);
+    }
+
+    public void OpenBag(bool fromPause = false)
+    {
+        if (_context != UiContext.Game || _bagPanel == null || _endingPlaying ||
+            _cutscenePlaying || _shatterPlaying)
+            return;
+        if (!fromPause && Dialogue.IsShowing)
+            return;
+
+        MemoryVerbSystem.Cancel(silent: true);
+        ClaritySystem.Disarm(silent: true);
+        Hotspots.HideAll();
+
+        _openedBagFromPause = fromPause || _pausePanel.Visible;
+        _pausePanel.Visible = false;
+        GetTree().Paused = true;
+        _bagPanel.Visible = true;
+        AudioManager.Play(Sfx.PageTurn, -8f, 0.92f);
+        RefreshBag(selectFirstUsable: true);
+    }
+
+    private void CloseBag(bool backToPause = false)
+    {
+        if (_bagPanel == null)
+            return;
+
+        if (_bagPanel.Visible)
+            AudioManager.Play(Sfx.UiBack, -7f);
+        _bagPanel.Visible = false;
+        _openedBagFromPause = false;
+
+        if (backToPause && _context == UiContext.Game)
+        {
+            _pausePanel.Visible = true;
+            GetTree().Paused = true;
+        }
+        else if (_context == UiContext.Game)
+        {
+            GetTree().Paused = false;
+        }
+    }
+
+    private void ToggleBag()
+    {
+        if (_bagPanel?.Visible ?? false)
+            CloseBag(backToPause: _openedBagFromPause);
+        else if (_pausePanel?.Visible ?? false)
+            OpenBag(fromPause: true);
+        else if (!Dialogue.IsShowing && !AnyPanelOpen())
+            OpenBag();
+    }
+
+    private void RefreshBagButton()
+    {
+        if (_bagButton == null)
+            return;
+
+        var gs = GameState.Instance;
+        int carried = gs?.CountCarried() ?? 0;
+        int recovered = gs?.CountRecovered() ?? 0;
+        _bagButton.Text = $"Bag · {carried} (B)";
+        _bagButton.TooltipText = $"Open Mara's bag — {carried} carried, {recovered}/6 recovered (B or I)";
+    }
+
+    private void RefreshBag(bool selectFirstUsable = false)
+    {
+        if (_bagGrid == null || _bagDetailTitle == null)
+            return;
+
+        var gs = GameState.Instance;
+        RefreshBagButton();
+
+        if (gs == null)
+        {
+            _bagSummary.Text = "Nothing can be carried yet.";
+            _bagDetailTitle.Text = "An empty bag";
+            _bagDetailStatus.Text = "";
+            _bagDetailBody.Text = "[i]Recover a memory fragment and it will be kept here.[/i]";
+            _bagVerbsLabel.Text = "";
+            return;
+        }
+
+        if (selectFirstUsable || _bagSelectedIndex < 0 || _bagSelectedIndex >= GameState.MaxShards ||
+            !gs.IsShardRecovered(_bagSelectedIndex))
+        {
+            _bagSelectedIndex = -1;
+            for (int i = 0; i < GameState.MaxShards; i++)
+            {
+                if (Globals.SHARDS_COLLECTED[i])
+                {
+                    _bagSelectedIndex = i;
+                    break;
+                }
+            }
+            if (_bagSelectedIndex < 0)
+            {
+                for (int i = 0; i < GameState.MaxShards; i++)
+                {
+                    if (gs.IsShardRecovered(i))
+                    {
+                        _bagSelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        int placed = gs.CountPlaced();
+        _bagSummary.Text = $"Carried {gs.CountCarried()} · Recovered {gs.CountRecovered()}/{GameState.MaxShards}" +
+                           (placed > 0 ? $" · Returned {placed}" : "");
+
+        foreach (var child in _bagGrid.GetChildren())
+            child.QueueFree();
+
+        for (int i = 0; i < GameState.MaxShards; i++)
+        {
+            int index = i;
+            bool carried = Globals.SHARDS_COLLECTED[index];
+            int placedSlot = System.Array.IndexOf(gs.PlacedShardBySlot, index);
+            bool recovered = carried || placedSlot >= 0;
+            bool selected = index == _bagSelectedIndex;
+
+            var slot = MakeButton(string.Empty, 17);
+            slot.CustomMinimumSize = new Vector2(164, 138);
+            slot.FocusMode = Control.FocusModeEnum.None;
+            slot.Disabled = !recovered;
+            slot.TooltipText = recovered ? GameState.ShardTitles[index] : "Not recovered yet";
+            slot.Pressed += () =>
+            {
+                _bagSelectedIndex = index;
+                RefreshBag();
+            };
+            ApplyBagSlotStyle(slot, selected, recovered, carried);
+
+            var slotBox = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+            slotBox.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            slotBox.OffsetLeft = 8;
+            slotBox.OffsetTop = 7;
+            slotBox.OffsetRight = -8;
+            slotBox.OffsetBottom = -7;
+            slotBox.AddThemeConstantOverride("separation", 3);
+            slot.AddChild(slotBox);
+
+            Texture2D icon = recovered && BagIconPaths[index] != null
+                ? GD.Load<Texture2D>(BagIconPaths[index])
+                : null;
+            if (icon != null)
+            {
+                var image = new TextureRect
+                {
+                    Texture = icon,
+                    CustomMinimumSize = new Vector2(0, 58),
+                    ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                    StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                    MouseFilter = Control.MouseFilterEnum.Ignore,
+                    Modulate = carried ? Colors.White : new Color(0.72f, 0.82f, 1f, 0.72f),
+                };
+                slotBox.AddChild(image);
+            }
+            else
+            {
+                var sigil = MakeLabel(recovered ? BagRomanNumerals[index] : "?", 31,
+                    recovered ? new Color(1f, 0.86f, 0.52f, 0.96f)
+                              : new Color(0.55f, 0.5f, 0.44f, 0.55f));
+                sigil.CustomMinimumSize = new Vector2(0, 58);
+                sigil.HorizontalAlignment = HorizontalAlignment.Center;
+                sigil.VerticalAlignment = VerticalAlignment.Center;
+                sigil.MouseFilter = Control.MouseFilterEnum.Ignore;
+                slotBox.AddChild(sigil);
+            }
+
+            var name = MakeLabel(recovered ? BagShortNames[index] : "Unremembered", 17,
+                recovered ? new Color(0.94f, 0.9f, 0.82f) : new Color(0.58f, 0.54f, 0.48f, 0.65f));
+            name.CustomMinimumSize = new Vector2(0, 40);
+            name.HorizontalAlignment = HorizontalAlignment.Center;
+            name.VerticalAlignment = VerticalAlignment.Center;
+            name.AutowrapMode = TextServer.AutowrapMode.Word;
+            name.MouseFilter = Control.MouseFilterEnum.Ignore;
+            slotBox.AddChild(name);
+
+            var status = MakeLabel(carried ? "IN BAG" : placedSlot >= 0 ? "RETURNED" : "NOT FOUND", 14,
+                carried ? new Color(1f, 0.84f, 0.5f)
+                        : placedSlot >= 0 ? new Color(0.66f, 0.8f, 1f)
+                                          : new Color(0.55f, 0.51f, 0.46f, 0.55f));
+            status.HorizontalAlignment = HorizontalAlignment.Center;
+            status.MouseFilter = Control.MouseFilterEnum.Ignore;
+            slotBox.AddChild(status);
+
+            _bagGrid.AddChild(slot);
+        }
+
+        if (_bagSelectedIndex >= 0 && gs.IsShardRecovered(_bagSelectedIndex))
+        {
+            int index = _bagSelectedIndex;
+            int placedSlot = System.Array.IndexOf(gs.PlacedShardBySlot, index);
+            _bagDetailTitle.Text = GameState.ShardTitles[index];
+            _bagDetailStatus.Text = Globals.SHARDS_COLLECTED[index]
+                ? "In Mara's bag"
+                : $"Returned to frame {BagRomanNumerals[Mathf.Clamp(placedSlot, 0, GameState.MaxShards - 1)]}";
+            string body = !string.IsNullOrWhiteSpace(gs.ShardFragments[index])
+                ? gs.ShardFragments[index]
+                : GameState.DefaultShardFragments[index];
+            _bagDetailBody.Text = body;
+        }
+        else
+        {
+            _bagDetailTitle.Text = "Nothing carried yet";
+            _bagDetailStatus.Text = "The bag is light.";
+            _bagDetailBody.Text = "[i]Fragments Mara recovers will be kept here until the last room asks for them back. The Memory Journal (J) still keeps everything she has heard.[/i]";
+        }
+
+        var learned = new List<string>();
+        foreach (var verb in new[] { MemoryVerb.Echo, MemoryVerb.Anchor, MemoryVerb.Trace, MemoryVerb.Release })
+        {
+            if (gs.HasVerb(verb))
+                learned.Add($"{GameState.VerbDisplayName(verb)} ({MemoryVerbSystem.HotkeyLabel(verb)})");
+        }
+        _bagVerbsLabel.Text = learned.Count > 0
+            ? "Ways of remembering: " + string.Join(" · ", learned)
+            : "Ways of remembering: none learned yet — the house teaches later.";
+    }
+
+    private static void ApplyBagSlotStyle(Button button, bool selected, bool recovered, bool carried)
+    {
+        var normal = new StyleBoxFlat
+        {
+            BgColor = selected
+                ? new Color(0.5f, 0.35f, 0.13f, 0.95f)
+                : carried
+                    ? new Color(0.11f, 0.085f, 0.055f, 0.94f)
+                    : recovered
+                        ? new Color(0.08f, 0.12f, 0.18f, 0.92f)
+                        : new Color(0.05f, 0.045f, 0.04f, 0.62f),
+            BorderColor = selected
+                ? new Color(1f, 0.87f, 0.5f, 0.98f)
+                : new Color(0.72f, 0.62f, 0.45f, recovered ? 0.52f : 0.25f),
+        };
+        normal.SetBorderWidthAll(selected ? 2 : 1);
+        normal.SetCornerRadiusAll(5);
+        normal.SetContentMarginAll(6);
+
+        var hover = new StyleBoxFlat
+        {
+            BgColor = new Color(0.62f, 0.44f, 0.17f, 0.94f),
+            BorderColor = new Color(1f, 0.9f, 0.58f, 0.95f),
+        };
+        hover.SetBorderWidthAll(1);
+        hover.SetCornerRadiusAll(5);
+        hover.SetContentMarginAll(6);
+
+        var disabled = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.5f),
+            BorderColor = new Color(0.45f, 0.4f, 0.32f, 0.22f),
+        };
+        disabled.SetBorderWidthAll(1);
+        disabled.SetCornerRadiusAll(5);
+        disabled.SetContentMarginAll(6);
+
+        button.AddThemeStyleboxOverride("normal", normal);
+        button.AddThemeStyleboxOverride("hover", hover);
+        button.AddThemeStyleboxOverride("pressed", hover);
+        button.AddThemeStyleboxOverride("focus", hover);
+        button.AddThemeStyleboxOverride("disabled", disabled);
+    }
+
     // ===================================================================== HUD
 
     private void RefreshHud()
@@ -973,6 +1430,7 @@ public partial class GameUI : CanvasLayer
               (gs.CountPlaced() > 0 ? $"   ·   Returned {gs.CountPlaced()}" : "")
             : string.Empty;
 
+        RefreshBagButton();
         RefreshMemoryVerbBar();
     }
 
@@ -1203,7 +1661,7 @@ public partial class GameUI : CanvasLayer
         controlsChip.OffsetRight = 924;
         controlsChip.OffsetTop = -40;
         controlsChip.OffsetBottom = -8;
-        var controls = MakeLabel("Tab — look      C — clarity      E/A/T/R — memory verbs      H — hint      J — journal      Q — back      Esc — pause",
+        var controls = MakeLabel("Tab — look      C — clarity      E/A/T/R — memory verbs      H — hint      B — bag      J — journal      Q — back      Esc — pause",
             16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
         controls.MouseFilter = Control.MouseFilterEnum.Ignore;
         controlsChip.AddChild(controls);
@@ -1242,6 +1700,10 @@ public partial class GameUI : CanvasLayer
         var journal = MakeButton("Memory Journal");
         journal.Pressed += () => OpenJournal(fromPause: true);
         vbox.AddChild(journal);
+
+        var bag = MakeButton("Bag / Inventory");
+        bag.Pressed += () => OpenBag(fromPause: true);
+        vbox.AddChild(bag);
 
         var howTo = MakeButton("How to Play");
         howTo.Pressed += () => OpenTutorial(fromPause: true);
@@ -1561,7 +2023,7 @@ public partial class GameUI : CanvasLayer
         ("Memory Verbs",
          "Later rooms teach new ways of remembering, one at a time:\n\nE — Echo: hear words and moments in their spoken order.\nA — Anchor: hold one true thing still.\nT — Trace: connect causes in the order they happened.\nR — Release: decide what a completed memory is for.\n\nLearned verbs also appear as buttons at the bottom of the screen. Right-click or Esc releases one unspent."),
         ("Finding Things",
-         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
+         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress B (or click Bag) for Mara's inventory: the fragments she is carrying, what has been returned, and the Memory Verbs she has learned.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
         ("What You Are Doing Here",
          "Recover the six fragments of what actually happened, and return them in the last room.\n\nSome of what the house shows you is a kindness Mara is doing herself. Your work is to tell the difference."),
     ];
