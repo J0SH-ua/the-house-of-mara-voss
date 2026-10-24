@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmaraidagloom1"
-path="res://.godot/imported/Ending_Ida_Gloom.png-49d991b7deedeb61122a1fb394417158.ctex"
+uid="uid://cyluo7vfbm6hq"
+path="res://.godot/imported/Ending_Ida_Gloom.png-4d9ddca478cb576e1347b2d4647cbadd.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/bgs/Ending_Ida_Gloom.png"
-dest_files=["res://.godot/imported/Ending_Ida_Gloom.png-49d991b7deedeb61122a1fb394417158.ctex"]
+dest_files=["res://.godot/imported/Ending_Ida_Gloom.png-4d9ddca478cb576e1347b2d4647cbadd.ctex"]
 
 [params]
 
