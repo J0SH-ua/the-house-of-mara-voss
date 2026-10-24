@@ -94,6 +94,7 @@ public partial class Photo1Reward : Area2D
 			{
 				CursorHelper.BeginHover(this, PointerCursorPath, 32, 32);
 				_isHovering = true;
+				AudioManager.Play(Sfx.UiHover, -12f);
 			}
 		}
 		else if (_isHovering)

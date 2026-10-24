@@ -96,7 +96,7 @@ public partial class Room2Puzzle : Area2D
 
 		if (filtered.Length == 1)
 		{
-			AudioManager.PlayVaried(Sfx.KeyType, -7f, 1f, 0.08f);
+			AudioManager.PlayVaried(Sfx.KeyType, -5f, 1f, 0.08f);
 			if (index < _letterBoxes.Length - 1)
 				GetBox(index + 1)?.GrabFocus();
 		}

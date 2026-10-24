@@ -111,8 +111,8 @@ public partial class MainMenu : Control
 	{
 		if (button == null)
 			return;
-		button.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -13f);
-		button.Pressed += () => AudioManager.Play(Sfx.UiClick, -6f);
+		button.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -8f);
+		button.Pressed += () => AudioManager.Play(Sfx.UiClick, -4f);
 	}
 
 	/// <summary>

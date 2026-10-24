@@ -134,6 +134,18 @@ public partial class IntroCinematic : Control
 			await ShowLine("It is a story a mind tells itself about what it cannot bear to look at directly.", 1.6f, 2.0f, 1.0f);
 			if (_finished) return;
 
+			await ShowLine("Mara Voss has not left her apartment in four months. She is not aware of this.", 1.4f, 2.2f, 1.0f);
+			if (_finished) return;
+
+			await ShowLine("She believes she is home — in Eldfen, in the house she grew up in. Warm. Kept. Not empty.", 1.4f, 2.2f, 1.0f);
+			if (_finished) return;
+
+			await ShowLine("So her mind built the house again. Seven rooms. Each one holds a version of something that happened.", 1.4f, 2.2f, 1.0f);
+			if (_finished) return;
+
+			await ShowLine("Some of what it shows you is true. Some of it is what she can bear instead.", 1.4f, 2.0f, 1.0f);
+			if (_finished) return;
+
 			await ShowLine("You are not Mara Voss.", 1.0f, 1.0f, 0.8f);
 			if (_finished) return;
 

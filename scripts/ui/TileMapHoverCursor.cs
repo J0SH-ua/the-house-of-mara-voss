@@ -44,6 +44,7 @@ public partial class TileMapHoverCursor : TileMapLayer
             {
                 ApplyCursor();
                 _isHovering = true;
+                AudioManager.Play(Sfx.UiHover, -12f);
             }
         }
         else

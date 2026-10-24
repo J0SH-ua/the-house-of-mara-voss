@@ -316,31 +316,31 @@ def build():
     # -- UI: felt, paper, wood — nothing digital ------------------------------
     s = add_into(felt_piano(note("F"), 0.18, tau=0.05),
                  env_exp(filt(white(0.05), "lp", 900), 0.001, 0.012), 0, 0.35)
-    write_wav("ui_click.wav", s, peak=0.30)
+    write_wav("ui_click.wav", s, peak=0.50)
 
-    write_wav("ui_hover.wav", env_exp(filt(white(0.035), "lp", 750, passes=2), 0.002, 0.010), peak=0.09)
+    write_wav("ui_hover.wav", env_exp(filt(white(0.035), "lp", 750, passes=2), 0.002, 0.010), peak=0.22)
 
     s = add_into(thump(mf(note("F", -1)), 0.12, sweep_to=0.75),
                  env_exp(filt(white(0.06), "lp", 700), 0.001, 0.016), 0, 0.4)
-    write_wav("ui_back.wav", s, peak=0.30)
+    write_wav("ui_back.wav", s, peak=0.42)
 
     # -- Dialogue: muted piano-string taps --------------------------------------
-    blip = felt_piano(note("F"), 0.09, tau=0.028)
-    write_wav("dialogue_blip.wav", blip, peak=0.22)
+    blip = felt_piano(note("F", 1), 0.09, tau=0.028)  # F4: audible on small speakers, still felt
+    write_wav("dialogue_blip.wav", blip, peak=0.40)
 
     swish = filt_sweep(white(0.20), "bp", 330, 1050, q=1.0)
     env_ar(swish, 0.02, 0.11)
-    write_wav("dialogue_advance.wav", filt(swish, "lp", 1100, passes=2), peak=0.28)
+    write_wav("dialogue_advance.wav", filt(swish, "lp", 1100, passes=2), peak=0.42)
 
     page = filt_sweep(white(0.55), "bp", 300, 900, q=0.9)
     swell(page, 0.45)
     add_into(page, filt(white(0.05), "lp", 1400), 0.04, 0.10)
-    write_wav("page_turn.wav", filt(page, "lp", 1100, passes=2), peak=0.28)
+    write_wav("page_turn.wav", filt(page, "lp", 1100, passes=2), peak=0.40)
 
     # -- Examine / clarity ---------------------------------------------------------
     ex = env_exp(filt(white(0.42), "lp", 480), 0.015, 0.18)
     add_into(ex, thump(mf(note("F", -1)), 0.16, sweep_to=0.7), 0.01, 0.55)
-    write_wav("examine.wav", ex, peak=0.36)
+    write_wav("examine.wav", ex, peak=0.50)
 
     # Clarity arm = memory surfacing: reversed-feel swell of the F-minor triad.
     arm = zeros(0.85)
@@ -349,7 +349,7 @@ def build():
         swell(tone, 0.8)                                 # slow attack, late peak
         add_into(arm, tone, 0.0, 0.5)
     env_ar(arm, 0.02, 0.10)
-    write_wav("clarify_arm.wav", filt(arm, "lp", 2000), peak=0.32)
+    write_wav("clarify_arm.wav", filt(arm, "lp", 2000), peak=0.42)
 
     # Clarity reveal: felt arpeggio i–III–V–i with a faint music-box octave ghost.
     rev = zeros(1.9)
@@ -392,11 +392,11 @@ def build():
     write_wav("corruption_whisper.wav", filt(wh, "lp", 1800), peak=0.30)
 
     # -- Locks, drawers, doors: aged iron and old wood ---------------------------
-    write_wav("dial_tick.wav", aged_tick(1320, 0.05), peak=0.30)
+    write_wav("dial_tick.wav", aged_tick(1320, 0.05), peak=0.45)
 
     key = add_into(env_exp(filt(white(0.06), "bp", 750, q=1.2), 0.001, 0.02),
                    thump(150, 0.07), 0, 0.4)
-    write_wav("key_type.wav", filt(key, "lp", 1600), peak=0.32)
+    write_wav("key_type.wav", filt(key, "lp", 1600), peak=0.45)
 
     lo = zeros(0.85)
     scrape = filt_sweep(white(0.28), "bp", 650, 300, q=1.6)
@@ -508,7 +508,7 @@ def build():
 
     tick = add_into(env_exp(filt(white(0.04), "lp", 950), 0.001, 0.012),
                     env_exp(sine(480, 0.04), 0.001, 0.014), 0, 0.5)
-    write_wav("clock_tick.wav", tick, peak=0.24)
+    write_wav("clock_tick.wav", tick, peak=0.36)
 
     print("Done.")
 

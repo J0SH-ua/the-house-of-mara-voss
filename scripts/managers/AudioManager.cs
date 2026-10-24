@@ -115,6 +115,7 @@ public partial class AudioManager : Node
         if (Settings.Instance != null)
             Settings.Instance.Changed += ApplyVolumes;
 
+        RunSelfTestDelayed();
         Logger.Info("AudioManager ready (buses: Music/SFX/Ambience).");
     }
 
@@ -395,6 +396,19 @@ public partial class AudioManager : Node
             return cached;
 
         var stream = ResourceLoader.Load<AudioStream>(path);
+
+        // Import-proof fallback: if the .import remap didn't produce the
+        // imported sample (stale/mismatched .import metadata, fresh clone
+        // before first import, export quirks), decode the WAV bytes
+        // ourselves. A silent game because of import bookkeeping is the
+        // worst possible failure mode for an audio-driven piece.
+        if (stream == null && path.EndsWith(".wav"))
+        {
+            stream = LoadWavFromBytes(path);
+            if (stream != null && _warnedMissing.Add(path + "#fallback"))
+                Logger.Warning($"AudioManager: {path} loaded via raw-byte fallback — check that the editor reimports assets/Music/SFX cleanly.");
+        }
+
         if (stream == null)
         {
             if (_warnedMissing.Add(path))
@@ -430,5 +444,85 @@ public partial class AudioManager : Node
                 ogg.Loop = true;
                 break;
         }
+    }
+
+    // ------------------------------------------------------------- diagnostics
+
+    private async void RunSelfTestDelayed()
+    {
+        await ToSignal(GetTree().CreateTimer(0.4), SceneTreeTimer.SignalName.Timeout);
+
+        var buses = new System.Collections.Generic.List<string>();
+        for (int i = 0; i < AudioServer.GetBusCount(); i++)
+            buses.Add(AudioServer.GetBusName(i));
+
+        string[] critical = [Sfx.UiClick, Sfx.UiHover, Sfx.Examine, Sfx.DialogueBlip];
+        var missing = new System.Collections.Generic.List<string>();
+        foreach (var id in critical)
+        {
+            if (LoadStream(SfxPathFor(id)) == null)
+                missing.Add(id);
+        }
+
+        if (missing.Count == 0)
+            Logger.Info($"[AudioManager self-test] OK — buses: {string.Join(", ", buses)}; core SFX loaded. If the game is silent, check Settings volumes and system output device.");
+        else
+            Logger.Warning($"[AudioManager self-test] MISSING streams: {string.Join(", ", missing)} — SFX will be silent. Reimport assets/Music/SFX (or delete the .godot folder and reopen).");
+    }
+
+    private AudioStream LoadWavFromBytes(string path)
+    {
+        using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
+        if (file == null)
+            return null;
+
+        byte[] bytes = file.GetBuffer((long)file.GetLength());
+        return ParseWav(bytes);
+    }
+
+    /// <summary>Minimal RIFF/WAVE reader for our generated 16-bit PCM files.</summary>
+    private static AudioStreamWAV ParseWav(byte[] bytes)
+    {
+        if (bytes == null || bytes.Length < 44)
+            return null;
+
+        int channels = 1, sampleRate = 22050, bits = 16;
+        int dataOffset = -1, dataLength = 0;
+
+        int i = 12; // skip "RIFF<size>WAVE"
+        while (i + 8 <= bytes.Length)
+        {
+            string id = System.Text.Encoding.ASCII.GetString(bytes, i, 4);
+            int size = BitConverter.ToInt32(bytes, i + 4);
+
+            if (id == "fmt ")
+            {
+                channels = BitConverter.ToInt16(bytes, i + 10);
+                sampleRate = BitConverter.ToInt32(bytes, i + 12);
+                bits = BitConverter.ToInt16(bytes, i + 22);
+            }
+            else if (id == "data")
+            {
+                dataOffset = i + 8;
+                dataLength = Math.Min(size, bytes.Length - dataOffset);
+                break;
+            }
+
+            i += 8 + size + (size % 2);
+        }
+
+        if (dataOffset < 0 || dataLength <= 0)
+            return null;
+
+        byte[] data = new byte[dataLength];
+        Array.Copy(bytes, dataOffset, data, 0, dataLength);
+
+        return new AudioStreamWAV
+        {
+            Format = bits == 8 ? AudioStreamWAV.FormatEnum.Format8Bits : AudioStreamWAV.FormatEnum.Format16Bits,
+            MixRate = sampleRate,
+            Stereo = channels > 1,
+            Data = data,
+        };
     }
 }

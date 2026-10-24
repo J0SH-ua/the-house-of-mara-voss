@@ -32,7 +32,7 @@ public partial class Room1Puzzle : Area2D
 				{
 					if (_isSolved)
 						return;
-					AudioManager.Play(Sfx.DialTick, -8f, 0.88f + (float)value * 0.035f);
+					AudioManager.Play(Sfx.DialTick, -5f, 0.88f + (float)value * 0.035f);
 					CheckPadlockSolution();
 				};
 			}

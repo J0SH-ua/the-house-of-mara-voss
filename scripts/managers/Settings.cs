@@ -35,6 +35,8 @@ public partial class Settings : Node
     public float CorruptionIntensity { get; set; } = 1.0f;
     /// <summary>Allow Tab to reveal remaining hotspots.</summary>
     public bool HotspotHints { get; set; } = true;
+    /// <summary>Suppress the auto-opening tutorial after it has been seen once.</summary>
+    public bool TutorialSeen { get; set; } = false;
 
     public override void _Ready()
     {
@@ -73,6 +75,7 @@ public partial class Settings : Node
         ReduceMotion = cfg.GetValue("accessibility", "reduce_motion", ReduceMotion).AsBool();
         CorruptionIntensity = (float)cfg.GetValue("accessibility", "corruption_intensity", CorruptionIntensity).AsDouble();
         HotspotHints = cfg.GetValue("accessibility", "hotspot_hints", HotspotHints).AsBool();
+        TutorialSeen = cfg.GetValue("gameplay", "tutorial_seen", TutorialSeen).AsBool();
     }
 
     public void Save()
@@ -90,6 +93,7 @@ public partial class Settings : Node
         cfg.SetValue("accessibility", "reduce_motion", ReduceMotion);
         cfg.SetValue("accessibility", "corruption_intensity", CorruptionIntensity);
         cfg.SetValue("accessibility", "hotspot_hints", HotspotHints);
+        cfg.SetValue("gameplay", "tutorial_seen", TutorialSeen);
 
         cfg.Save(ConfigPath);
     }

@@ -391,7 +391,7 @@ public partial class Dialogue : Control
                 if (!char.IsWhiteSpace(c) && ++blipCounter >= 3)
                 {
                     blipCounter = 0;
-                    AudioManager.PlayVaried(Sfx.DialogueBlip, -19f, 1f, 0.09f);
+                    AudioManager.PlayVaried(Sfx.DialogueBlip, -12f, 1f, 0.05f);
                 }
             }
         }

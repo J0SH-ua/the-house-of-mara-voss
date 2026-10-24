@@ -76,6 +76,7 @@ public partial class GameUI : CanvasLayer
         BuildSettingsPanel();
         BuildJournalPanel();
         BuildMenuButton();
+        BuildTutorialPanel();
 
         _confirmDialog = new ConfirmationDialog
         {
@@ -97,11 +98,12 @@ public partial class GameUI : CanvasLayer
             gs.Saved += () => ShowToast("Memory preserved.", quiet: true);
         }
         RoomExamineTracker.ExamineRecorded += (_, _) => RefreshHud();
-        SceneManager.SceneChanged += _ =>
+        SceneManager.SceneChanged += scenePath =>
         {
             Hotspots.HideAll();
             ClaritySystem.RefreshToggleTiles();
             RefreshHud();
+            MaybeAutoShowTutorial(scenePath);
         };
         if (Settings.Instance != null)
             Settings.Instance.Changed += RefreshCorruptionShader;
@@ -201,6 +203,16 @@ public partial class GameUI : CanvasLayer
         if (GetTree().Paused)
             return;
 
+        // A click nothing claimed: the softest acknowledgement, so the mouse
+        // never feels dead. Claimed clicks (examines, doors, triggers) call
+        // SetInputAsHandled and never reach _UnhandledInput.
+        if (@event is InputEventMouseButton emptyClick && emptyClick.Pressed &&
+            emptyClick.ButtonIndex == MouseButton.Left && !FocusIsTextEditing() && !AnyPanelOpen())
+        {
+            AudioManager.Play(Sfx.UiClick, -17f, 0.9f);
+            return;
+        }
+
         if (@event.IsActionPressed(InputSetup.OpenJournal) && !FocusIsTextEditing())
         {
             OpenJournal();
@@ -221,6 +233,11 @@ public partial class GameUI : CanvasLayer
 
     private void HandleEscape()
     {
+        if (_tutorialPanel.Visible)
+        {
+            CloseTutorial();
+            return;
+        }
         if (_settingsPanel.Visible)
         {
             CloseSettings(backToPause: _pausePanel.Visible);
@@ -261,7 +278,7 @@ public partial class GameUI : CanvasLayer
     private bool AnyPanelOpen()
     {
         return (_pausePanel?.Visible ?? false) || (_settingsPanel?.Visible ?? false)
-               || (_journalPanel?.Visible ?? false);
+               || (_journalPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false);
     }
 
     private void RequestHint()
@@ -295,6 +312,9 @@ public partial class GameUI : CanvasLayer
         _hud.Visible = next == UiContext.Game;
         _corruptionRect.Visible = next == UiContext.Game;
         _menuSettingsButton.Visible = next == UiContext.Menu;
+        _menuHowToButton.Visible = next == UiContext.Menu;
+        if (next == UiContext.Game && _tutorialPanel.Visible)
+            GetTree().Paused = true;
 
         if (next != UiContext.Game)
         {
@@ -303,6 +323,8 @@ public partial class GameUI : CanvasLayer
                 ResumeGame();
             _pausePanel.Visible = false;
             _journalPanel.Visible = false;
+            if (next == UiContext.Intro)
+                _tutorialPanel.Visible = false;
             if (next != UiContext.Menu)
                 _settingsPanel.Visible = false;
         }
@@ -561,8 +583,8 @@ public partial class GameUI : CanvasLayer
         b.AddThemeStyleboxOverride("pressed", hover);
         b.AddThemeStyleboxOverride("focus", hover);
 
-        b.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -14f);
-        b.Pressed += () => AudioManager.Play(Sfx.UiClick, -7f);
+        b.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -9f);
+        b.Pressed += () => AudioManager.Play(Sfx.UiClick, -5f);
         return b;
     }
 
@@ -748,6 +770,10 @@ public partial class GameUI : CanvasLayer
         var journal = MakeButton("Memory Journal");
         journal.Pressed += () => OpenJournal(fromPause: true);
         vbox.AddChild(journal);
+
+        var howTo = MakeButton("How to Play");
+        howTo.Pressed += () => OpenTutorial(fromPause: true);
+        vbox.AddChild(howTo);
 
         var settings = MakeButton("Settings");
         settings.Pressed += OpenSettings;
@@ -993,5 +1019,165 @@ public partial class GameUI : CanvasLayer
         b.Pressed += OpenSettings;
         _menuSettingsButton = b;
         AddChild(b);
+
+        var howTo = MakeButton("How to Play", 22);
+        howTo.AnchorLeft = 1;
+        howTo.AnchorTop = 1;
+        howTo.AnchorRight = 1;
+        howTo.AnchorBottom = 1;
+        howTo.OffsetLeft = -170;
+        howTo.OffsetTop = -108;
+        howTo.OffsetRight = -26;
+        howTo.OffsetBottom = -68;
+        howTo.Visible = false;
+        howTo.Pressed += () => OpenTutorial();
+        _menuHowToButton = howTo;
+        AddChild(howTo);
+    }
+
+    // ================================================================ tutorial
+
+    private static readonly (string Title, string Body)[] TutorialPages =
+    [
+        ("The House",
+         "This is Mara's childhood home as she remembers it — which is not the same as how it was.\n\nClick objects to examine them. The objective at the top-left keeps count: face everything a room is holding, and its locked place will open."),
+        ("Look Deeper — Gently",
+         "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage."),
+        ("Clarity",
+         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little."),
+        ("Finding Things",
+         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments recovered, and everything that has been said.\nEsc pauses. Dialogue advances with a click; End skips it."),
+        ("What You Are Doing Here",
+         "Recover the six fragments of what actually happened, and return them in the last room.\n\nSome of what the house shows you is a kindness Mara is doing herself. Your work is to tell the difference."),
+    ];
+
+    private Control _tutorialPanel;
+    private Label _tutorialTitle;
+    private Label _tutorialBody;
+    private Label _tutorialPageLabel;
+    private Button _tutorialNextButton;
+    private Button _tutorialPrevButton;
+    private Control _menuHowToButton;
+    private int _tutorialIndex;
+    private bool _tutorialFromPause;
+    private bool _tutorialAutoShown;
+
+    private void BuildTutorialPanel()
+    {
+        _tutorialPanel = new Control { Visible = false };
+        _tutorialPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _tutorialPanel.AddChild(DimBackdrop());
+
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _tutorialPanel.AddChild(center);
+
+        var panel = MakePanel();
+        panel.CustomMinimumSize = new Vector2(640, 0);
+        center.AddChild(panel);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 12);
+        panel.AddChild(vbox);
+
+        _tutorialTitle = MakeLabel("", 32);
+        _tutorialTitle.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(_tutorialTitle);
+        vbox.AddChild(new HSeparator());
+
+        _tutorialBody = MakeLabel("", 22);
+        _tutorialBody.AutowrapMode = TextServer.AutowrapMode.Word;
+        _tutorialBody.CustomMinimumSize = new Vector2(580, 190);
+        vbox.AddChild(_tutorialBody);
+
+        _tutorialPageLabel = MakeLabel("", 17, new Color(0.75f, 0.7f, 0.62f, 0.8f));
+        _tutorialPageLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(_tutorialPageLabel);
+
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 10);
+        row.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(row);
+
+        _tutorialPrevButton = MakeButton("Back", 22);
+        _tutorialPrevButton.Pressed += () => ShowTutorialPage(_tutorialIndex - 1);
+        row.AddChild(_tutorialPrevButton);
+
+        _tutorialNextButton = MakeButton("Next", 22);
+        _tutorialNextButton.Pressed += () =>
+        {
+            if (_tutorialIndex >= TutorialPages.Length - 1)
+                CloseTutorial();
+            else
+                ShowTutorialPage(_tutorialIndex + 1);
+        };
+        row.AddChild(_tutorialNextButton);
+
+        var skip = MakeButton("Skip", 22);
+        skip.Pressed += CloseTutorial;
+        row.AddChild(skip);
+
+        AddChild(_tutorialPanel);
+    }
+
+    public void OpenTutorial(bool fromPause = false)
+    {
+        _tutorialFromPause = fromPause;
+        if (fromPause)
+            _pausePanel.Visible = false;
+        else if (_context == UiContext.Game)
+            GetTree().Paused = true;
+
+        _tutorialPanel.Visible = true;
+        AudioManager.Play(Sfx.PageTurn, -7f);
+        ShowTutorialPage(0);
+        _tutorialNextButton.GrabFocus();
+    }
+
+    private void CloseTutorial()
+    {
+        _tutorialPanel.Visible = false;
+        AudioManager.Play(Sfx.UiBack, -6f);
+
+        if (Settings.Instance != null && !Settings.Instance.TutorialSeen)
+        {
+            Settings.Instance.TutorialSeen = true;
+            Settings.Instance.Save();
+        }
+
+        if (_tutorialFromPause)
+        {
+            _pausePanel.Visible = true;
+            _tutorialFromPause = false;
+        }
+        else if (_context == UiContext.Game)
+        {
+            GetTree().Paused = false;
+        }
+    }
+
+    private void ShowTutorialPage(int index)
+    {
+        _tutorialIndex = Mathf.Clamp(index, 0, TutorialPages.Length - 1);
+        var (title, body) = TutorialPages[_tutorialIndex];
+        _tutorialTitle.Text = title;
+        _tutorialBody.Text = body;
+        _tutorialPageLabel.Text = $"{_tutorialIndex + 1} / {TutorialPages.Length}";
+        _tutorialPrevButton.Disabled = _tutorialIndex == 0;
+        _tutorialNextButton.Text = _tutorialIndex == TutorialPages.Length - 1 ? "Begin" : "Next";
+    }
+
+    /// <summary>First ever entry into Room 1: teach, once. Replayable any time
+    /// from the pause menu / main menu ("How to Play").</summary>
+    private void MaybeAutoShowTutorial(string scenePath)
+    {
+        if (_tutorialAutoShown || Settings.Instance == null || Settings.Instance.TutorialSeen)
+            return;
+        if (scenePath == null || !scenePath.EndsWith("room_1.tscn"))
+            return;
+
+        _tutorialAutoShown = true;
+        OpenTutorial();
     }
 }
+

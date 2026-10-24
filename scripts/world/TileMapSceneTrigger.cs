@@ -31,6 +31,7 @@ public partial class TileMapSceneTrigger : TileMapLayer
             return;
 
         TriggerSceneChange();
+        GetTree().Root.SetInputAsHandled();
     }
 
     public void TriggerSceneChange()

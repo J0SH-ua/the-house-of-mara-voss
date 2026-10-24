@@ -32,6 +32,7 @@ public partial class ExamineHandler : TileMapLayer
     private bool _hasUsedRect;
     private int _cachedTrackerVersion = -1;
     private bool _cachedRoomReady;
+    private static ulong _lastHoverTickMsec;
 
     public override void _Ready()
     {
@@ -64,6 +65,17 @@ public partial class ExamineHandler : TileMapLayer
         return GetCellSourceId(cell) != -1;
     }
 
+    /// <summary>Faint paper-brush tick on hover-enter, throttled so sweeping
+    /// the mouse across a crowded shelf doesn't machine-gun.</summary>
+    private static void PlayHoverTick()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (now - _lastHoverTickMsec < 90)
+            return;
+        _lastHoverTickMsec = now;
+        AudioManager.Play(Sfx.UiHover, -12f);
+    }
+
     public override void _Input(InputEvent @event)
     {
         // Right-click anywhere on an examine layer releases Clarity for free.
@@ -93,7 +105,7 @@ public partial class ExamineHandler : TileMapLayer
             return;
         }
 
-        AudioManager.PlayVaried(string.IsNullOrWhiteSpace(ExamineSfxId) ? Sfx.Examine : ExamineSfxId, -7f, 1f, 0.05f);
+        AudioManager.PlayVaried(string.IsNullOrWhiteSpace(ExamineSfxId) ? Sfx.Examine : ExamineSfxId, -3f, 1f, 0.05f);
         Hotspots.SpawnRipple(GetGlobalMousePosition());
 
         ExamineHelper.CycleExamine(this);
@@ -256,7 +268,10 @@ public partial class ExamineHandler : TileMapLayer
             // Only call BeginHover when we first enter or when the cursor type changes.
             if (!_isHovering || _currentHoverCursorTexturePath != desiredCursor)
             {
+                bool entering = !_isHovering;
                 CursorHelper.BeginHover(this, desiredCursor, CursorWidth, CursorHeight);
+                if (entering)
+                    PlayHoverTick();
                 _currentHoverCursorTexturePath = desiredCursor;
                 _isHovering = true;
             }
