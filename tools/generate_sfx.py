@@ -29,6 +29,7 @@ import wave
 
 SR = 22050
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "Music", "SFX")
+BG_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "Music", "bg")
 
 random.seed(20261024)  # deterministic pack
 
@@ -48,8 +49,8 @@ def note(name, octave_up=0):
 
 # ---------------------------------------------------------------- primitives
 
-def write_wav(name, samples, peak=0.8):
-    path = os.path.normpath(os.path.join(OUT_DIR, name))
+def write_wav(name, samples, peak=0.8, out_dir=OUT_DIR):
+    path = os.path.normpath(os.path.join(out_dir, name))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if samples:
         m = max(abs(s) for s in samples)
@@ -308,6 +309,169 @@ def seamless(samples, keep_seconds, fade_seconds):
     return out
 
 
+
+
+# ------------------------------------------------------- cracks + room music
+
+def build_crack_sfx():
+    """Short, dry glass failures synced to the bad ending's visual cracks."""
+    def crack(name, seed, duration, hits, ping_count, peak):
+        rng = random.Random(seed)
+        out = zeros(duration)
+        for at, gain in hits:
+            burst = env_exp(filt(white(0.11), "hp", 1650), 0.0005, 0.020)
+            add_into(out, burst, at, gain)
+            add_into(out, env_exp(filt(white(0.05), "bp", 2800, q=1.1), 0.0005, 0.010), at, gain * 0.7)
+        for k in range(ping_count):
+            freq = rng.uniform(2100, 4300) * (0.96 ** k)
+            add_into(out, env_exp(sine(freq, 0.16), 0.0007, 0.035),
+                     rng.uniform(0.02, max(0.03, duration - 0.18)), rng.uniform(0.05, 0.13))
+        add_into(out, crackle(duration, 18 + ping_count * 3, gain=0.035), 0, 0.65)
+        add_into(out, thump(72, 0.28, sweep_to=0.55), 0, 0.28)
+        write_wav(name, filt(out, "lp", 6200), peak=peak)
+
+    crack("screen_crack_1.wav", 1101, 0.55, [(0.00, 0.55)], 3, 0.48)
+    crack("screen_crack_2.wav", 1102, 0.85, [(0.00, 0.48), (0.13, 0.62), (0.31, 0.34)], 6, 0.55)
+    crack("screen_crack_3.wav", 1103, 1.35, [(0.00, 0.62), (0.09, 0.52), (0.24, 0.72), (0.48, 0.38)], 11, 0.62)
+
+
+def build_room_music():
+    """Six seamless, room-specific loops in the same F-minor felt/music-box world."""
+    print("Generating room music ->", os.path.normpath(BG_DIR))
+    cache = {}
+
+    def pad_note(midi, dur):
+        key = ("pad", midi, round(dur, 2))
+        if key not in cache:
+            out = zeros(dur)
+            for ratio, amp in [(1.0, 0.82), (2.0, 0.27), (3.0, 0.09)]:
+                tone = tone_wow(mf(midi) * ratio, dur, depth=0.003, rate=0.23)
+                env_ar(tone, min(1.25, dur * 0.30), min(1.7, dur * 0.36))
+                add_into(out, tone, 0, amp)
+            cache[key] = filt(out, "lp", 1750)
+        return cache[key]
+
+    def voice(kind, midi, dur=2.4, tau=0.72):
+        key = (kind, midi, round(dur, 2), round(tau, 2))
+        if key not in cache:
+            if kind == "piano":
+                cache[key] = felt_piano(midi, dur, tau)
+            elif kind == "box":
+                cache[key] = music_box(midi, dur, tau)
+            else:
+                cache[key] = pad_note(midi, dur)
+        return cache[key]
+
+    def put(track, kind, midi, at, gain, dur=2.4, tau=0.72):
+        if midi is not None:
+            add_into(track, voice(kind, midi, dur, tau), at, gain)
+
+    def chord(track, notes, at, bar, pad_gain=0.075, bass_gain=0.20, piano_gain=0.0):
+        put(track, "piano", notes[0] - 12, at, bass_gain, min(3.6, bar), 1.15)
+        for j, midi in enumerate(notes):
+            if pad_gain:
+                add_into(track, pad_note(midi, bar * 1.08), at, pad_gain)
+            if piano_gain:
+                put(track, "piano", midi, at + j * 0.16, piano_gain, 2.8, 0.9)
+
+    def sequence(track, notes, at, step, kind, gain, dur=2.2, tau=0.62):
+        for j, midi in enumerate(notes):
+            put(track, kind, midi, at + j * step, gain, dur, tau)
+
+    def finish(name, track, duration, lp=2500, crackle_count=34, brown_gain=0.0, dips=None):
+        add_into(track, crackle(duration + 2.0, crackle_count, gain=0.030), 0, 0.55)
+        if brown_gain:
+            add_into(track, filt(brown(duration + 2.0), "lp", 520), 0, brown_gain)
+        out = seamless(track, duration, 2.0)
+        if dips:
+            out = dropout(out, dips)
+        write_wav(name, filt(out, "lp", lp), peak=0.42, out_dir=BG_DIR)
+
+    fm = [53, 56, 60]
+    db = [49, 53, 56]
+    ab = [56, 60, 63]
+    eb = [51, 55, 58]
+    cm = [48, 51, 55]
+    bbm = [46, 49, 53]
+
+    # Room 1 — kitchen morning: felt-piano arpeggio and a tired clock.
+    duration, bar = 48.0, 6.0
+    track = zeros(duration + 2.5)
+    tick = aged_tick(880, 0.05)
+    motifs = [[65, 63, 60], [61, 60, 56], [63, 60, 56], [58, 60, 63],
+              [65, 63, 60], [61, 60, 56], [55, 58, 60], [56, None, 53]]
+    for i, ch in enumerate([fm, db, ab, eb, fm, db, cm, fm]):
+        at = i * bar
+        chord(track, ch, at, bar, pad_gain=0.055, bass_gain=0.19)
+        for j, idx in enumerate([0, 1, 2, 1]):
+            put(track, "piano", ch[idx] + 12, at + 0.3 + j * 1.38, 0.105, 2.2, 0.72)
+        sequence(track, motifs[i], at + 0.85, 1.72, "piano", 0.085, 2.5, 0.82)
+    for at in range(0, int(duration), 2):
+        add_into(track, tick, at, 0.030)
+    finish("room_1.wav", track, duration, lp=2350, crackle_count=28)
+
+    # Room 2 — study/hearth: music box over low piano, warmer and closer.
+    duration, bar = 48.0, 6.0
+    track = zeros(duration + 2.5)
+    motifs = [[68, 65, 63, 60], [63, 60, 58], [61, 65, 68, 65], [63, 58, 55],
+              [68, 65, 63, 60], [61, 60, 56], [63, 65, 68], [65, 63, 60, 56]]
+    for i, ch in enumerate([fm, ab, db, eb, fm, db, ab, fm]):
+        at = i * bar
+        chord(track, ch, at, bar, pad_gain=0.068, bass_gain=0.20, piano_gain=0.055)
+        sequence(track, motifs[i], at + 0.55, 1.22, "box", 0.095, 2.3, 0.58)
+    finish("room_2.wav", track, duration, lp=2750, crackle_count=95, brown_gain=0.012)
+
+    # Room 3 — bedroom: a sparse 3/4 lullaby, mostly music box.
+    duration, bar = 44.0, 5.5
+    track = zeros(duration + 2.5)
+    for i, ch in enumerate([fm, db, fm, ab, db, eb, cm, fm]):
+        at = i * bar
+        chord(track, ch, at, bar, pad_gain=0.052, bass_gain=0.16)
+        for j, idx in enumerate([0, 1, 2, 1, 2, 1]):
+            put(track, "box", ch[idx] + 24, at + 0.25 + j * 0.82, 0.065, 1.9, 0.52)
+        if i in (1, 4, 6):
+            sequence(track, [77, 75, 72], at + 1.4, 1.35, "box", 0.055, 2.4, 0.66)
+    finish("room_3.wav", track, duration, lp=2650, crackle_count=22)
+
+    # Room 4 — threshold: low clusters, long silences, tape failing.
+    duration, bar = 40.0, 5.0
+    track = zeros(duration + 2.5)
+    for i, ch in enumerate([fm, fm, db, cm, fm, bbm, eb, fm]):
+        at = i * bar
+        put(track, "piano", ch[0] - 12, at, 0.24, 4.2, 1.35)
+        for midi in ch:
+            add_into(track, pad_note(midi - 12, bar * 1.05), at, 0.082)
+        add_into(track, thump(46, 0.65, sweep_to=0.5), at + 0.05, 0.10)
+        if i % 2 == 0:
+            sequence(track, [63, 61, 60, 56], at + 0.8, 0.92, "box", 0.062, 2.0, 0.48)
+        else:
+            put(track, "piano", ch[1] + 12, at + 2.35, 0.065, 2.8, 0.9)
+    finish("room_4.wav", track, duration, lp=2050, crackle_count=52,
+           dips=[(13.0, 0.16, 0.62), (29.0, 0.22, 0.78)])
+
+    # Room 5 — the emptied room: swelling pads and one piano answer per bar.
+    duration, bar = 44.0, 5.5
+    track = zeros(duration + 2.5)
+    answers = [65, 63, 61, 60, 58, 60, 56, 53]
+    for i, ch in enumerate([fm, eb, db, cm, fm, db, bbm, fm]):
+        at = i * bar
+        chord(track, ch, at, bar, pad_gain=0.083, bass_gain=0.13)
+        put(track, "piano", answers[i], at + 2.65, 0.095, 3.2, 1.0)
+    finish("room_5.wav", track, duration, lp=2200, crackle_count=26)
+
+    # Room 6 — a child's tune with notes missing; piano answers too late.
+    duration, bar = 44.0, 5.5
+    track = zeros(duration + 2.5)
+    tune = [77, 75, 72, 75, 77, 80, 77, 75]
+    for i, ch in enumerate([fm, ab, fm, db, fm, cm, db, fm]):
+        at = i * bar
+        chord(track, ch, at, bar, pad_gain=0.045, bass_gain=0.15)
+        notes = tune if i not in (4, 5) else [77, None, 72, None, 77, None, None, 75]
+        sequence(track, notes, at + 0.35, 0.58, "box", 0.075, 1.8, 0.50)
+        put(track, "piano", ch[0] + 12, at + 4.15, 0.070, 2.6, 0.86)
+    finish("room_6.wav", track, duration, lp=2500, crackle_count=88,
+           dips=[(17.0, 0.12, 0.55), (33.0, 0.18, 0.68)])
+
 # ------------------------------------------------------------------ the pack
 
 def build():
@@ -527,6 +691,9 @@ def build():
     add_into(sh, thump(46, 0.8, sweep_to=0.45), 0.55, 0.95)
     sh = dropout(sh, [(0.95, 0.07, 0.85), (1.4, 0.05, 0.7), (2.1, 0.09, 0.9)])
     write_wav("memory_shatter.wav", filt(sh, "lp", 5200), peak=0.6)
+
+    build_crack_sfx()
+    build_room_music()
 
     print("Done.")
 

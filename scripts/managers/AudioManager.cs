@@ -20,6 +20,9 @@ public static class Sfx
     public const string CorruptionGlitch = "corruption_glitch";
     public const string CorruptionWhisper = "corruption_whisper";
     public const string MemoryShatter = "memory_shatter";
+    public const string ScreenCrack1 = "screen_crack_1";
+    public const string ScreenCrack2 = "screen_crack_2";
+    public const string ScreenCrack3 = "screen_crack_3";
     public const string DialTick = "dial_tick";
     public const string KeyType = "key_type";
     public const string LockOpen = "lock_open";
@@ -53,6 +56,12 @@ public partial class AudioManager : Node
     public const string MusicMenu = "res://assets/Music/bg/Glance Out A Casement Window.mp3";
     public const string MusicIntro = "res://assets/Music/bg/conclusion.mp3";
     public const string MusicRoom = "res://assets/Music/bg/Glance Out A Casement Window.mp3";
+    public const string MusicRoom1 = "res://assets/Music/bg/room_1.wav";
+    public const string MusicRoom2 = "res://assets/Music/bg/room_2.wav";
+    public const string MusicRoom3 = "res://assets/Music/bg/room_3.wav";
+    public const string MusicRoom4 = "res://assets/Music/bg/room_4.wav";
+    public const string MusicRoom5 = "res://assets/Music/bg/room_5.wav";
+    public const string MusicRoom6 = "res://assets/Music/bg/room_6.wav";
     public const string MusicFinale = "res://assets/Music/bg/conclusion.mp3";
 
     private const string SfxDir = "res://assets/Music/SFX/";
@@ -287,12 +296,27 @@ public partial class AudioManager : Node
             return;
 
         StartAmbience();
-        if (scenePath.EndsWith("room_7.tscn"))
+
+        string scene = scenePath.ToLowerInvariant();
+        bool puzzle = scene.Contains("puzzle");
+        float volume = puzzle ? -15f : -11f;
+
+        if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
             PlayMusic(MusicFinale, -6f);
-        else if (scenePath.Contains("puzzle"))
-            PlayMusic(MusicRoom, -14f);
+        else if (scene.Contains("room_1"))
+            PlayMusic(MusicRoom1, volume);
+        else if (scene.Contains("room_2"))
+            PlayMusic(MusicRoom2, volume);
+        else if (scene.Contains("room_3"))
+            PlayMusic(MusicRoom3, volume);
+        else if (scene.Contains("room_4"))
+            PlayMusic(MusicRoom4, volume);
+        else if (scene.Contains("room_5"))
+            PlayMusic(MusicRoom5, volume);
+        else if (scene.Contains("room_6"))
+            PlayMusic(MusicRoom6, volume);
         else
-            PlayMusic(MusicRoom, -11f);
+            PlayMusic(MusicRoom, volume);
     }
 
     public void StartAmbience()

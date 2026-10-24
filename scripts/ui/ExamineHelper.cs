@@ -110,12 +110,29 @@ public static class ExamineHelper
 
     public static void TriggerClarify(TileMapLayer clicked)
     {
+        RevealClarifyLayer(clicked, spendCharge: true);
+    }
+
+    /// <summary>
+    /// Apply exactly the visual change a single Clarity reveal would cause,
+    /// without spending another charge or granting corruption relief. Used by
+    /// Recollection (which has already spent every charge) and by room
+    /// re-entry so a revealed object does not revert to its Examine art.
+    /// Returns the now-visible Clarify layer, or null when none exists.
+    /// </summary>
+    public static TileMapLayer ApplyClarifyVisual(TileMapLayer clicked)
+    {
+        return RevealClarifyLayer(clicked, spendCharge: false);
+    }
+
+    private static TileMapLayer RevealClarifyLayer(TileMapLayer clicked, bool spendCharge)
+    {
         if (clicked == null)
-            return;
+            return null;
 
         var parent = clicked.GetParent();
         if (parent == null)
-            return;
+            return null;
 
         // Find Clarify1 among siblings or children of clicked.
         TileMapLayer clarifyLayer = FindClarifyLayer(parent) ?? FindClarifyLayer(clicked);
@@ -125,7 +142,7 @@ public static class ExamineHelper
             // No Clarify layer found — leave Clarity ARMED (ClaritySystem owns
             // the mode now; a stray click must not silently eat the arm).
             Logger.Info("[ExamineHelper] No Clarify1 found; clarity stays armed.");
-            return;
+            return null;
         }
 
         // Hide and free all sibling Examine layers.
@@ -133,9 +150,10 @@ public static class ExamineHelper
         foreach (var layer in examineLayers)
             FreeExamineLayer(layer);
 
-        // Show the Clarify layer and spend the charge.
         ShowLayer(clarifyLayer);
-        ClaritySystem.ConsumeCharge();
+        if (spendCharge)
+            ClaritySystem.ConsumeCharge();
+        return clarifyLayer;
     }
 
     // -------------------------------------------------------------------------

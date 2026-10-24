@@ -1328,6 +1328,7 @@ DialogueDurationText = "4.0|3.0"
 DialogueFontSize = 24
 
 [node name="Painting" type="TileMapLayer" parent="Objects" unique_id=1346424177]
+position = Vector2(136, 88)
 texture_filter = 1
 scale = Vector2(1.5, 1.5)
 tile_set = SubResource("TileSet_elej8")
@@ -1439,6 +1440,7 @@ tile_set = SubResource("TileSet_elej8")
 script = ExtResource("9_vyxdy")
 
 [node name="Letter" type="TileMapLayer" parent="Objects" unique_id=794578519]
+position = Vector2(-72, 0)
 texture_filter = 1
 scale = Vector2(0.785, 0.785)
 skew = -1.0471979

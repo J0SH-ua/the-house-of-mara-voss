@@ -54,6 +54,20 @@ public partial class GameUI : CanvasLayer
     private bool _shatterPlaying;
     private bool _shatterAdvanceRequested;
     private bool _wasClarityArmed;
+    private ShatterCrackOverlay _shatterCracks;
+
+    // Recollection choice (custom panel in the game's own voice)
+    private Control _recollectionPanel;
+    private Label _recollectionBody;
+    private Label _recollectionCost;
+    private Label _recollectionHeldLabel;
+    private Label _recollectionNextLabel;
+    private HBoxContainer _recollectionBeforePips;
+    private HBoxContainer _recollectionAfterPips;
+    private Button _recollectionConfirmButton;
+    private Button _recollectionCancelButton;
+    private Action _recollectionConfirmAction;
+    private bool _recollectionVisualPlaying;
     private Label _cutsceneCaption;
     private Tween _cutsceneTween;
     private bool _cutscenePlaying;
@@ -107,6 +121,7 @@ public partial class GameUI : CanvasLayer
         BuildMenuButton();
         BuildTutorialPanel();
         BuildCutscene();
+        BuildRecollectionPanel();
         BuildShatterOverlay();
 
         _confirmDialog = new ConfirmationDialog
@@ -140,6 +155,8 @@ public partial class GameUI : CanvasLayer
             ClaritySystem.RefreshToggleTiles();
             RefreshHud();
             MaybePlayCutsceneThenTutorial(scenePath);
+            CloseRecollectionPanel();
+            Hotspots.ApplyRecollectionVisuals();
             Hotspots.RefreshPersistent();
         };
         if (Settings.Instance != null)
@@ -224,6 +241,17 @@ public partial class GameUI : CanvasLayer
                 Dialogue.NotifySkipPressed();
         }
 
+        // Right-click on the Recollection choice means "not all of it" — it
+        // closes the choice while leaving Clarity armed for one object.
+        if ((_recollectionPanel?.Visible ?? false)
+            && @event is InputEventMouseButton recRight && recRight.Pressed
+            && recRight.ButtonIndex == MouseButton.Right)
+        {
+            CloseRecollectionPanel();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         // Right-click releases Clarity from anywhere (ExamineHandler also does
         // this over tiles; this covers clicks over empty space/UI).
         if (_context == UiContext.Game && ClaritySystem.IsArmed
@@ -238,6 +266,16 @@ public partial class GameUI : CanvasLayer
     {
         if (_context != UiContext.Game)
             return;
+
+        if (_recollectionPanel?.Visible ?? false)
+        {
+            if (@event.IsActionPressed(InputSetup.PauseGame))
+            {
+                CloseRecollectionPanel();
+                GetViewport().SetInputAsHandled();
+            }
+            return;
+        }
 
         if (_cutscenePlaying)
         {
@@ -356,7 +394,8 @@ public partial class GameUI : CanvasLayer
     {
         return (_pausePanel?.Visible ?? false) || (_settingsPanel?.Visible ?? false)
                || (_journalPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
-               || (_cutsceneRoot?.Visible ?? false) || (_shatterRoot?.Visible ?? false);
+               || (_cutsceneRoot?.Visible ?? false) || (_shatterRoot?.Visible ?? false)
+               || (_recollectionPanel?.Visible ?? false);
     }
 
     private void RequestHint()
@@ -1356,7 +1395,7 @@ public partial class GameUI : CanvasLayer
         ("Look Deeper — Gently",
          "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage.\n\nIf the MEMORY meter ever empties, the memory shatters. That is an ending — the hollow one."),
         ("Clarity",
-         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to ring everything that remains — and wake in the next room with fewer charges."),
+         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to show everything that remains in its true form and ring it in blue — and wake in the next room with fewer charges."),
         ("Finding Things",
          "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
         ("What You Are Doing Here",
@@ -1504,28 +1543,238 @@ public partial class GameUI : CanvasLayer
 
     // =========================================================== recollection
 
+    private void BuildRecollectionPanel()
+    {
+        _recollectionPanel = new Control { Visible = false };
+        _recollectionPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _recollectionPanel.AddChild(DimBackdrop());
+
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _recollectionPanel.AddChild(center);
+
+        var panelStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(0.055f, 0.045f, 0.036f, 0.97f),
+            BorderColor = new Color(0.78f, 0.65f, 0.43f, 0.78f),
+            ShadowColor = new Color(0f, 0f, 0f, 0.55f),
+            ShadowSize = 18,
+        };
+        panelStyle.SetBorderWidthAll(1);
+        panelStyle.SetCornerRadiusAll(5);
+        panelStyle.ContentMarginLeft = 36;
+        panelStyle.ContentMarginRight = 36;
+        panelStyle.ContentMarginTop = 28;
+        panelStyle.ContentMarginBottom = 28;
+
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(688, 0) };
+        panel.AddThemeStyleboxOverride("panel", panelStyle);
+        center.AddChild(panel);
+
+        var box = new VBoxContainer();
+        box.AddThemeConstantOverride("separation", 13);
+        panel.AddChild(box);
+
+        box.AddChild(MakeLabel("CLARITY  ·  RECOLLECTION", 17, new Color(0.78f, 0.65f, 0.43f, 0.95f)));
+        var title = MakeLabel("This room is almost known to you.", 36, new Color(0.97f, 0.92f, 0.82f));
+        box.AddChild(title);
+
+        var rule = new HSeparator();
+        var ruleStyle = new StyleBoxLine { Color = new Color(0.78f, 0.65f, 0.43f, 0.45f), Thickness = 1 };
+        rule.AddThemeStyleboxOverride("separator", ruleStyle);
+        box.AddChild(rule);
+
+        _recollectionBody = MakeLabel(string.Empty, 23, new Color(0.93f, 0.89f, 0.82f, 0.97f));
+        _recollectionBody.AutowrapMode = TextServer.AutowrapMode.Word;
+        _recollectionBody.CustomMinimumSize = new Vector2(612, 0);
+        box.AddChild(_recollectionBody);
+
+        _recollectionHeldLabel = MakeLabel(string.Empty, 19, new Color(0.84f, 0.79f, 0.70f, 0.95f));
+        box.AddChild(_recollectionHeldLabel);
+        _recollectionBeforePips = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _recollectionBeforePips.AddThemeConstantOverride("separation", 6);
+        for (int i = 0; i < Globals.MaxClarity; i++)
+        {
+            _recollectionBeforePips.AddChild(new ColorRect
+            {
+                CustomMinimumSize = new Vector2(17, 13),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+        }
+        box.AddChild(_recollectionBeforePips);
+
+        _recollectionNextLabel = MakeLabel(string.Empty, 19, new Color(0.74f, 0.86f, 1f, 0.95f));
+        box.AddChild(_recollectionNextLabel);
+        _recollectionAfterPips = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _recollectionAfterPips.AddThemeConstantOverride("separation", 6);
+        for (int i = 0; i < Globals.MaxClarity; i++)
+        {
+            _recollectionAfterPips.AddChild(new ColorRect
+            {
+                CustomMinimumSize = new Vector2(17, 13),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+        }
+        box.AddChild(_recollectionAfterPips);
+
+        _recollectionCost = MakeLabel(string.Empty, 21, new Color(0.74f, 0.86f, 1f, 0.96f));
+        _recollectionCost.AutowrapMode = TextServer.AutowrapMode.Word;
+        box.AddChild(_recollectionCost);
+
+        var choices = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        choices.AddThemeConstantOverride("separation", 18);
+        _recollectionConfirmButton = MakeButton("Remember it all", 25);
+        _recollectionConfirmButton.CustomMinimumSize = new Vector2(226, 52);
+        _recollectionConfirmButton.Pressed += OnRecollectionConfirmed;
+        _recollectionCancelButton = MakeButton("One at a time", 25);
+        _recollectionCancelButton.CustomMinimumSize = new Vector2(226, 52);
+        _recollectionCancelButton.Pressed += CloseRecollectionPanel;
+        choices.AddChild(_recollectionConfirmButton);
+        choices.AddChild(_recollectionCancelButton);
+        box.AddChild(choices);
+
+        var hint = MakeLabel("Esc or right-click keeps Clarity armed for one careful look.", 17,
+            new Color(0.76f, 0.72f, 0.65f, 0.78f));
+        hint.HorizontalAlignment = HorizontalAlignment.Center;
+        box.AddChild(hint);
+
+        AddChild(_recollectionPanel);
+    }
+
+    private void ShowRecollectionPanel(int charges, int remainingCount, int nextRoomClarity, Action onConfirm)
+    {
+        _recollectionBody.Text =
+            $"Spend all {charges} Clarity, and let the room remember itself. " +
+            $"The {remainingCount} thing(s) still hidden will take their true forms now, one by one. " +
+            "A blue ring will stay around each until you touch it and hear what it remembers.";
+        _recollectionHeldLabel.Text = $"Held now — {charges}";
+        _recollectionNextLabel.Text = $"In the next room — {nextRoomClarity}";
+        _recollectionCost.Text = "Here, remembering will spend every charge you hold.";
+
+        for (int i = 0; i < _recollectionBeforePips.GetChildCount(); i++)
+        {
+            if (_recollectionBeforePips.GetChild(i) is ColorRect pip)
+                pip.Color = i < charges
+                    ? new Color(0.95f, 0.87f, 0.65f, 0.98f)
+                    : new Color(0.38f, 0.34f, 0.29f, 0.55f);
+        }
+        for (int i = 0; i < _recollectionAfterPips.GetChildCount(); i++)
+        {
+            if (_recollectionAfterPips.GetChild(i) is ColorRect pip)
+                pip.Color = i < nextRoomClarity
+                    ? new Color(0.62f, 0.82f, 1f, 0.98f)
+                    : new Color(0.30f, 0.36f, 0.45f, 0.55f);
+        }
+
+        _recollectionConfirmAction = onConfirm;
+        _recollectionPanel.Visible = true;
+        _recollectionCancelButton.GrabFocus();
+        AudioManager.Play(Sfx.PageTurn, -10f);
+    }
+
+    private void OnRecollectionConfirmed()
+    {
+        var action = _recollectionConfirmAction;
+        _recollectionConfirmAction = null;
+        _recollectionPanel.Visible = false;
+        action?.Invoke();
+    }
+
+    private void CloseRecollectionPanel()
+    {
+        _recollectionConfirmAction = null;
+        if (_recollectionPanel != null)
+            _recollectionPanel.Visible = false;
+    }
+
+    private async void PlayRecollectionVisualAsync(List<string> objectNames)
+    {
+        if (_recollectionVisualPlaying)
+            return;
+
+        _recollectionVisualPlaying = true;
+        Dialogue.BeginInputBlock();
+        try
+        {
+            AudioManager.Play(Sfx.ClarifyReveal, -5f);
+            foreach (string objectName in objectNames)
+            {
+                if (_shatterPlaying)
+                    break;
+
+                var layer = Hotspots.FindLayerForObject(objectName);
+                if (layer == null)
+                    continue;
+
+                Vector2 center = Hotspots.GetLayerCenter(layer);
+                Hotspots.SpawnRipple(center, new Color(0.62f, 0.84f, 1f, 0.98f));
+                layer.PlayRecollectionCue();
+                await ShatterTimer(0.24f);
+
+                var clarified = ExamineHelper.ApplyClarifyVisual(layer);
+                if (clarified != null)
+                {
+                    PulseClarifiedLayer(clarified);
+                    Hotspots.SpawnRipple(center, new Color(0.95f, 0.87f, 0.65f, 0.95f));
+                }
+
+                Hotspots.RefreshPersistent();
+                await ShatterTimer(0.42f);
+            }
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+            _recollectionVisualPlaying = false;
+            ClaritySystem.RefreshToggleTiles();
+            RefreshHud();
+            Hotspots.RefreshPersistent();
+            GameState.Instance?.Toast(objectNames.Count == 1
+                ? "One last thing has shown its true form. All Clarity spent."
+                : $"The room has remembered its remaining {objectNames.Count} things. All Clarity spent.");
+        }
+    }
+
+    private void PulseClarifiedLayer(TileMapLayer layer)
+    {
+        if (layer == null || !GodotObject.IsInstanceValid(layer))
+            return;
+
+        var modulate = layer.Modulate;
+        modulate.A = 0.15f;
+        layer.Modulate = modulate;
+        var selfModulate = layer.SelfModulate;
+        selfModulate.A = 0.15f;
+        layer.SelfModulate = selfModulate;
+
+        var tween = CreateTween();
+        if (tween == null)
+            return;
+        tween.TweenProperty(layer, "modulate:a", 1f, 0.48f);
+        tween.Parallel().TweenProperty(layer, "self_modulate:a", 1f, 0.48f);
+    }
+
     private void MaybeOfferRecollection()
     {
         var gs = GameState.Instance;
         if (gs == null || _context != UiContext.Game || _shatterPlaying || _cutscenePlaying
-            || Dialogue.IsShowing || AnyPanelOpen() || _confirmDialog.Visible)
+            || _recollectionVisualPlaying || Dialogue.IsShowing || AnyPanelOpen() || _confirmDialog.Visible)
             return;
         if (!gs.CanRecollect(out var remaining, out int carry))
             return;
 
         int charges = gs.ClarityCount;
-        ShowConfirm(
-            $"This room is almost known to you.\n\nSpend ALL {charges} Clarity to remember the remaining {remaining.Count} thing(s) at once? They will be ringed in blue until you face them.\n\nThe remembering will cost you: you will enter the next room with {carry} Clarity.",
-            () =>
+        var remembered = new List<string>(remaining);
+        ShowRecollectionPanel(charges, remembered.Count, carry, () =>
+        {
+            if (gs.PerformRecollection(announce: false) > 0)
             {
-                if (gs.PerformRecollection() > 0)
-                {
-                    ClaritySystem.Disarm(silent: true);
-                    Hotspots.RefreshPersistent();
-                    RefreshHud();
-                }
-            },
-            "Remember it all", "One at a time");
+                ClaritySystem.Disarm(silent: true);
+                ClaritySystem.RefreshToggleTiles();
+                RefreshHud();
+                PlayRecollectionVisualAsync(remembered);
+            }
+        });
     }
 
     // ============================================================ bad ending
@@ -1547,6 +1796,10 @@ public partial class GameUI : CanvasLayer
         _shatterBlack = new ColorRect { Color = new Color(0, 0, 0, 0), MouseFilter = Control.MouseFilterEnum.Ignore };
         _shatterBlack.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _shatterRoot.AddChild(_shatterBlack);
+
+        _shatterCracks = new ShatterCrackOverlay();
+        _shatterCracks.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _shatterRoot.AddChild(_shatterCracks);
 
         _shatterTitle = MakeLabel(string.Empty, 54, new Color(0.85f, 0.72f, 0.55f));
         _shatterTitle.HorizontalAlignment = HorizontalAlignment.Center;
@@ -1604,14 +1857,32 @@ public partial class GameUI : CanvasLayer
         _shatterCaption.Text = string.Empty;
         _shatterTitle.Text = string.Empty;
         SetShatterBlack(0f);
+        if (_shatterCracks != null)
+        {
+            _shatterCracks.Modulate = Colors.White;
+            _shatterCracks.ResetCracks();
+        }
 
-        AudioManager.Play(Sfx.MemoryShatter, -3f);
         AudioManager.Play(Sfx.CorruptionGlitch, -5f, 0.8f);
+        AudioManager.Play(Sfx.ScreenCrack1, -6f);
         AudioManager.Instance?.SetCorruption01(1f);
 
-        // ~2.4s of the room tearing itself apart (intensity ramps in _Process).
-        for (int i = 0; i < 6; i++)
+        // The room tears itself apart in visible stages: shader corruption,
+        // black flicker, and a screen crack that spreads with each sound.
+        float[] fractureStages = [0.16f, 0.34f, 0.52f, 0.70f, 0.88f, 1f];
+        for (int i = 0; i < fractureStages.Length; i++)
         {
+            _shatterCracks?.SetFracture(fractureStages[i]);
+            if (i == 1)
+                AudioManager.Play(Sfx.ScreenCrack2, -6f, 0.94f);
+            else if (i == 3)
+                AudioManager.Play(Sfx.ScreenCrack2, -5f, 1.08f);
+            else if (i == fractureStages.Length - 1)
+            {
+                AudioManager.Play(Sfx.ScreenCrack3, -4f);
+                AudioManager.Play(Sfx.MemoryShatter, -3f);
+            }
+
             _corruptionMaterial?.SetShaderParameter("frozen", i % 2 == 0 ? 1f : 0f);
             SetShatterBlack(i % 2 == 0 ? 0.28f : 0.06f);
             await ShatterTimer(0.4f);
@@ -1623,6 +1894,8 @@ public partial class GameUI : CanvasLayer
         var fade = CreateTween();
         fade.TweenMethod(Callable.From<float>(SetShatterBlack), 0.1f, 1f, 1.4f);
         await ToSignal(fade, Tween.SignalName.Finished);
+        if (_shatterCracks != null)
+            _shatterCracks.Modulate = new Color(1f, 1f, 1f, 0.48f);
         GetTree().Paused = true;
         AudioManager.Instance?.PlayMusic(AudioManager.MusicFinale, -12f, 2.5f);
 
@@ -1697,14 +1970,22 @@ public partial class GameUI : CanvasLayer
         {
             _shatterPlaying = false;
             _shatterRoot.Visible = false;
+            _shatterCracks?.ResetCracks();
             QuitToMenu();
             return;
         }
 
         AudioManager.Instance?.PlayMusicForScene(SceneManager.CurrentScenePath);
+        if (_shatterCracks != null)
+            _shatterCracks.Modulate = Colors.White;
         var fade = CreateTween();
         fade.TweenMethod(Callable.From<float>(SetShatterBlack), 1f, 0f, 1.6f);
         fade.Parallel().TweenProperty(_shatterCaption, "modulate:a", 0f, 1.6f);
+        if (_shatterCracks != null)
+        {
+            float fractureFrom = _shatterCracks.Fracture;
+            fade.Parallel().TweenMethod(Callable.From<float>(_shatterCracks.SetFracture), fractureFrom, 0f, 1.6f);
+        }
         await ToSignal(fade, Tween.SignalName.Finished);
         _shatterRoot.Visible = false;
         _shatterPlaying = false;
