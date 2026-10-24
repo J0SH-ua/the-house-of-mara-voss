@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmarafragjar01"
-path="res://.godot/imported/fragment_jar.png-1f7084bb4282bedee59fcf725b5338d1.ctex"
+uid="uid://cylummve78auq"
+path="res://.godot/imported/fragment_jar.png-0e335df765baaca38843b48f50b9f2af.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/core/shards/fragment_jar.png"
-dest_files=["res://.godot/imported/fragment_jar.png-1f7084bb4282bedee59fcf725b5338d1.ctex"]
+dest_files=["res://.godot/imported/fragment_jar.png-0e335df765baaca38843b48f50b9f2af.ctex"]
 
 [params]
 

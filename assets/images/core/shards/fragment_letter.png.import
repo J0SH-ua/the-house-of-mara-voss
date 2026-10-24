@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmarafragltr01"
-path="res://.godot/imported/fragment_letter.png-8e3ed409e056a708c2d5dff8940cc39f.ctex"
+uid="uid://cylummvfbsauq"
+path="res://.godot/imported/fragment_letter.png-b444355b80ccf4efd69029f16a2e3c06.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/core/shards/fragment_letter.png"
-dest_files=["res://.godot/imported/fragment_letter.png-8e3ed409e056a708c2d5dff8940cc39f.ctex"]
+dest_files=["res://.godot/imported/fragment_letter.png-b444355b80ccf4efd69029f16a2e3c06.ctex"]
 
 [params]
 
