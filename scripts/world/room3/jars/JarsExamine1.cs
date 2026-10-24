@@ -29,6 +29,8 @@ public partial class JarsExamine1 : ExamineHandler
         }
 
         AudioManager.Play(Sfx.Examine, -6f);
+        RoomExamineTracker.RecordExamine("Room3", "Jars");
+        bool firstFragment = GameState.Instance?.CollectShard(2) ?? false;
         GameState.Instance?.MarkRoomCompleted("Room3");
 
         GetTree().Root.SetInputAsHandled();
@@ -37,6 +39,12 @@ public partial class JarsExamine1 : ExamineHandler
         try
         {
             await Dialogue.ShowText(this, ExamineText, DialogueDuration, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: DialogueFontSize);
+
+            if (firstFragment)
+            {
+                await Dialogue.ShowText(this, "At the bottom of the last jar is a folded square of name tape. IDA, in careful block letters. The one label Mara could never throw away.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 22);
+                await Dialogue.ShowText(this, "Something in the memory changes as you hold it: from here on, you can do more than look. You can listen for the order things were said. (Echo — press E in the hallway.)", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 22);
+            }
 
             await Dialogue.ShowText(this, "She kept everything. That's what love does when it doesn't know what else to do — it keeps everything exactly where it was and calls it waiting.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 20);
             await Dialogue.ShowText(this, "The jars, the bag, the drawings on the wall. She kept the spiders. She kept the names.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 24);

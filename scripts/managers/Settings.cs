@@ -37,6 +37,8 @@ public partial class Settings : Node
     public bool HotspotHints { get; set; } = true;
     /// <summary>Suppress the auto-opening tutorial after it has been seen once.</summary>
     public bool TutorialSeen { get; set; } = false;
+    /// <summary>Comma-separated ending ids found across runs (persistent meta-progress).</summary>
+    public string EndingsSeen { get; set; } = string.Empty;
 
     public override void _Ready()
     {
@@ -76,6 +78,7 @@ public partial class Settings : Node
         CorruptionIntensity = (float)cfg.GetValue("accessibility", "corruption_intensity", CorruptionIntensity).AsDouble();
         HotspotHints = cfg.GetValue("accessibility", "hotspot_hints", HotspotHints).AsBool();
         TutorialSeen = cfg.GetValue("gameplay", "tutorial_seen", TutorialSeen).AsBool();
+        EndingsSeen = cfg.GetValue("gameplay", "endings_seen", EndingsSeen).AsString();
     }
 
     public void Save()
@@ -94,8 +97,29 @@ public partial class Settings : Node
         cfg.SetValue("accessibility", "corruption_intensity", CorruptionIntensity);
         cfg.SetValue("accessibility", "hotspot_hints", HotspotHints);
         cfg.SetValue("gameplay", "tutorial_seen", TutorialSeen);
+        cfg.SetValue("gameplay", "endings_seen", EndingsSeen);
 
         cfg.Save(ConfigPath);
+    }
+
+    public bool HasSeenEnding(string endingId)
+    {
+        if (string.IsNullOrWhiteSpace(endingId) || string.IsNullOrWhiteSpace(EndingsSeen))
+            return false;
+        foreach (var seen in EndingsSeen.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (seen == endingId)
+                return true;
+        }
+        return false;
+    }
+
+    public void RecordEnding(string endingId)
+    {
+        if (string.IsNullOrWhiteSpace(endingId) || HasSeenEnding(endingId))
+            return;
+        EndingsSeen = string.IsNullOrWhiteSpace(EndingsSeen) ? endingId : $"{EndingsSeen},{endingId}";
+        Save();
     }
 
     /// <summary>Save + notify listeners (AudioManager volumes, overlay strength, …).</summary>

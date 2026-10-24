@@ -17,6 +17,10 @@ public static class InputSetup
     public const string OpenJournal = "open_journal";
     public const string RequestHint = "request_hint";
     public const string NavBack = "nav_back";
+    public const string MemoryEcho = "memory_echo";
+    public const string MemoryAnchor = "memory_anchor";
+    public const string MemoryTrace = "memory_trace";
+    public const string MemoryRelease = "memory_release";
 
     private static bool _ensured;
 
@@ -34,6 +38,10 @@ public static class InputSetup
         AddKeyAction(OpenJournal, Key.J, Key.M);
         AddKeyAction(RequestHint, Key.H);
         AddKeyAction(NavBack, Key.Q, Key.Backspace);
+        AddKeyAction(MemoryEcho, Key.E);
+        AddKeyAction(MemoryAnchor, Key.A);
+        AddKeyAction(MemoryTrace, Key.T);
+        AddKeyAction(MemoryRelease, Key.R);
     }
 
     private static void AddKeyAction(string action, params Key[] keys)

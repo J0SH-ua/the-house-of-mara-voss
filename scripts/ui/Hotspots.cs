@@ -95,6 +95,15 @@ public static class Hotspots
 
             SpawnMarker(scene, LayerCenter(layer), oneShot: false);
         }
+
+        // Code-built final-act rooms expose plain Node2D targets tagged
+        // with memory_object instead of TileMap examine layers.
+        foreach (var (node, objectName) in FindMemoryTargets(scene))
+        {
+            if (room != null && RoomExamineTracker.HasObjectBeenFullyExamined(room, objectName))
+                continue;
+            SpawnMarker(scene, node.GlobalPosition, oneShot: false);
+        }
     }
 
     /// <summary>Mark only the named object (level-3 hint).</summary>
@@ -103,6 +112,15 @@ public static class Hotspots
         var scene = SceneManager.Instance?.CurrentScene;
         if (scene == null || string.IsNullOrEmpty(objectName))
             return;
+
+        foreach (var (node, memoryObject) in FindMemoryTargets(scene))
+        {
+            if (memoryObject != objectName)
+                continue;
+            var memoryMarker = SpawnMarker(scene, node.GlobalPosition, oneShot: false, temporarySeconds: seconds);
+            if (memoryMarker != null)
+                return;
+        }
 
         foreach (var layer in FindExamineLayers(scene))
         {
@@ -309,6 +327,20 @@ public static class Hotspots
 
         Vector2I centerCell = used.Position + used.Size / 2;
         return layer.ToGlobal(layer.MapToLocal(centerCell));
+    }
+
+    private static IEnumerable<(Node2D Node, string ObjectName)> FindMemoryTargets(Node root)
+    {
+        var stack = new Stack<Node>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var node = stack.Pop();
+            if (node is Node2D node2d && node.HasMeta("memory_object"))
+                yield return (node2d, node.GetMeta("memory_object").AsString());
+            foreach (var child in node.GetChildren())
+                stack.Push(child);
+        }
     }
 
     private static IEnumerable<ExamineHandler> FindExamineLayers(Node root)

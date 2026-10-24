@@ -38,6 +38,23 @@ public partial class GameUI : CanvasLayer
 
     // Back navigation (puzzle -> room, room -> previous room)
     private Button _backButton;
+
+    // Memory Verb bar (Echo / Anchor / Trace / Release)
+    private PanelContainer _verbPanel;
+    private readonly System.Collections.Generic.Dictionary<MemoryVerb, Button> _verbButtons = new();
+
+    // Authored endings (Waking / Kept House)
+    private Control _endingRoot;
+    private TextureRect _endingImage;
+    private Label _endingTitle;
+    private Label _endingCaption;
+    private Label _endingStats;
+    private Button _endingReturnButton;
+    private Tween _endingTween;
+    private bool _endingPlaying;
+    private bool _endingAdvanceRequested;
+    private bool _endingSkipRequested;
+    private string _endingId = string.Empty;
     private string _backTargetPath = string.Empty;
     private string _navSceneCachePath = string.Empty;
 
@@ -115,12 +132,14 @@ public partial class GameUI : CanvasLayer
         BuildCorruptionOverlay();
         BuildHud();
         BuildBackButton();
+        BuildMemoryVerbBar();
         BuildPausePanel();
         BuildSettingsPanel();
         BuildJournalPanel();
         BuildMenuButton();
         BuildTutorialPanel();
         BuildCutscene();
+        BuildEndingOverlay();
         BuildRecollectionPanel();
         BuildShatterOverlay();
 
@@ -140,6 +159,8 @@ public partial class GameUI : CanvasLayer
             gs.ClarityChanged += _ => RefreshHud();
             gs.ShardsChanged += RefreshHud;
             gs.ObjectiveChanged += RefreshHud;
+            gs.VerbsChanged += RefreshMemoryVerbBar;
+            gs.StoryFlagsChanged += RefreshHud;
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
             gs.Saved += () => ShowToast("Memory preserved.", quiet: true);
@@ -151,6 +172,7 @@ public partial class GameUI : CanvasLayer
         };
         SceneManager.SceneChanged += scenePath =>
         {
+            MemoryVerbSystem.Cancel(silent: true);
             Hotspots.HideAll();
             ClaritySystem.RefreshToggleTiles();
             RefreshHud();
@@ -178,6 +200,7 @@ public partial class GameUI : CanvasLayer
         }
 
         RefreshBackButton();
+        RefreshMemoryVerbBar();
 
         // Arming Clarity in a nearly-known room offers the Recollection once
         // per arming — the player chooses: one reveal, or everything at once.
@@ -252,6 +275,15 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
+        if (_context == UiContext.Game && MemoryVerbSystem.Active != MemoryVerb.None
+            && @event is InputEventMouseButton verbRight && verbRight.Pressed
+            && verbRight.ButtonIndex == MouseButton.Right)
+        {
+            MemoryVerbSystem.Cancel();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         // Right-click releases Clarity from anywhere (ExamineHandler also does
         // this over tiles; this covers clicks over empty space/UI).
         if (_context == UiContext.Game && ClaritySystem.IsArmed
@@ -272,6 +304,22 @@ public partial class GameUI : CanvasLayer
             if (@event.IsActionPressed(InputSetup.PauseGame))
             {
                 CloseRecollectionPanel();
+                GetViewport().SetInputAsHandled();
+            }
+            return;
+        }
+
+        if (_endingPlaying)
+        {
+            if (@event.IsActionPressed(InputSetup.AdvanceDialogue)
+                || (@event is InputEventMouseButton emb && emb.Pressed && emb.ButtonIndex == MouseButton.Left))
+            {
+                _endingAdvanceRequested = true;
+                GetViewport().SetInputAsHandled();
+            }
+            else if (@event.IsActionPressed(InputSetup.PauseGame) || @event.IsActionPressed(InputSetup.SkipDialogue))
+            {
+                _endingSkipRequested = true;
                 GetViewport().SetInputAsHandled();
             }
             return;
@@ -334,6 +382,30 @@ public partial class GameUI : CanvasLayer
                 ClaritySystem.Toggle();
             GetViewport().SetInputAsHandled();
         }
+        else if (@event.IsActionPressed(InputSetup.MemoryEcho) && !FocusIsTextEditing())
+        {
+            if (!Dialogue.IsShowing)
+                MemoryVerbSystem.Toggle(MemoryVerb.Echo);
+            GetViewport().SetInputAsHandled();
+        }
+        else if (@event.IsActionPressed(InputSetup.MemoryAnchor) && !FocusIsTextEditing())
+        {
+            if (!Dialogue.IsShowing)
+                MemoryVerbSystem.Toggle(MemoryVerb.Anchor);
+            GetViewport().SetInputAsHandled();
+        }
+        else if (@event.IsActionPressed(InputSetup.MemoryTrace) && !FocusIsTextEditing())
+        {
+            if (!Dialogue.IsShowing)
+                MemoryVerbSystem.Toggle(MemoryVerb.Trace);
+            GetViewport().SetInputAsHandled();
+        }
+        else if (@event.IsActionPressed(InputSetup.MemoryRelease) && !FocusIsTextEditing())
+        {
+            if (!Dialogue.IsShowing)
+                MemoryVerbSystem.Toggle(MemoryVerb.Release);
+            GetViewport().SetInputAsHandled();
+        }
         else if (@event.IsActionPressed(InputSetup.RequestHint) && !FocusIsTextEditing())
         {
             RequestHint();
@@ -368,6 +440,11 @@ public partial class GameUI : CanvasLayer
             }
             return;
         }
+        if (MemoryVerbSystem.Active != MemoryVerb.None && !GetTree().Paused)
+        {
+            MemoryVerbSystem.Cancel();
+            return;
+        }
         if (ClaritySystem.IsArmed && !GetTree().Paused)
         {
             // First Esc releases Clarity; it takes a second Esc to pause.
@@ -394,7 +471,8 @@ public partial class GameUI : CanvasLayer
     {
         return (_pausePanel?.Visible ?? false) || (_settingsPanel?.Visible ?? false)
                || (_journalPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
-               || (_cutsceneRoot?.Visible ?? false) || (_shatterRoot?.Visible ?? false)
+               || (_cutsceneRoot?.Visible ?? false) || (_endingRoot?.Visible ?? false)
+               || (_shatterRoot?.Visible ?? false)
                || (_recollectionPanel?.Visible ?? false);
     }
 
@@ -459,6 +537,84 @@ public partial class GameUI : CanvasLayer
         _hud.AddChild(_backButton);
     }
 
+    private void BuildMemoryVerbBar()
+    {
+        _verbPanel = new PanelContainer { Visible = false, Name = "MemoryVerbBar" };
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.84f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.45f),
+        };
+        style.SetBorderWidthAll(1);
+        style.SetCornerRadiusAll(4);
+        style.ContentMarginLeft = 10;
+        style.ContentMarginRight = 10;
+        style.ContentMarginTop = 5;
+        style.ContentMarginBottom = 5;
+        _verbPanel.AddThemeStyleboxOverride("panel", style);
+        _verbPanel.AnchorLeft = 0.5f;
+        _verbPanel.AnchorRight = 0.5f;
+        _verbPanel.AnchorTop = 1f;
+        _verbPanel.AnchorBottom = 1f;
+        _verbPanel.OffsetLeft = -350;
+        _verbPanel.OffsetRight = 350;
+        _verbPanel.OffsetTop = -104;
+        _verbPanel.OffsetBottom = -48;
+
+        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        row.AddThemeConstantOverride("separation", 6);
+        _verbPanel.AddChild(row);
+
+        var title = MakeLabel("MEMORY", 15, new Color(0.82f, 0.72f, 0.54f, 0.9f));
+        title.VerticalAlignment = VerticalAlignment.Center;
+        row.AddChild(title);
+
+        MemoryVerb[] verbs = [MemoryVerb.Echo, MemoryVerb.Anchor, MemoryVerb.Trace, MemoryVerb.Release];
+        foreach (var verb in verbs)
+        {
+            var captured = verb;
+            var button = MakeButton(string.Empty, 19);
+            button.Name = $"{verb}VerbButton";
+            button.CustomMinimumSize = new Vector2(128, 36);
+            button.FocusMode = Control.FocusModeEnum.None;
+            button.Visible = false;
+            button.Pressed += () => MemoryVerbSystem.Toggle(captured);
+            _verbButtons[verb] = button;
+            row.AddChild(button);
+        }
+
+        _hud.AddChild(_verbPanel);
+    }
+
+    private void RefreshMemoryVerbBar()
+    {
+        if (_verbPanel == null)
+            return;
+
+        var gs = GameState.Instance;
+        bool anyUnlocked = false;
+        foreach (var (verb, button) in _verbButtons)
+        {
+            bool unlocked = gs != null && gs.HasVerb(verb);
+            anyUnlocked |= unlocked;
+            bool active = unlocked && gs.ActiveVerb == verb;
+            button.Visible = unlocked;
+            button.Disabled = false;
+            button.Text = $"{(active ? "◆ " : string.Empty)}{MemoryVerbSystem.HotkeyLabel(verb)} — {MemoryVerbSystem.DisplayName(verb)}";
+            button.TooltipText = MemoryVerbSystem.Description(verb) + " Right-click or Esc releases it.";
+            button.AddThemeColorOverride("font_color", active
+                ? new Color(1f, 0.9f, 0.62f)
+                : new Color(0.93f, 0.89f, 0.82f));
+        }
+
+        _verbPanel.Visible = _context == UiContext.Game
+                             && anyUnlocked
+                             && !AnyPanelOpen()
+                             && !Dialogue.IsShowing
+                             && !GetTree().Paused
+                             && !SceneManager.IsChanging;
+    }
+
     /// <summary>Keeps the Step Back button in sync with the live scene: shown
     /// in-game whenever the current view has somewhere to step back to
     /// (puzzle -&gt; its room, room -&gt; previous room), never over dialogue,
@@ -497,6 +653,7 @@ public partial class GameUI : CanvasLayer
             Dialogue.IsShowing || AnyPanelOpen() || GetTree().Paused)
             return;
 
+        MemoryVerbSystem.Cancel(silent: true);
         if (ClaritySystem.IsArmed)
             ClaritySystem.Disarm(silent: true);
         Hotspots.HideAll();
@@ -552,6 +709,7 @@ public partial class GameUI : CanvasLayer
         if (_context != UiContext.Game)
             return;
 
+        MemoryVerbSystem.Cancel(silent: true);
         GameState.Instance?.SaveGame("pause");
         GetTree().Paused = true;
         _pausePanel.Visible = true;
@@ -572,6 +730,7 @@ public partial class GameUI : CanvasLayer
     private void QuitToMenu()
     {
         GameState.Instance?.SaveGame("quit to menu");
+        MemoryVerbSystem.Cancel(silent: true);
         ClaritySystem.Disarm(silent: true);
         ResumeGame();
         AudioManager.Instance?.StopAmbience();
@@ -607,6 +766,7 @@ public partial class GameUI : CanvasLayer
 
     public void OpenJournal(bool fromPause = false)
     {
+        MemoryVerbSystem.Cancel(silent: true);
         _openedJournalFromPause = fromPause;
         if (fromPause)
             _pausePanel.Visible = false;
@@ -812,6 +972,8 @@ public partial class GameUI : CanvasLayer
             ? $"Fragments  {gs.CountRecovered()}/{GameState.MaxShards}" +
               (gs.CountPlaced() > 0 ? $"   ·   Returned {gs.CountPlaced()}" : "")
             : string.Empty;
+
+        RefreshMemoryVerbBar();
     }
 
     private void RefreshCorruptionShader()
@@ -1041,7 +1203,7 @@ public partial class GameUI : CanvasLayer
         controlsChip.OffsetRight = 924;
         controlsChip.OffsetTop = -40;
         controlsChip.OffsetBottom = -8;
-        var controls = MakeLabel("Hold Tab — look      C — clarity      H — hint      J — journal      Q — step back      Esc — pause",
+        var controls = MakeLabel("Tab — look      C — clarity      E/A/T/R — memory verbs      H — hint      J — journal      Q — back      Esc — pause",
             16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
         controls.MouseFilter = Control.MouseFilterEnum.Ignore;
         controlsChip.AddChild(controls);
@@ -1396,6 +1558,8 @@ public partial class GameUI : CanvasLayer
          "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage.\n\nIf the MEMORY meter ever empties, the memory shatters. That is an ending — the hollow one."),
         ("Clarity",
          "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to show everything that remains in its true form and ring it in blue — and wake in the next room with fewer charges."),
+        ("Memory Verbs",
+         "Later rooms teach new ways of remembering, one at a time:\n\nE — Echo: hear words and moments in their spoken order.\nA — Anchor: hold one true thing still.\nT — Trace: connect causes in the order they happened.\nR — Release: decide what a completed memory is for.\n\nLearned verbs also appear as buttons at the bottom of the screen. Right-click or Esc releases one unspent."),
         ("Finding Things",
          "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
         ("What You Are Doing Here",
@@ -1850,6 +2014,7 @@ public partial class GameUI : CanvasLayer
 
         // The world comes apart first — still live behind the effect.
         Dialogue.NotifySkipPressed();
+        MemoryVerbSystem.Cancel(silent: true);
         ClaritySystem.Disarm(silent: true);
         Hotspots.HideAll();
         _shatterRoot.Visible = true;
@@ -1921,6 +2086,7 @@ public partial class GameUI : CanvasLayer
         await ToSignal(t3, Tween.SignalName.Finished);
         await ShatterWaitAdvance(2.5f);
 
+        Settings.Instance?.RecordEnding("hollow");
         _shatterChoices.Visible = true;
     }
 
@@ -1991,6 +2157,246 @@ public partial class GameUI : CanvasLayer
         _shatterPlaying = false;
         RefreshHud();
         Hotspots.RefreshPersistent();
+    }
+
+    private void BuildEndingOverlay()
+    {
+        _endingRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop };
+        _endingRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        AddChild(_endingRoot);
+
+        var black = new ColorRect { Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Ignore };
+        black.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _endingRoot.AddChild(black);
+
+        _endingImage = new TextureRect
+        {
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _endingImage.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _endingRoot.AddChild(_endingImage);
+
+        _endingTitle = MakeLabel(string.Empty, 54, new Color(0.9f, 0.78f, 0.56f));
+        _endingTitle.HorizontalAlignment = HorizontalAlignment.Center;
+        _endingTitle.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _endingTitle.AnchorLeft = 0; _endingTitle.AnchorRight = 1;
+        _endingTitle.OffsetLeft = 70; _endingTitle.OffsetRight = -70;
+        _endingTitle.OffsetTop = 52; _endingTitle.OffsetBottom = 128;
+        _endingRoot.AddChild(_endingTitle);
+
+        var band = new ColorRect
+        {
+            Color = new Color(0, 0, 0, 0.58f),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            AnchorTop = 1,
+            AnchorBottom = 1,
+            AnchorRight = 1,
+            OffsetTop = -218,
+            OffsetBottom = 0,
+        };
+        _endingRoot.AddChild(band);
+
+        _endingCaption = MakeLabel(string.Empty, 30, new Color(0.96f, 0.92f, 0.84f));
+        _endingCaption.AutowrapMode = TextServer.AutowrapMode.Word;
+        _endingCaption.HorizontalAlignment = HorizontalAlignment.Center;
+        _endingCaption.VerticalAlignment = VerticalAlignment.Center;
+        _endingCaption.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _endingCaption.AnchorLeft = 0; _endingCaption.AnchorRight = 1;
+        _endingCaption.AnchorTop = 1; _endingCaption.AnchorBottom = 1;
+        _endingCaption.OffsetLeft = 90; _endingCaption.OffsetRight = -90;
+        _endingCaption.OffsetTop = -204; _endingCaption.OffsetBottom = -96;
+        _endingRoot.AddChild(_endingCaption);
+
+        _endingStats = MakeLabel(string.Empty, 17, new Color(0.9f, 0.86f, 0.78f, 0.72f));
+        _endingStats.HorizontalAlignment = HorizontalAlignment.Center;
+        _endingStats.AutowrapMode = TextServer.AutowrapMode.Word;
+        _endingStats.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _endingStats.Visible = false;
+        _endingStats.AnchorLeft = 0; _endingStats.AnchorRight = 1;
+        _endingStats.AnchorTop = 1; _endingStats.AnchorBottom = 1;
+        _endingStats.OffsetLeft = 70; _endingStats.OffsetRight = -70;
+        _endingStats.OffsetTop = -94; _endingStats.OffsetBottom = -62;
+        _endingRoot.AddChild(_endingStats);
+
+        _endingReturnButton = MakeButton("Return to title", 21);
+        var normal = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.8f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.5f),
+        };
+        normal.SetBorderWidthAll(1); normal.SetCornerRadiusAll(4); normal.SetContentMarginAll(8);
+        var hover = new StyleBoxFlat
+        {
+            BgColor = new Color(0.85f, 0.75f, 0.55f, 0.18f),
+            BorderColor = new Color(0.85f, 0.75f, 0.55f, 0.6f),
+        };
+        hover.SetBorderWidthAll(1); hover.SetCornerRadiusAll(4); hover.SetContentMarginAll(8);
+        _endingReturnButton.AddThemeStyleboxOverride("normal", normal);
+        _endingReturnButton.AddThemeStyleboxOverride("hover", hover);
+        _endingReturnButton.AddThemeStyleboxOverride("pressed", hover);
+        _endingReturnButton.AddThemeStyleboxOverride("focus", hover);
+        _endingReturnButton.Visible = false;
+        _endingReturnButton.AnchorLeft = 0.5f; _endingReturnButton.AnchorRight = 0.5f;
+        _endingReturnButton.AnchorTop = 1; _endingReturnButton.AnchorBottom = 1;
+        _endingReturnButton.OffsetLeft = -150; _endingReturnButton.OffsetRight = 150;
+        _endingReturnButton.OffsetTop = -56; _endingReturnButton.OffsetBottom = -14;
+        _endingReturnButton.Pressed += OnEndingReturnPressed;
+        _endingRoot.AddChild(_endingReturnButton);
+
+        _endingRoot.GuiInput += @event =>
+        {
+            if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                _endingAdvanceRequested = true;
+        };
+    }
+
+    private static (string ImagePath, string Title, string FinalCaption, string[] Cards) EndingData(string endingId)
+    {
+        return endingId switch
+        {
+            "kept_house" => (
+                "res://assets/images/bgs/Ending_Kept_House.png",
+                "THE KEPT HOUSE",
+                "Nothing changes. That was the choice.",
+                new[]
+                {
+                    "Mara looks at the whole morning — every room, every name, every empty chair in its proper order.",
+                    "Then, very gently, she closes the last door from the inside.",
+                    "The kettle will always be warm here. The swing will never quite finish moving. No one will be asked to leave again.",
+                    "Outside the memory, an apartment grows dark around a woman sitting perfectly still, smiling at a house only she can see.",
+                }),
+            _ => (
+                "res://assets/images/bgs/Ending_Waking.png",
+                "THE WAKING ENDING",
+                "She does not stop grieving. She stops living inside the grief.",
+                new[]
+                {
+                    "Mara opens her eyes on an ordinary ceiling she has not really seen in four months.",
+                    "Ida is not in the kitchen. Ida will not be in the kitchen. The sentence lands all at once — and, this time, Mara does not build a house over it.",
+                    "She finds the last unsent letter and writes no address on it. Some apologies are not messages. They are weights set down where they were carried.",
+                    "Then she puts on her coat. The stairs are only stairs. The street is wet, and loud, and continuing without permission.",
+                    "At the door she says her sister's name once — not to call her back. To take her with her, the way the living are supposed to carry the dead.",
+                }),
+        };
+    }
+
+    /// <summary>Play one of the two authored endings chosen in Room 7.
+    /// Reaching its title records cross-run completion and deletes the run
+    /// save; Return to title deliberately does not call QuitToMenu/SaveGame.</summary>
+    public async void PlayAuthoredEnding(string endingId)
+    {
+        if (_endingPlaying || _endingRoot == null || (endingId != "waking" && endingId != "kept_house"))
+            return;
+
+        _endingPlaying = true;
+        _endingSkipRequested = false;
+        _endingAdvanceRequested = false;
+        _endingId = endingId;
+
+        MemoryVerbSystem.Cancel(silent: true);
+        ClaritySystem.Disarm(silent: true);
+        Hotspots.HideAll();
+        _endingRoot.Visible = true;
+        _endingReturnButton.Visible = false;
+        _endingStats.Visible = false;
+        _endingTitle.Text = string.Empty;
+        _endingCaption.Text = string.Empty;
+        _endingTitle.Modulate = new Color(1, 1, 1, 0);
+        _endingCaption.Modulate = new Color(1, 1, 1, 0);
+        GetTree().Paused = true;
+        AudioManager.Instance?.StopAmbience();
+        AudioManager.Instance?.PlayMusic(AudioManager.MusicFinale, -10f, 2.2f);
+
+        var (imagePath, title, finalCaption, cards) = EndingData(endingId);
+        try
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            _endingImage.Texture = GD.Load<Texture2D>(imagePath);
+            _endingImage.PivotOffset = _endingImage.Size / 2f;
+            _endingImage.Scale = Vector2.One * 1.03f;
+            _endingImage.Modulate = new Color(1, 1, 1, 0);
+
+            _endingTween?.Kill();
+            _endingTween = CreateTween();
+            _endingTween.SetPauseMode(Tween.TweenPauseMode.Process);
+            _endingTween.TweenProperty(_endingImage, "modulate:a", 1f, 1.4f);
+            _endingTween.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * 1.08f, 18f);
+            await WaitForEndingAdvance(1.2f);
+
+            foreach (var card in cards)
+            {
+                if (_endingSkipRequested)
+                    break;
+                _endingAdvanceRequested = false;
+                _endingCaption.Text = card;
+                var fadeIn = CreateTween();
+                fadeIn.SetPauseMode(Tween.TweenPauseMode.Process);
+                fadeIn.TweenProperty(_endingCaption, "modulate:a", 1f, 0.8f);
+                await WaitForEndingAdvance(5.8f);
+                if (_endingSkipRequested)
+                    break;
+                var fadeOut = CreateTween();
+                fadeOut.SetPauseMode(Tween.TweenPauseMode.Process);
+                fadeOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.5f);
+                await ToSignal(fadeOut, Tween.SignalName.Finished);
+            }
+
+            // The decision is complete once its title appears. Record it
+            // now; if the player closes here, the ending is still found.
+            GameState.Instance?.FinishRun(_endingId);
+            int found = 0;
+            foreach (var id in new[] { "hollow", "waking", "kept_house" })
+            {
+                if (Settings.Instance?.HasSeenEnding(id) == true)
+                    found++;
+            }
+            _endingStats.Text = $"{GameState.Instance?.StatsSummary() ?? string.Empty}   ·   Endings found: {found}/3";
+            _endingStats.Visible = true;
+            _endingTitle.Text = title;
+            _endingCaption.Text = finalCaption;
+            var finalTween = CreateTween();
+            finalTween.SetPauseMode(Tween.TweenPauseMode.Process);
+            finalTween.TweenProperty(_endingTitle, "modulate:a", 1f, 1.4f);
+            finalTween.Parallel().TweenProperty(_endingCaption, "modulate:a", 1f, 1.4f);
+            await ToSignal(finalTween, Tween.SignalName.Finished);
+            _endingReturnButton.Visible = true;
+            _endingReturnButton.GrabFocus();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning($"Ending interrupted: {ex.Message}");
+            GameState.Instance?.FinishRun(_endingId);
+            _endingTitle.Text = title;
+            _endingCaption.Text = finalCaption;
+            _endingTitle.Modulate = Colors.White;
+            _endingCaption.Modulate = Colors.White;
+            _endingReturnButton.Visible = true;
+        }
+    }
+
+    private async System.Threading.Tasks.Task WaitForEndingAdvance(float seconds)
+    {
+        _endingAdvanceRequested = false;
+        ulong deadline = Time.GetTicksMsec() + (ulong)(seconds * 1000f);
+        while (Time.GetTicksMsec() < deadline && !_endingAdvanceRequested && !_endingSkipRequested)
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        _endingAdvanceRequested = false;
+    }
+
+    private void OnEndingReturnPressed()
+    {
+        if (!_endingPlaying)
+            return;
+        _endingPlaying = false;
+        _endingTween?.Kill();
+        _endingTween = null;
+        _endingRoot.Visible = false;
+        GetTree().Paused = false;
+        AudioManager.Instance?.StopAmbience();
+        // FinishRun already let go of the save. Do not SaveGame here.
+        GetTree().ChangeSceneToFile(MainMenuScenePath);
     }
 
     private void BuildCutscene()

@@ -40,6 +40,10 @@ public static class ClaritySystem
             return false;
         }
 
+        // A verb and Clarity are different ways of attending; only one can
+        // be armed at a time.
+        MemoryVerbSystem.Cancel(silent: true);
+
         // Apply the eye cursor BEFORE setting IS_CLARIFYING: CursorHelper.ApplyCursor
         // deliberately refuses to run while clarifying so hover code can't override it.
         CursorHelper.ApplyCursor(EyeCursorPath, 35, 35);

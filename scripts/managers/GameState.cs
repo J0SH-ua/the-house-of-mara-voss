@@ -23,6 +23,8 @@ public partial class GameState : Node
     public event Action ObjectiveChanged;
     public event Action<string> ToastRequested;
     public event Action Saved;
+    public event Action VerbsChanged;
+    public event Action StoryFlagsChanged;
 
     // ---------------------------------------------------------------- constants
     public const string SavePath = "user://mara_voss_save.json";
@@ -45,10 +47,23 @@ public partial class GameState : Node
     [
         "Fragment I — The Brass Key",
         "Fragment II — The Photograph",
-        "Fragment III",
-        "Fragment IV",
-        "Fragment V",
-        "Fragment VI",
+        "Fragment III — The Preserved Names",
+        "Fragment IV — The Hallway Sentence",
+        "Fragment V — The Unsent Apology",
+        "Fragment VI — The Last Afternoon",
+    ];
+
+    /// <summary>Canonical journal text for every fragment. Collectors may
+    /// pass richer in-scene wording; backfills for older Part 1 saves use
+    /// these defaults so no recovered fragment is ever wordless.</summary>
+    public static readonly string[] DefaultShardFragments =
+    [
+        "Every morning started here. Every morning she was already waiting, already loud, already herself. You could set your clock by her. That's not something you notice until it's gone.",
+        "She used to fall asleep in that chair and think it was the best thing in the world — to fall asleep to the sound of someone else in the room. Someone else breathing. Someone turning a page.",
+        "Ida kept spiders in jars and gave them names so she would not be afraid of them. Mara kept the jars. It is easier to preserve a thing than to admit the hands that labelled it are gone.",
+        "\"She would have loved to see how far you've come.\" Their mother said it in the hallway, years too late, to a daughter who still measured every distance from the morning she did not come.",
+        "Mara wrote the apology every October and never sent it. Not because there was no address. Because an unsent letter can still be answered by the house.",
+        "That afternoon, Ida waited by the apple trees until waiting became walking. The swing was still moving when Mara remembered. By then the gate was open, and the road had already taken the sound away.",
     ];
 
     /// <summary>Scene path (file name) → tracker room name.</summary>
@@ -60,6 +75,7 @@ public partial class GameState : Node
         ["room_2_puzzle.tscn"] = "Room2",
         ["room_3.tscn"] = "Room3",
         ["room_4.tscn"] = "Room4",
+        ["Room_4_puzzle.tscn"] = "Room4",
         ["room_5.tscn"] = "Room5",
         ["room_6.tscn"] = "Room6",
         ["room_7.tscn"] = "Room7",
@@ -84,6 +100,20 @@ public partial class GameState : Node
         ["Letter"] = "the letter",
         ["Bag"] = "the bag",
         ["Bed"] = "the bed",
+        ["Mirror"] = "the hallway mirror",
+        ["HallDrawer"] = "the hall drawer",
+        ["Photographs"] = "the hallway photographs",
+        ["RainWindow"] = "the rain window",
+        ["Lamp"] = "the bedside lamp",
+        ["AlarmClock"] = "the alarm clock",
+        ["Desk"] = "the writing desk",
+        ["RotaryPhone"] = "the rotary phone",
+        ["Wardrobe"] = "the wardrobe",
+        ["FloorPhotographs"] = "the photographs on the floor",
+        ["AppleBasket"] = "the apple basket",
+        ["Swing"] = "the swing",
+        ["BrokenGate"] = "the broken garden gate",
+        ["EmptyRoad"] = "the empty road",
     };
 
     // -------------------------------------------------------------------- state
@@ -97,6 +127,16 @@ public partial class GameState : Node
     public List<string> EchoLog { get; } = new();
 
     private readonly HashSet<string> _roomsCompleted = new();
+    private readonly HashSet<MemoryVerb> _unlockedVerbs = new();
+    private readonly HashSet<string> _storyFlags = new();
+
+    /// <summary>The verb currently armed by the player (runtime mode, not saved).</summary>
+    public MemoryVerb ActiveVerb { get; private set; } = MemoryVerb.None;
+
+    /// <summary>Ending id completed in this run ("waking", "kept_house", "hollow"), or empty.</summary>
+    public string CompletedEnding { get; private set; } = string.Empty;
+
+    public int VerbUses { get; private set; }
 
     // Stats
     public double PlayTimeSeconds { get; private set; }
@@ -162,6 +202,23 @@ public partial class GameState : Node
         ["letter_home"] = ("Her parents' letter — the word",
             "\"Come home when you can — the house misses you.\"\n\n" +
             "The table lock wants four letters, spelled the way the word is spelled."),
+        ["kept_names"] = ("The preserved names",
+            "Ida named what frightened her and kept it where she could see it. Preservation was her courage. In Mara, it became a way not to say goodbye."),
+        ["hallway_sentence"] = ("The hallway sentence",
+            "\"She would have loved to see how far you've come.\"\n\n" +
+            "Echo does not invent the words. It only lets them arrive in the order they were spoken."),
+        ["anchor_lamp"] = ("What stayed lit",
+            "The bedside lamp is the one thing in Room 5 that never changes sides, colour, or hour. Mara's mother left a light on for whoever came home late. Mara still does.\n\n" +
+            "Anchor remembers around what stays."),
+        ["unsent_letters"] = ("The unsent apology",
+            "Every October, another letter. Every letter begins, \"I should have been there at four.\" None was sent — an apology cannot be answered by the dead, so Mara addressed it to the house instead."),
+        ["last_afternoon_trace"] = ("The way she went",
+            "The garden remembers in causes, not pictures:\n\n" +
+            "the apple basket she carried while she waited, the swing where she counted the minutes, the broken gate she finally slipped through, the empty road where Mara never appeared.\n\n" +
+            "Trace them in that order."),
+        ["fragment_order"] = ("One morning, in order",
+            "The fragments belong in the order Mara lived them:\n\n" +
+            "I The Brass Key · II The Photograph · III The Preserved Names · IV The Hallway Sentence · V The Unsent Apology · VI The Last Afternoon."),
     };
 
     // ---------------------------------------------------------------- lifecycle
@@ -188,6 +245,7 @@ public partial class GameState : Node
     private void OnSceneChanged(string scenePath)
     {
         AudioManager.Instance?.PlayMusicForScene(scenePath);
+        EnsureFinalActProgress();
 
         // A Recollection spent in the previous room sets this room's Clarity.
         string room = CurrentRoomName();
@@ -224,7 +282,15 @@ public partial class GameState : Node
             case ("Room1", "Drawing"): UnlockClue("drawing_eight"); break;
             case ("Room1", "CupExclude"): UnlockClue("cup_number"); break;
             case ("Room2", "Letter"): UnlockClue("letter_home"); break;
+            case ("Room3", "Jars"): UnlockClue("kept_names"); break;
+            case ("Room5", "Lamp"): UnlockClue("anchor_lamp"); break;
+            case ("Room5", "Desk"): UnlockClue("unsent_letters"); break;
         }
+
+        // The garden's arrangement clue assembles only once every stop on
+        // Ida's last afternoon has been faced.
+        if (roomName == "Room6" && RoomExamineTracker.HasRoomBeenFullyExamined("Room6"))
+            UnlockClue("last_afternoon_trace");
     }
 
     public bool HasClue(string clueId) => clueId != null && _unlockedClues.Contains(clueId);
@@ -293,6 +359,11 @@ public partial class GameState : Node
         AddIfExamined("Room1", "Drawing", "drawing_eight");
         AddIfExamined("Room1", "CupExclude", "cup_number");
         AddIfExamined("Room2", "Letter", "letter_home");
+        AddIfExamined("Room3", "Jars", "kept_names");
+        AddIfExamined("Room5", "Lamp", "anchor_lamp");
+        AddIfExamined("Room5", "Desk", "unsent_letters");
+        if (RoomExamineTracker.HasRoomBeenFullyExamined("Room6") && !_unlockedClues.Contains("last_afternoon_trace"))
+            _unlockedClues.Add("last_afternoon_trace");
 
         bool allMorning = true;
         foreach (var id in MorningClueIds)
@@ -348,6 +419,12 @@ public partial class GameState : Node
 
         string room = CurrentRoomName();
         if (room == null)
+            return false;
+
+        // Rooms 5-6 are built around Memory Verbs and authored background
+        // hotspots, not TileMap Clarify layers. Never offer a Recollection
+        // there that Clarity could not visually fulfil.
+        if (room is "Room5" or "Room6")
             return false;
 
         remaining = GetRecollectionRemaining(room, out int examined, out int total);
@@ -464,9 +541,27 @@ public partial class GameState : Node
             case "room_2_puzzle.tscn":
                 return "Spell the four-letter word to open the lock. The sitting room has been saying it all along — Step Back (Q) to check.";
             case "room_4.tscn":
-                return "Cross the hallway. Face what it shows you, then take the door.";
+                if (IsShardRecovered(3))
+                    return "The sentence is whole. Take the door at the end of the hallway.";
+                if (HasFlag("room4_sentence_complete"))
+                    return "The sentence is whole. The hallway door is a door again — click it.";
+                return HasVerb(MemoryVerb.Echo)
+                    ? "Echo (E): drift across the hallway photographs and hear their sentence in order."
+                    : "Cross the hallway. The photographs are trying to say something in order.";
+            case "Room_4_puzzle.tscn":
+                return HasFlag("room4_door_opened")
+                    ? "The way through stands open. Click the door to enter the room that will not stay one room."
+                    : "Echo (E) the door's last knock — each brass picture, then the keyhole beneath it.";
             case "room_7.tscn":
-                return $"Place the fragments in their slots ({CountPlaced()}/{MaxShards})";
+                if (!string.IsNullOrEmpty(CompletedEnding))
+                    return "This memory has been decided.";
+                if (CountRecovered() < MaxShards)
+                    return $"The last room is waiting for every fragment ({CountRecovered()}/{MaxShards}). Step back and keep remembering.";
+                if (CountPlaced() < MaxShards)
+                    return $"Return the fragments to the six hollow frames ({CountPlaced()}/{MaxShards}). Choose a fragment below, then a frame.";
+                return FragmentsInOrder()
+                    ? "One morning, in order. Release (R) the assembled memory — or choose to keep the house."
+                    : "All six are here, but not in the order she lived them. Click a frame to take its fragment back and rearrange.";
         }
 
         if (room != null && RoomExamineTracker.RoomHasRequirements(room))
@@ -479,6 +574,8 @@ public partial class GameState : Node
                     "Room1" => "Examine everything in the kitchen",
                     "Room2" => "Examine everything in the sitting room",
                     "Room3" => "Examine everything kept in this room",
+                    "Room5" => "Examine the room that will not stay one room",
+                    "Room6" => "Examine every stop on the last afternoon",
                     _ => "Examine everything here",
                 };
                 return $"{lead} ({done}/{total})";
@@ -491,6 +588,11 @@ public partial class GameState : Node
                 "Room3" => "Everything faced — open the jars, then take the hallway.",
                 "Room1" => "Fragment recovered. Onward: take the arrow to the sitting room.",
                 "Room2" => "Fragment recovered. Onward: through the table drawer.",
+                "Room5" when !IsShardRecovered(4) && !HasFlag("room5_anchored_lamp") => "Everything faced — Anchor (A) the bedside lamp, the one thing that stayed lit.",
+                "Room5" when !IsShardRecovered(4) => "The room is holding still. Open the writing-desk drawer.",
+                "Room5" => "Fragment recovered. The wardrobe has remembered the garden — click it.",
+                "Room6" when !IsShardRecovered(5) => "Everything faced — Trace (T) basket, swing, broken gate, empty road. The arrangement is in your journal.",
+                "Room6" => "Fragment recovered. Follow the road beyond the broken gate.",
                 _ => string.Empty,
             };
         }
@@ -527,11 +629,58 @@ public partial class GameState : Node
             };
         }
         if (file == "room_4.tscn")
-            return ("The photographs are a sentence. Drift along them, in order, and listen.", null);
+        {
+            return NextHintLevel("Room4") switch
+            {
+                1 => ("The photographs are not separate captions. Together they are one sentence someone once said to Mara.", null),
+                2 => ("Press E for Echo, then move across the photographs from the first frame toward the last. Each correct word climbs one note.", null),
+                _ => ("The sentence is: \"She would have loved to see how far you've come.\" Begin with the first photograph on the left.", null),
+            };
+        }
+        if (file == "Room_4_puzzle.tscn")
+        {
+            if (HasFlag("room4_door_opened"))
+                return ("All three locks have already turned. Click any part of the close-up door to go through.", null);
+            return NextHintLevel("Room4Puzzle") switch
+            {
+                1 => ("The three pictures are not a row to read once. Each one has a lock directly beneath it.", null),
+                2 => ("Think in pairs, left to right: cross and turn, enter and turn, close and turn. Echo must be armed for a click to count.", null),
+                _ => ("Press E, then click: bridge plate → left keyhole → little door plate → center keyhole → circle plate → right keyhole.", null),
+            };
+        }
+        if (file == "room_5.tscn" && RoomExamineTracker.HasRoomBeenFullyExamined("Room5"))
+        {
+            if (IsShardRecovered(4))
+                return ("The yellow raincoat should not fit an adult wardrobe — which is why the wardrobe now opens on the garden. Click it.", null);
+            return NextHintLevel("Room5") switch
+            {
+                1 => ("One object in this room has the same purpose in childhood and adulthood: it was left on for whoever came home late.", null),
+                2 => ("Press A for Anchor, then click the bedside lamp. When the room stops sliding between years, the desk drawer will stay real long enough to open.", null),
+                _ => ("Anchor the lamp (A), then click the small drawer in the writing desk. The unsent apology is inside.", null),
+            };
+        }
+        if (file == "room_6.tscn" && RoomExamineTracker.HasRoomBeenFullyExamined("Room6"))
+        {
+            if (IsShardRecovered(5))
+                return ("Do not go back to the swing. Follow the empty road beyond the gate; it is the only way left to walk.", null);
+            return NextHintLevel("Room6") switch
+            {
+                1 => ("Trace does not ask where Ida is in the garden. It asks what happened, one cause at a time.", null),
+                2 => ("She waited with the apples, counted on the swing, left through the broken gate, and met the empty road. Your journal (J) has the arrangement.", null),
+                _ => ("Press T, then click: apple basket → swing → broken gate → empty road.", null),
+            };
+        }
         if (file == "room_7.tscn")
-            return (CountCarried() > 0
-                ? "You are carrying pieces of her. The hollow frames are waiting."
-                : "Nothing to return yet. The house still holds its fragments.", null);
+        {
+            if (CountRecovered() < MaxShards)
+                return ($"Only {CountRecovered()} of six fragments have been recovered. Step Back (Q); the missing rooms still hold the rest.", null);
+            return NextHintLevel("Room7") switch
+            {
+                1 => ("A frame is not filled merely by having any memory in it. The order matters — and a placed fragment can be taken back.", null),
+                2 => ("Choose a carried fragment at the bottom, then click its hollow frame. Click a filled frame to reclaim it. The journal clue \"One morning, in order\" keeps the sequence.", null),
+                _ => ("Order: I Brass Key, II Photograph, III Preserved Names, IV Hallway Sentence, V Unsent Apology, VI Last Afternoon. Then press R and click the assembled memory — or choose the kept house.", null),
+            };
+        }
 
         if (room == null || !RoomExamineTracker.RoomHasRequirements(room))
             return ("Keep looking. The house notices being noticed.", null);
@@ -675,11 +824,187 @@ public partial class GameState : Node
         return Globals.Instance.CLARITY_TOGGLE_COUNT > before;
     }
 
+    // ------------------------------------------------------------- memory verbs
+
+    public static string VerbDisplayName(MemoryVerb verb) => verb switch
+    {
+        MemoryVerb.Echo => "Echo",
+        MemoryVerb.Anchor => "Anchor",
+        MemoryVerb.Trace => "Trace",
+        MemoryVerb.Release => "Release",
+        _ => "Remember",
+    };
+
+    public bool HasVerb(MemoryVerb verb) => verb != MemoryVerb.None && _unlockedVerbs.Contains(verb);
+
+    /// <summary>Unlock a way of remembering. Silent unlocks are used by save
+    /// backfills; the surrounding scene-change/load save persists them.</summary>
+    public bool UnlockVerb(MemoryVerb verb, bool announce = true)
+    {
+        if (verb == MemoryVerb.None || !_unlockedVerbs.Add(verb))
+            return false;
+
+        VerbsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        if (announce)
+        {
+            AudioManager.Play(Sfx.ClarifyReveal, -5f, verb == MemoryVerb.Release ? 1.15f : 1f);
+            Toast(verb switch
+            {
+                MemoryVerb.Echo => "Echo learned — press E to hear the order a memory keeps.",
+                MemoryVerb.Anchor => "Anchor learned — press A to hold one true thing still.",
+                MemoryVerb.Trace => "Trace learned — press T to connect moments in cause and order.",
+                MemoryVerb.Release => "Release learned — press R when the memory is whole.",
+                _ => $"{VerbDisplayName(verb)} learned.",
+            });
+            SaveGame($"verb unlocked: {verb}");
+        }
+        return true;
+    }
+
+    private void UnlockVerbForShard(int shardIndex, bool announce)
+    {
+        MemoryVerb verb = shardIndex switch
+        {
+            2 => MemoryVerb.Echo,
+            3 => MemoryVerb.Anchor,
+            4 => MemoryVerb.Trace,
+            5 => MemoryVerb.Release,
+            _ => MemoryVerb.None,
+        };
+        if (verb != MemoryVerb.None)
+            UnlockVerb(verb, announce);
+    }
+
+    public void SetActiveVerb(MemoryVerb verb)
+    {
+        if (verb != MemoryVerb.None && !HasVerb(verb))
+            verb = MemoryVerb.None;
+        if (ActiveVerb == verb)
+            return;
+        ActiveVerb = verb;
+        VerbsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+    }
+
+    public void RegisterVerbUsed(MemoryVerb verb)
+    {
+        if (verb == MemoryVerb.None)
+            return;
+        VerbUses++;
+        VerbsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+    }
+
+    // --------------------------------------------------------------- story flags
+
+    public bool HasFlag(string flag) => !string.IsNullOrWhiteSpace(flag) && _storyFlags.Contains(flag);
+
+    /// <summary>Persistent one-way story/puzzle flags for the final act
+    /// (anchored objects, sentence completion, ending choice availability).</summary>
+    public bool SetFlag(string flag, bool save = true)
+    {
+        if (string.IsNullOrWhiteSpace(flag) || !_storyFlags.Add(flag))
+            return false;
+        StoryFlagsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        if (save)
+            SaveGame($"flag: {flag}");
+        return true;
+    }
+
+    public bool ClearFlag(string flag, bool save = true)
+    {
+        if (string.IsNullOrWhiteSpace(flag) || !_storyFlags.Remove(flag))
+            return false;
+        StoryFlagsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        if (save)
+            SaveGame($"flag cleared: {flag}");
+        return true;
+    }
+
+    private static int RoomOrder(string room) => room switch
+    {
+        "Room1" => 1,
+        "Room2" => 2,
+        "Room3" => 3,
+        "Room4" => 4,
+        "Room5" => 5,
+        "Room6" => 6,
+        "Room7" => 7,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// Older saves may sit at the old "Part 1 End" with rooms completed but
+    /// no late fragments/verbs (those collectors did not exist yet). Derive
+    /// them from durable progress whenever a room opens or a save loads, so
+    /// returning players continue into the finished game instead of a dead end.
+    /// </summary>
+    public void EnsureFinalActProgress()
+    {
+        int order = RoomOrder(CurrentRoomName());
+
+        if (IsRoomCompleted("Room3") || order >= 4 || IsShardRecovered(2))
+        {
+            if (!IsShardRecovered(2))
+                CollectShard(2, null, silent: true);
+            UnlockVerb(MemoryVerb.Echo, announce: false);
+        }
+        if (IsRoomCompleted("Room4") || order >= 5 || IsShardRecovered(3))
+        {
+            if (!IsShardRecovered(3))
+                CollectShard(3, null, silent: true);
+            UnlockVerb(MemoryVerb.Anchor, announce: false);
+        }
+        if (IsRoomCompleted("Room5") || order >= 6 || IsShardRecovered(4))
+        {
+            if (!IsShardRecovered(4))
+                CollectShard(4, null, silent: true);
+            UnlockVerb(MemoryVerb.Trace, announce: false);
+        }
+        if (IsRoomCompleted("Room6") || order >= 7 || IsShardRecovered(5))
+        {
+            if (!IsShardRecovered(5))
+                CollectShard(5, null, silent: true);
+            UnlockVerb(MemoryVerb.Release, announce: false);
+        }
+
+        if (CountRecovered() >= MaxShards && !_unlockedClues.Contains("fragment_order"))
+        {
+            _unlockedClues.Add("fragment_order");
+            CluesChanged?.Invoke();
+        }
+    }
+
+    /// <summary>Record an authored ending as cross-run meta-progress and let
+    /// go of the run save, so Continue cannot resurrect a finished Mara.</summary>
+    public void FinishRun(string endingId)
+    {
+        if (string.IsNullOrWhiteSpace(endingId))
+            return;
+        CompletedEnding = endingId;
+        _storyFlags.Add($"ending:{endingId}");
+        SetActiveVerb(MemoryVerb.None);
+        Settings.Instance?.RecordEnding(endingId);
+        StoryFlagsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        DeleteSave();
+    }
+
     // ------------------------------------------------------------------- shards
 
     public static bool ShardCollected(int index)
     {
         return index >= 0 && index < MaxShards && Globals.SHARDS_COLLECTED[index];
+    }
+
+    /// <summary>True whether a fragment is carried or already returned in Room 7.</summary>
+    public bool IsShardRecovered(int index)
+    {
+        return index >= 0 && index < MaxShards &&
+               (Globals.SHARDS_COLLECTED[index] || System.Array.IndexOf(PlacedShardBySlot, index) >= 0);
     }
 
     public int CountCarried()
@@ -708,24 +1033,46 @@ public partial class GameState : Node
     /// Idempotent shard collection. Records the journal fragment text.
     /// Returns true only the first time (callers use it to gate dialogue/stings).
     /// </summary>
-    public bool CollectShard(int index, string fragmentText = null)
+    public bool CollectShard(int index, string fragmentText = null, bool silent = false)
     {
         if (index < 0 || index >= MaxShards)
             return false;
 
         bool already = Globals.SHARDS_COLLECTED[index] ||
                        System.Array.IndexOf(PlacedShardBySlot, index) >= 0;
-        if (!string.IsNullOrWhiteSpace(fragmentText) && string.IsNullOrWhiteSpace(ShardFragments[index]))
-            ShardFragments[index] = fragmentText;
+        if (string.IsNullOrWhiteSpace(ShardFragments[index]))
+        {
+            ShardFragments[index] = !string.IsNullOrWhiteSpace(fragmentText)
+                ? fragmentText
+                : DefaultShardFragments[index];
+        }
 
         if (already)
             return false;
 
         Globals.SHARDS_COLLECTED[index] = true;
-        AudioManager.Play(Sfx.ShardCollect, -3f);
-        Toast($"{ShardTitles[index]} — recovered ({CountRecovered()}/{MaxShards})");
+        if (!silent)
+        {
+            AudioManager.Play(Sfx.ShardCollect, -3f);
+            Toast($"{ShardTitles[index]} — recovered ({CountRecovered()}/{MaxShards})");
+        }
         ShardsChanged?.Invoke();
-        SaveGame($"shard {index} collected");
+        ObjectiveChanged?.Invoke();
+        UnlockVerbForShard(index, announce: !silent);
+        if (CountRecovered() >= MaxShards && !_unlockedClues.Contains("fragment_order"))
+        {
+            if (silent)
+            {
+                _unlockedClues.Add("fragment_order");
+                CluesChanged?.Invoke();
+            }
+            else
+            {
+                UnlockClue("fragment_order");
+            }
+        }
+        if (!silent)
+            SaveGame($"shard {index} collected");
         return true;
     }
 
@@ -772,6 +1119,67 @@ public partial class GameState : Node
         return CountPlaced() >= MaxShards ? ShardPlaceResult.AllPlaced : ShardPlaceResult.Placed;
     }
 
+    /// <summary>
+    /// The finished Room 7 is an ordering puzzle, not an any-shard-any-slot
+    /// drop: the player chooses an exact fragment for an exact hollow frame,
+    /// and may take it back until Release is used.
+    /// </summary>
+    public ShardPlaceResult TryPlaceSpecificShard(int slotIndex, int shardIndex)
+    {
+        if (Globals.Instance == null || slotIndex < 0 || slotIndex >= MaxShards ||
+            shardIndex < 0 || shardIndex >= MaxShards)
+            return ShardPlaceResult.NoShardCarried;
+
+        if (Globals.Instance.SHARDS_PLACED[slotIndex])
+            return ShardPlaceResult.AlreadyPlaced;
+        if (!Globals.SHARDS_COLLECTED[shardIndex])
+            return ShardPlaceResult.NoShardCarried;
+
+        Globals.SHARDS_COLLECTED[shardIndex] = false;
+        Globals.Instance.SHARDS_PLACED[slotIndex] = true;
+        PlacedShardBySlot[slotIndex] = shardIndex;
+
+        ShardsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        SaveGame($"shard {shardIndex} placed in slot {slotIndex}");
+        return CountPlaced() >= MaxShards ? ShardPlaceResult.AllPlaced : ShardPlaceResult.Placed;
+    }
+
+    /// <summary>Take a placed fragment back into Mara's hands for rearrangement.</summary>
+    public bool TryRemoveShardFromSlot(int slotIndex, out int shardIndex)
+    {
+        shardIndex = -1;
+        if (Globals.Instance == null || slotIndex < 0 || slotIndex >= MaxShards ||
+            !Globals.Instance.SHARDS_PLACED[slotIndex])
+            return false;
+
+        shardIndex = PlacedShardBySlot[slotIndex];
+        if (shardIndex < 0 || shardIndex >= MaxShards)
+            shardIndex = slotIndex; // tolerate very old saves with only placed booleans
+
+        Globals.Instance.SHARDS_PLACED[slotIndex] = false;
+        PlacedShardBySlot[slotIndex] = -1;
+        Globals.SHARDS_COLLECTED[shardIndex] = true;
+
+        ShardsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        SaveGame($"shard {shardIndex} removed from slot {slotIndex}");
+        return true;
+    }
+
+    /// <summary>All six frames filled in the order Mara lived them.</summary>
+    public bool FragmentsInOrder()
+    {
+        if (Globals.Instance == null || CountPlaced() < MaxShards)
+            return false;
+        for (int i = 0; i < MaxShards; i++)
+        {
+            if (PlacedShardBySlot[i] != i)
+                return false;
+        }
+        return true;
+    }
+
     // ------------------------------------------------------------------ journal
 
     public void LogEcho(string line)
@@ -801,7 +1209,7 @@ public partial class GameState : Node
         int mins = (int)(PlayTimeSeconds / 60);
         int secs = (int)(PlayTimeSeconds % 60);
         return $"Time in the house: {mins}:{secs:00}   ·   Examined: {ExaminesPerformed}   ·   " +
-               $"Clarity used: {ClarifiesUsed}   ·   Memory integrity: {TierDisplayName(CurrentTier)}   ·   Clues noted: {_unlockedClues.Count}";
+               $"Clarity used: {ClarifiesUsed}   ·   Memory verbs used: {VerbUses}   ·   Memory integrity: {TierDisplayName(CurrentTier)}   ·   Clues noted: {_unlockedClues.Count}";
     }
 
     // ------------------------------------------------------------- save / load
@@ -834,6 +1242,11 @@ public partial class GameState : Node
         }
         EchoLog.Clear();
         _unlockedClues.Clear();
+        _unlockedVerbs.Clear();
+        _storyFlags.Clear();
+        ActiveVerb = MemoryVerb.None;
+        CompletedEnding = string.Empty;
+        VerbUses = 0;
         PlayerNotes = string.Empty;
         _persistentReveals.Clear();
         _pendingClarityCarry = null;
@@ -851,6 +1264,8 @@ public partial class GameState : Node
         CorruptionChanged?.Invoke(0, CorruptionTier.Calm);
         ClarityChanged?.Invoke(ClarityCount);
         ShardsChanged?.Invoke();
+        VerbsChanged?.Invoke();
+        StoryFlagsChanged?.Invoke();
         DeleteSave();
         CutscenePending = true;
         Logger.Info("GameState: new game.");
@@ -869,7 +1284,7 @@ public partial class GameState : Node
 
         var data = new Dictionary
         {
-            ["version"] = 1,
+            ["version"] = 2,
             ["scene"] = SceneManager.CurrentScenePath ?? string.Empty,
             ["corruption"] = Globals.Instance.CORRUPTION_COUNT,
             ["clarity"] = Globals.Instance.CLARITY_TOGGLE_COUNT,
@@ -918,6 +1333,18 @@ public partial class GameState : Node
             reveals.Add(r);
         data["reveals"] = reveals;
         data["clarity_carry"] = _pendingClarityCarry ?? -1;
+
+        var verbs = new Array<string>();
+        foreach (var verb in _unlockedVerbs)
+            verbs.Add(verb.ToString());
+        data["verbs"] = verbs;
+
+        var flags = new Array<string>();
+        foreach (var flag in _storyFlags)
+            flags.Add(flag);
+        data["story_flags"] = flags;
+        data["verb_uses"] = VerbUses;
+        data["completed_ending"] = CompletedEnding;
 
         using var file = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
         if (file == null)
@@ -1015,12 +1442,33 @@ public partial class GameState : Node
         }
         int carry = Get(data, "clarity_carry", -1).AsInt32();
         _pendingClarityCarry = carry >= 0 ? carry : null;
+
+        if (Get(data, "verbs").VariantType == Variant.Type.Array)
+        {
+            foreach (var v in data["verbs"].AsGodotArray())
+            {
+                if (Enum.TryParse<MemoryVerb>(v.AsString(), out var verb) && verb != MemoryVerb.None)
+                    _unlockedVerbs.Add(verb);
+            }
+        }
+        ActiveVerb = MemoryVerb.None;
+
+        if (Get(data, "story_flags").VariantType == Variant.Type.Array)
+        {
+            foreach (var v in data["story_flags"].AsGodotArray())
+                _storyFlags.Add(v.AsString());
+        }
+        VerbUses = Get(data, "verb_uses", 0).AsInt32();
+        CompletedEnding = Get(data, "completed_ending", string.Empty).AsString();
         CluesChanged?.Invoke();
+        VerbsChanged?.Invoke();
+        StoryFlagsChanged?.Invoke();
 
         if (Get(data, "progress").VariantType == Variant.Type.Dictionary)
             RoomExamineTracker.ImportProgress(data["progress"].AsGodotDictionary());
 
         BackfillCluesFromProgress();
+        EnsureFinalActProgress();
 
         AudioManager.Instance?.SetCorruption01(Corruption01);
         CorruptionChanged?.Invoke(Globals.Instance.CORRUPTION_COUNT, CurrentTier);
@@ -1057,6 +1505,11 @@ public partial class GameState : Node
         }
         EchoLog.Clear();
         _unlockedClues.Clear();
+        _unlockedVerbs.Clear();
+        _storyFlags.Clear();
+        ActiveVerb = MemoryVerb.None;
+        CompletedEnding = string.Empty;
+        VerbUses = 0;
         PlayerNotes = string.Empty;
         _persistentReveals.Clear();
         _pendingClarityCarry = null;

@@ -21,6 +21,8 @@ public partial class RoomExamineTracker : Node
             ["Room1"] = ["Window", "Cup2", "Toast", "Note", "Clock", "Calendar", "Drawing"],
             ["Room2"] = ["Bookshelf", "Phone", "RightChair", "LeftChair", "Painting", "Globe", "Letter"],
             ["Room3"] = ["Painting", "Bag", "Bed", "Note"],
+            ["Room5"] = ["RainWindow", "Bed", "Lamp", "Desk", "RotaryPhone", "Wardrobe"],
+            ["Room6"] = ["AppleBasket", "Swing", "BrokenGate", "EmptyRoad"],
         };
 
     // Track which examine nodes have been clicked: roomName -> objectName -> set of examine layer names
@@ -64,6 +66,30 @@ public partial class RoomExamineTracker : Node
             _examineProgress[roomName][objectName] = [];
 
         bool isNew = _examineProgress[roomName][objectName].Add(examineName);
+        Version++;
+        if (isNew)
+            ExamineRecorded?.Invoke(roomName, objectName);
+    }
+
+    /// <summary>
+    /// Record an examine from a code-built final-act room (Room 5/6 use
+    /// authored background hotspots rather than TileMap examine layers).
+    /// This keeps objectives, journal clues, hints, saves and backfills on
+    /// exactly the same tracker as Rooms 1-3.
+    /// </summary>
+    public static void RecordExamine(string roomName, string objectName, string examineName = "Examine1")
+    {
+        if (string.IsNullOrWhiteSpace(roomName) || string.IsNullOrWhiteSpace(objectName) ||
+            objectName.EndsWith("Final"))
+            return;
+
+        if (!_examineProgress.ContainsKey(roomName))
+            _examineProgress[roomName] = [];
+        if (!_examineProgress[roomName].ContainsKey(objectName))
+            _examineProgress[roomName][objectName] = [];
+
+        bool isNew = _examineProgress[roomName][objectName].Add(
+            string.IsNullOrWhiteSpace(examineName) ? "Examine1" : examineName);
         Version++;
         if (isNew)
             ExamineRecorded?.Invoke(roomName, objectName);

@@ -3,7 +3,7 @@ using Godot;
 public partial class Room4 : Node2D
 {
 	[ExportCategory("Door Transition")]
-	[Export(PropertyHint.File, "*.tscn")] public string DoorTargetScenePath = "res://scenes/ui/main_menu.tscn";
+	[Export(PropertyHint.File, "*.tscn")] public string DoorTargetScenePath = "res://scenes/world/Room_4_puzzle.tscn";
 	[Export] public NodePath DoorClickAreaPath = "Door/Area2D";
 
 	[Export] public bool DebugHoverDetection = true;
@@ -82,6 +82,8 @@ public partial class Room4 : Node2D
 	private bool _doorUnlocked = false;
 	private Label _sentenceLabel;
 	private CanvasLayer _sentenceLayer;
+	private bool _echoHintShown;
+	private bool _echoUseRegistered;
 	private static readonly Vector2 SentencePosition = new Vector2(400, 80);
 
 	public override void _Ready()
@@ -146,10 +148,52 @@ public partial class Room4 : Node2D
 			_sentenceLabel.AutowrapMode = TextServer.AutowrapMode.Word;
 			_sentenceLabel.Size = new Vector2(800, 160);
 		}
+
+		RestoreCompletedState();
+	}
+
+	private void RestoreCompletedState()
+	{
+		var gs = GameState.Instance;
+		if (gs == null || (!gs.HasFlag("room4_sentence_complete") && !gs.IsShardRecovered(3)))
+			return;
+
+		gs.SetFlag("room4_sentence_complete", save: false);
+		_currentSequenceIndex = HoverWords.Length;
+		_doorUnlocked = true;
+		_doorAnimationStarted = true;
+		if (_sentenceLabel != null)
+		{
+			_sentenceLabel.Text = string.Join(" ", HoverWords);
+			_sentenceLabel.Visible = true;
+			_sentenceLabel.Modulate = Colors.White;
+		}
+		if (_doorAnimation != null)
+		{
+			_doorAnimation.Visible = true;
+			var animations = _doorAnimation.SpriteFrames?.GetAnimationNames();
+			if (animations != null && animations.Length > 0)
+			{
+				_doorAnimation.Animation = animations[0];
+				_doorAnimation.Frame = Mathf.Max(0, _doorAnimation.SpriteFrames.GetFrameCount(animations[0]) - 1);
+			}
+		}
+	}
+
+	private void CompleteSentence()
+	{
+		_currentSequenceIndex = HoverWords.Length;
+		GameState.Instance?.SetFlag("room4_sentence_complete");
+		GameState.Instance?.UnlockClue("hallway_sentence");
+		GameState.Instance?.CollectShard(3);
+		GameState.Instance?.MarkRoomCompleted("Room4");
+		MemoryVerbSystem.Cancel(silent: true);
+		TriggerDoorAnimation();
 	}
 
 	private async void OnMirrorCollisionPressed()
 	{
+		RoomExamineTracker.RecordExamine("Room4", "Mirror");
 		AudioManager.Play(Sfx.ClarifyReveal, -12f, 0.8f);
 		var globalPosition = _mirrorCollisionArea.GlobalPosition;
 		await Dialogue.ShowText(this, "The hallway stretches back in the mirror. All those photographs, reversed. Ida at fourteen, mirrored, looking in the other direction.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
@@ -160,6 +204,7 @@ public partial class Room4 : Node2D
 
 	private async void OnDrawerCollisionPressed()
 	{
+		RoomExamineTracker.RecordExamine("Room4", "HallDrawer");
 		AudioManager.Play(Sfx.DrawerOpen, -7f);
 		var globalPosition = _drawerCollisionArea.GlobalPosition;
 		await Dialogue.ShowText(this, "A hall table drawer. Old wood, slightly sticky.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
@@ -294,10 +339,12 @@ public partial class Room4 : Node2D
 		await Dialogue.ShowText(this, "\"She used to run this hallway. Slide on the wooden floor in her socks — she'd get a running start from the kitchen doorway and coast all the way to the mirror at the end.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 20);
 		await Dialogue.ShowText(this, "\"She could make it from one end to the other in eleven seconds. She counted. She made everyone count.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		await Dialogue.ShowText(this, "\"She made Mara count. Mara counted. Eleven seconds. She still knows the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		await Dialogue.ShowText(this, "Part 1 of \"The House of Mara Voss\" End.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 32);
+		await Dialogue.ShowText(this, "Beyond the door is not the end of the house. It is the room Mara has been keeping between then and now.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 28);
 
+		if (GameState.Instance != null && !GameState.Instance.IsShardRecovered(3))
+			GameState.Instance.CollectShard(3);
 		GameState.Instance?.MarkRoomCompleted("Room4");
-		GameState.Instance?.SaveGame("part 1 complete");
+		GameState.Instance?.SaveGame("room 4 complete");
 		AudioManager.Play(Sfx.DoorCreak, -7f);
 		SceneManager.ChangeScene(DoorTargetScenePath);
 		GetTree().Root.SetInputAsHandled();
@@ -345,6 +392,25 @@ public partial class Room4 : Node2D
 			.SetTrans(Tween.TransitionType.Sine)
 			.SetEase(Tween.EaseType.Out);
 
+		if (_currentSequenceIndex >= HoverWords.Length)
+			return;
+
+		// Ordinary looking can find the words; only Echo hears them as a
+		// sentence. Teach that once, then let the hover labels remain.
+		if (!MemoryVerbSystem.IsArmed(MemoryVerb.Echo))
+		{
+			if (!_echoHintShown)
+			{
+				_echoHintShown = true;
+				AudioManager.Play(Sfx.Denied, -12f, 0.8f);
+				GameState.Instance?.Toast("The words are separate when you only look. Press E — Echo — then drift across the photographs.");
+			}
+			return;
+		}
+
+		if (index != _currentSequenceIndex && _currentSequenceIndex > 0)
+			AudioManager.Play(Sfx.WordChime, -13f, 0.72f);
+
 		// Compare by index, not word text, so repeated words can't satisfy
 		// the sequence out of order.
 		if (index == _currentSequenceIndex)
@@ -354,6 +420,11 @@ public partial class Room4 : Node2D
 			float[] steps = [1f, 1.122f, 1.189f, 1.335f, 1.498f, 1.587f, 1.782f, 2f, 2.245f, 2.378f];
 			float pitch = _currentSequenceIndex < steps.Length ? steps[_currentSequenceIndex] : 1f;
 			AudioManager.Play(Sfx.WordChime, -7f, pitch);
+			if (!_echoUseRegistered)
+			{
+				_echoUseRegistered = true;
+				MemoryVerbSystem.RegisterUse(MemoryVerb.Echo);
+			}
 			GameState.Instance?.Toast($"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
 
 			if (_sentenceLabel != null)
@@ -370,12 +441,7 @@ public partial class Room4 : Node2D
 			_currentSequenceIndex++;
 
 			if (_currentSequenceIndex >= HoverWords.Length)
-			{
-				TriggerDoorAnimation();
-				_currentSequenceIndex = 0;
-				if (_sentenceLabel != null)
-					_sentenceLabel.Text = string.Empty;
-			}
+				CompleteSentence();
 		}
 	}
 
@@ -429,7 +495,7 @@ public partial class Room4 : Node2D
 
 	private void TriggerDoorAnimation()
 	{
-		if (_doorAnimation == null)
+		if (_doorAnimation == null || _doorUnlocked)
 			return;
 
 		AudioManager.Play(Sfx.DoorCreak, -6f);

@@ -58,6 +58,11 @@ public static class CursorHelper
 
         ActiveHoverOwners.Add(ownerId);
 
+        // A Memory Verb owns the cursor until it is cancelled or spent;
+        // ordinary examine hover must not replace its visual language.
+        if ((GameState.Instance?.ActiveVerb ?? MemoryVerb.None) != MemoryVerb.None)
+            return;
+
         if (firstOwner || activeTexturePath != texturePath || activeWidth != width || activeHeight != height)
         {
             activeTexturePath = texturePath;
@@ -84,6 +89,12 @@ public static class CursorHelper
         // While Clarity is armed the eye cursor must survive hover churn;
         // ClaritySystem is responsible for clearing it on disarm/consume.
         if (Globals.Instance?.IS_CLARIFYING ?? false)
+        {
+            ActiveHoverOwners.Clear();
+            return;
+        }
+
+        if ((GameState.Instance?.ActiveVerb ?? MemoryVerb.None) != MemoryVerb.None)
         {
             ActiveHoverOwners.Clear();
             return;

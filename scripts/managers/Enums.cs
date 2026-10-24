@@ -45,3 +45,18 @@ public enum ShardPlaceResult
     NoShardCarried,
     AllPlaced
 }
+
+/// <summary>
+/// The late-game ways of remembering. They are earned one room at a time,
+/// then combined: Echo hears order, Anchor holds one truth still, Trace
+/// connects causes, and Release lets a completed memory change Mara instead
+/// of merely preserving her inside it.
+/// </summary>
+public enum MemoryVerb
+{
+    None = 0,
+    Echo = 1,
+    Anchor = 2,
+    Trace = 3,
+    Release = 4
+}
