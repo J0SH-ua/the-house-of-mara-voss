@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmarabagicon01"
-path="res://.godot/imported/bag_icon.png-bbc6b5b6e584221f9ca60f243a5eabd1.ctex"
+uid="uid://cyluh42g1m5uq"
+path="res://.godot/imported/bag_icon.png-efb08eb7be055df595024fc31b1cc1ef.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/core/ui/bag_icon.png"
-dest_files=["res://.godot/imported/bag_icon.png-bbc6b5b6e584221f9ca60f243a5eabd1.ctex"]
+dest_files=["res://.godot/imported/bag_icon.png-efb08eb7be055df595024fc31b1cc1ef.ctex"]
 
 [params]
 

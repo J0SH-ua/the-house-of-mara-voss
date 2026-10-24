@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmarafragapl01"
-path="res://.godot/imported/fragment_apple.png-78fc22236b754eff017d24cb5dad246c.ctex"
+uid="uid://cylummveyn3uq"
+path="res://.godot/imported/fragment_apple.png-7ede9e84ee6ddd215ea9c97736a74108.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/core/shards/fragment_apple.png"
-dest_files=["res://.godot/imported/fragment_apple.png-78fc22236b754eff017d24cb5dad246c.ctex"]
+dest_files=["res://.godot/imported/fragment_apple.png-7ede9e84ee6ddd215ea9c97736a74108.ctex"]
 
 [params]
 

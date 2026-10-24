@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://cmaracollapse01"
-path="res://.godot/imported/collapse.wav-57b92da6e06ceada315a326c3e7cdeb1.sample"
+uid="uid://dphiywe6om4bg"
+path="res://.godot/imported/collapse.wav-f9be8eafdba715897bd64cb9ee70b348.sample"
 
 [deps]
 
 source_file="res://assets/Music/bg/collapse.wav"
-dest_files=["res://.godot/imported/collapse.wav-57b92da6e06ceada315a326c3e7cdeb1.sample"]
+dest_files=["res://.godot/imported/collapse.wav-f9be8eafdba715897bd64cb9ee70b348.sample"]
 
 [params]
 
