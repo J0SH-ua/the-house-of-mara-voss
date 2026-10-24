@@ -55,6 +55,43 @@ public static class ExamineHelper
         FreeLayersBefore(examineLayers, currentIndex + 1);
     }
 
+    /// <summary>
+    /// Re-entered rooms: rebuild an object's layer state from the tracker's
+    /// record of clicked layers so it looks (and corrupts) exactly as it did
+    /// when the player left. Clicking layer N shows N+1, so the visible layer
+    /// is one past the deepest click, capped at the last layer; earlier
+    /// layers are freed just like CycleExamine leaves them.
+    /// </summary>
+    public static void RestoreLayers(TileMapLayer anyLayer, IReadOnlyCollection<string> clickedLayerNames)
+    {
+        if (anyLayer == null || clickedLayerNames == null || clickedLayerNames.Count == 0)
+            return;
+
+        var parent = anyLayer.GetParent();
+        if (parent == null)
+            return;
+
+        var layers = GetSortedExamineLayers(parent);
+        if (layers.Count == 0)
+            return;
+
+        int deepestClicked = 0;
+        foreach (var name in clickedLayerNames)
+            deepestClicked = System.Math.Max(deepestClicked, ExtractExamineNumber(name));
+        if (deepestClicked <= 0)
+            return;
+
+        int visibleIndex = System.Math.Min(deepestClicked, layers.Count - 1);
+        for (int i = 0; i < layers.Count; i++)
+        {
+            if (i == visibleIndex)
+                ShowLayer(layers[i]);
+            else
+                HideLayer(layers[i]);
+        }
+        FreeLayersBefore(layers, visibleIndex);
+    }
+
     // -------------------------------------------------------------------------
     // CLARIFY
     // There is exactly one Clarify1 layer per object.

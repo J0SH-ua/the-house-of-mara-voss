@@ -15,6 +15,44 @@ public partial class SceneManager : Node
 	/// <summary>Path of the currently loaded sub-scene ("" before the first load).</summary>
 	public static string CurrentScenePath { get; private set; } = string.Empty;
 
+	/// <summary>
+	/// Reverse navigation by scene file name: puzzle close-ups step back to
+	/// their room ("Step Back"), each room steps back to the previous room.
+	/// Forward travel stays gated by the in-world arrows/drawers as authored;
+	/// this only adds the way back.
+	/// </summary>
+	private static readonly System.Collections.Generic.Dictionary<string, (string Target, string Label)> BackTargets = new()
+	{
+		["room_1_puzzle.tscn"] = ("res://scenes/world/room_1.tscn", "← Step Back"),
+		["room_2.tscn"] = ("res://scenes/world/room_1.tscn", "← Previous Room"),
+		["room_2_puzzle.tscn"] = ("res://scenes/world/room_2.tscn", "← Step Back"),
+		["room_3.tscn"] = ("res://scenes/world/room_2.tscn", "← Previous Room"),
+		["room_4.tscn"] = ("res://scenes/world/room_3.tscn", "← Previous Room"),
+		["Room_4_puzzle.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),
+		["room_5.tscn"] = ("res://scenes/world/room_4.tscn", "← Previous Room"),
+		["room_6.tscn"] = ("res://scenes/world/room_5.tscn", "← Previous Room"),
+		["room_7.tscn"] = ("res://scenes/world/room_6.tscn", "← Previous Room"),
+	};
+
+	/// <summary>Where "step back" leads from <paramref name="scenePath"/>, if anywhere.</summary>
+	public static bool TryGetBackTarget(string scenePath, out string targetPath, out string label)
+	{
+		targetPath = string.Empty;
+		label = string.Empty;
+		if (string.IsNullOrEmpty(scenePath))
+			return false;
+
+		int slash = scenePath.LastIndexOf('/');
+		string fileName = slash >= 0 ? scenePath.Substring(slash + 1) : scenePath;
+		if (!BackTargets.TryGetValue(fileName, out var entry))
+			return false;
+
+		targetPath = entry.Target;
+		label = entry.Label;
+		return true;
+	}
+
+
 	[ExportCategory("Scene Manager Variables")]
 	[Export] public NodePath SceneRootPath = "../Control/SubViewportContainer/SubViewport";
 	[Export] public NodePath FadeRectPath = "../Control/FadeRect";

@@ -43,6 +43,37 @@ public partial class ExamineHandler : TileMapLayer
         // for a rect check on the ~one layer actually under the mouse.
         _usedRect = GetUsedRect();
         _hasUsedRect = _usedRect.Size.X > 0 && _usedRect.Size.Y > 0;
+
+        RestoreExaminedState();
+    }
+
+    /// <summary>
+    /// Rooms can be left and re-entered now (step-back navigation, Continue):
+    /// rebuild this object's examine layers from the tracker so re-entering
+    /// doesn't reset objects to their first layer — which would look wrong
+    /// and let the corruption-free first look be repeated forever. Runs once
+    /// per object: the first sibling layer to ready up does it for all.
+    /// </summary>
+    private void RestoreExaminedState()
+    {
+        var parent = GetParent();
+        if (parent == null)
+            return;
+
+        string objectName = parent.Name.ToString();
+        if (objectName.EndsWith("Final") || objectName.EndsWith("Exclude"))
+            return;
+
+        if (parent.HasMeta("examine_restored"))
+            return;
+        parent.SetMeta("examine_restored", true);
+
+        string roomName = RoomExamineTracker.ResolveRoomName(this);
+        var clicked = RoomExamineTracker.GetClickedLayers(roomName, objectName);
+        if (clicked == null || clicked.Count == 0)
+            return;
+
+        ExamineHelper.RestoreLayers(this, clicked);
     }
 
     public override void _ExitTree()

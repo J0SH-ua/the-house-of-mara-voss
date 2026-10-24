@@ -491,6 +491,8 @@ public partial class GameState : Node
     {
         Globals.Instance?.ResetRunState();
         RoomExamineTracker.ResetProgress();
+        Room1Puzzle.ResetSavedState();
+        Room2Puzzle.ResetSavedState();
 
         for (int i = 0; i < MaxShards; i++)
         {
@@ -669,6 +671,8 @@ public partial class GameState : Node
     {
         Globals.Instance?.ResetRunState();
         RoomExamineTracker.ResetProgress();
+        Room1Puzzle.ResetSavedState();
+        Room2Puzzle.ResetSavedState();
         for (int i = 0; i < MaxShards; i++)
         {
             ShardFragments[i] = string.Empty;

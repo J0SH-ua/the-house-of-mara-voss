@@ -16,6 +16,7 @@ public static class InputSetup
     public const string RevealHotspots = "reveal_hotspots";
     public const string OpenJournal = "open_journal";
     public const string RequestHint = "request_hint";
+    public const string NavBack = "nav_back";
 
     private static bool _ensured;
 
@@ -32,6 +33,7 @@ public static class InputSetup
         AddKeyAction(RevealHotspots, Key.Tab);
         AddKeyAction(OpenJournal, Key.J, Key.M);
         AddKeyAction(RequestHint, Key.H);
+        AddKeyAction(NavBack, Key.Q, Key.Backspace);
     }
 
     private static void AddKeyAction(string action, params Key[] keys)

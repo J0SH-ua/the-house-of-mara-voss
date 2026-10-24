@@ -17,6 +17,16 @@ public partial class Room2Puzzle : Area2D
 	private bool _feedbackPlaying;
 	private Vector2 _padlockHome;
 
+	// Typed letters survive stepping back to the room mid-word (statics live
+	// for the whole run; GameState.NewGame clears them).
+	private static readonly char[] _savedLetters = new char[4];
+
+	/// <summary>Clears remembered letters (new game / fresh load / wrong word).</summary>
+	public static void ResetSavedState()
+	{
+		System.Array.Clear(_savedLetters, 0, _savedLetters.Length);
+	}
+
 	public override void _Ready()
 	{
 		_padlock = GetNodeOrNull<Node2D>("Padlock");
@@ -39,6 +49,10 @@ public partial class Room2Puzzle : Area2D
 			box.MaxLength = 1;
 			box.Alignment = HorizontalAlignment.Center;
 
+			// Restore before subscribing so TextChanged doesn't fire for it.
+			if (_savedLetters[i] != '\0')
+				box.Text = _savedLetters[i].ToString();
+
 			int index = i;
 			box.TextChanged += (string newText) => OnLetterBoxTextChanged(index, newText);
 			box.GuiInput += (InputEvent @event) => OnLetterBoxGuiInput(index, @event);
@@ -46,7 +60,17 @@ public partial class Room2Puzzle : Area2D
 			_letterBoxes[i] = box;
 		}
 
-		_letterBoxes[0]?.GrabFocus();
+		// Resume typing where it left off: first empty box.
+		var focusBox = _letterBoxes[0];
+		foreach (var box in _letterBoxes)
+		{
+			if (box != null && string.IsNullOrEmpty(box.Text))
+			{
+				focusBox = box;
+				break;
+			}
+		}
+		focusBox?.GrabFocus();
 	}
 
 	private void OnLetterBoxGuiInput(int index, InputEvent @event)
@@ -78,6 +102,7 @@ public partial class Room2Puzzle : Area2D
 			return;
 
 		prev.Text = "";
+		_savedLetters[index - 1] = '\0';
 		prev.GrabFocus();
 	}
 
@@ -93,6 +118,8 @@ public partial class Room2Puzzle : Area2D
 		string filtered = FilterToSingleCapitalLetter(newText);
 		if (box.Text != filtered)
 			box.Text = filtered;
+
+		_savedLetters[index] = filtered.Length == 1 ? filtered[0] : '\0';
 
 		if (filtered.Length == 1)
 		{
@@ -171,6 +198,7 @@ public partial class Room2Puzzle : Area2D
 			if (box != null)
 				box.Text = string.Empty;
 		}
+		ResetSavedState();
 		GetBox(0)?.GrabFocus();
 		_feedbackPlaying = false;
 	}

@@ -18,6 +18,7 @@ while watching the memory **corrupt** the deeper you insist on looking.
 | Tab (hold) | Reveal remaining hotspots |
 | H | Hint (progressive: nudge → names the object → rings it) |
 | J / M | Memory Journal (fragments + recent dialogue, stats) |
+| Q / Backspace | Step back — leave a puzzle for its room, or return to the previous room (also the on-screen Step Back button, bottom-left) |
 | Esc / P | Pause menu (Esc first releases Clarity if armed) |
 
 ## Systems (what lives where)

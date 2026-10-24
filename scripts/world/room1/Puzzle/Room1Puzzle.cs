@@ -16,6 +16,16 @@ public partial class Room1Puzzle : Area2D
 	private string _currentHoverCursorPath = string.Empty;
 	private bool _isSolved;
 
+	// Dial positions survive stepping back to the room mid-puzzle (statics
+	// live for the whole run; GameState.NewGame clears them).
+	private static readonly int[] _savedDialValues = new int[5];
+
+	/// <summary>Clears remembered dial positions (new game / fresh load).</summary>
+	public static void ResetSavedState()
+	{
+		System.Array.Clear(_savedDialValues, 0, _savedDialValues.Length);
+	}
+
 	public override void _Ready()
 	{
 		InputPickable = true;
@@ -24,12 +34,14 @@ public partial class Room1Puzzle : Area2D
 			var spinbox = GetNode<SpinBox>($"Padlock/padlock-{i}");
 			if (spinbox != null)
 			{
-
 				spinbox.MinValue = 0;
 				spinbox.MaxValue = 9;
 				spinbox.Step = 1;
+				spinbox.SetValueNoSignal(_savedDialValues[i]);
+				int dialIndex = i;
 				spinbox.ValueChanged += (double value) =>
 				{
+					_savedDialValues[dialIndex] = (int)value;
 					if (_isSolved)
 						return;
 					AudioManager.Play(Sfx.DialTick, -5f, 0.88f + (float)value * 0.035f);
@@ -37,6 +49,9 @@ public partial class Room1Puzzle : Area2D
 				};
 			}
 		}
+
+		// Stepped away after solving but before taking the key? Re-open.
+		CheckPadlockSolution();
 	}
 
 	public override void _UnhandledKeyInput(InputEvent @event)

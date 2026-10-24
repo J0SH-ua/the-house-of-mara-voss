@@ -35,6 +35,11 @@ public partial class GameUI : CanvasLayer
     private Tween _toastTween;
     private double _toastUntilMsec;
 
+    // Back navigation (puzzle -> room, room -> previous room)
+    private Button _backButton;
+    private string _backTargetPath = string.Empty;
+    private string _navSceneCachePath = string.Empty;
+
     // Overlay
     private ColorRect _corruptionRect;
     private ShaderMaterial _corruptionMaterial;
@@ -72,6 +77,7 @@ public partial class GameUI : CanvasLayer
 
         BuildCorruptionOverlay();
         BuildHud();
+        BuildBackButton();
         BuildPausePanel();
         BuildSettingsPanel();
         BuildJournalPanel();
@@ -122,6 +128,8 @@ public partial class GameUI : CanvasLayer
             _contextCheckTimer = 0.3;
             UpdateContext();
         }
+
+        RefreshBackButton();
 
         // Corruption overlay follows the live value, easing toward it.
         if (_corruptionMaterial != null && _corruptionRect.Visible)
@@ -229,6 +237,11 @@ public partial class GameUI : CanvasLayer
             RequestHint();
             GetViewport().SetInputAsHandled();
         }
+        else if (@event.IsActionPressed(InputSetup.NavBack) && !FocusIsTextEditing())
+        {
+            GoBack();
+            GetViewport().SetInputAsHandled();
+        }
     }
 
     private void HandleEscape()
@@ -291,6 +304,100 @@ public partial class GameUI : CanvasLayer
         ShowToast(text, seconds: 5.5f);
         if (!string.IsNullOrEmpty(objectToPulse))
             Hotspots.RevealObject(objectToPulse);
+    }
+
+    // ========================================================== back navigation
+
+    private void BuildBackButton()
+    {
+        _backButton = new Button { Text = "\u2190 Step Back", Visible = false };
+        if (_font != null)
+            _backButton.AddThemeFontOverride("font", _font);
+        _backButton.AddThemeFontSizeOverride("font_size", 22);
+        _backButton.AddThemeColorOverride("font_color", new Color(0.93f, 0.89f, 0.82f));
+        _backButton.AddThemeColorOverride("font_hover_color", new Color(1f, 0.96f, 0.85f));
+
+        var normal = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.72f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.35f),
+        };
+        normal.SetBorderWidthAll(1);
+        normal.SetCornerRadiusAll(4);
+        normal.SetContentMarginAll(8);
+        var hover = new StyleBoxFlat
+        {
+            BgColor = new Color(0.85f, 0.75f, 0.55f, 0.16f),
+            BorderColor = new Color(0.85f, 0.75f, 0.55f, 0.5f),
+        };
+        hover.SetBorderWidthAll(1);
+        hover.SetCornerRadiusAll(4);
+        hover.SetContentMarginAll(8);
+        _backButton.AddThemeStyleboxOverride("normal", normal);
+        _backButton.AddThemeStyleboxOverride("hover", hover);
+        _backButton.AddThemeStyleboxOverride("pressed", hover);
+        _backButton.AddThemeStyleboxOverride("focus", hover);
+
+        // Bottom-left, just above the controls reminder. Focus off so Space /
+        // Enter (dialogue advance) can never re-press it after a click.
+        _backButton.AnchorLeft = 0;
+        _backButton.AnchorRight = 0;
+        _backButton.AnchorTop = 1;
+        _backButton.AnchorBottom = 1;
+        _backButton.OffsetLeft = 16;
+        _backButton.OffsetRight = 268;
+        _backButton.OffsetTop = -88;
+        _backButton.OffsetBottom = -44;
+        _backButton.TooltipText = "Return to the previous view (Q)";
+        _backButton.FocusMode = Control.FocusModeEnum.None;
+        _backButton.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -9f);
+        _backButton.Pressed += GoBack;
+        _hud.AddChild(_backButton);
+    }
+
+    /// <summary>Keeps the Step Back button in sync with the live scene: shown
+    /// in-game whenever the current view has somewhere to step back to
+    /// (puzzle -&gt; its room, room -&gt; previous room), never over dialogue,
+    /// panels or a scene change. Label/target refresh only on scene change.</summary>
+    private void RefreshBackButton()
+    {
+        if (_backButton == null)
+            return;
+
+        string current = SceneManager.CurrentScenePath ?? string.Empty;
+        if (current != _navSceneCachePath)
+        {
+            _navSceneCachePath = current;
+            if (SceneManager.TryGetBackTarget(current, out string target, out string label))
+            {
+                _backTargetPath = target;
+                _backButton.Text = label;
+            }
+            else
+            {
+                _backTargetPath = string.Empty;
+            }
+        }
+
+        _backButton.Visible = _context == UiContext.Game
+                              && !string.IsNullOrEmpty(_backTargetPath)
+                              && !AnyPanelOpen()
+                              && !Dialogue.IsShowing
+                              && !SceneManager.IsChanging
+                              && !GetTree().Paused;
+    }
+
+    private void GoBack()
+    {
+        if (string.IsNullOrEmpty(_backTargetPath) || SceneManager.IsChanging ||
+            Dialogue.IsShowing || AnyPanelOpen() || GetTree().Paused)
+            return;
+
+        if (ClaritySystem.IsArmed)
+            ClaritySystem.Disarm(silent: true);
+        Hotspots.HideAll();
+        AudioManager.Play(Sfx.UiBack, -6f);
+        SceneManager.ChangeScene(_backTargetPath);
     }
 
     // ================================================================= context
@@ -726,14 +833,14 @@ public partial class GameUI : CanvasLayer
         _hud.AddChild(_toastLabel);
 
         // Controls reminder (bottom-left, quiet).
-        var controls = MakeLabel("Hold Tab — look      C — clarity      H — hint      J — journal      Esc — pause",
+        var controls = MakeLabel("Hold Tab — look      C — clarity      H — hint      J — journal      Q — step back      Esc — pause",
             16, new Color(0.85f, 0.8f, 0.72f, 0.5f));
         controls.AnchorTop = 1;
         controls.AnchorBottom = 1;
         controls.OffsetLeft = 16;
         controls.OffsetTop = -30;
         controls.OffsetBottom = -8;
-        controls.OffsetRight = 700;
+        controls.OffsetRight = 920;
         controls.MouseFilter = Control.MouseFilterEnum.Ignore;
         _hud.AddChild(controls);
     }
@@ -1046,7 +1153,7 @@ public partial class GameUI : CanvasLayer
         ("Clarity",
          "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little."),
         ("Finding Things",
-         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments recovered, and everything that has been said.\nEsc pauses. Dialogue advances with a click; End skips it."),
+         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress J for your Memory Journal: fragments recovered, and everything that has been said.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
         ("What You Are Doing Here",
          "Recover the six fragments of what actually happened, and return them in the last room.\n\nSome of what the house shows you is a kindness Mara is doing herself. Your work is to tell the difference."),
     ];

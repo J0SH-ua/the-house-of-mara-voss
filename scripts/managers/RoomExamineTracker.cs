@@ -156,6 +156,18 @@ public partial class RoomExamineTracker : Node
         return _examineProgress;
     }
 
+    /// <summary>Layer names clicked for one object (a copy), or null if never
+    /// examined. Used to restore an object's examine layers when its room is
+    /// re-entered (step-back navigation, Continue).</summary>
+    public static HashSet<string> GetClickedLayers(string roomName, string objectName)
+    {
+        if (roomName != null && objectName != null &&
+            _examineProgress.TryGetValue(roomName, out var objects) &&
+            objects.TryGetValue(objectName, out var layers) && layers.Count > 0)
+            return new HashSet<string>(layers);
+        return null;
+    }
+
     public static void ResetProgress(string roomName = null)
     {
         if (string.IsNullOrEmpty(roomName))
