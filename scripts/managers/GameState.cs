@@ -375,7 +375,7 @@ public partial class GameState : Node
     {
         if (!CollapseActive || _shattered)
             return;
-        if (SceneManager.IsChanging || Dialogue.IsShowing)
+        if (SceneManager.IsChanging || Dialogue.IsShowing || Dialogue.IsInputBlocked)
             return;
         if (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen())
             return;
@@ -702,7 +702,9 @@ public partial class GameState : Node
 
     /// <summary>Spend ALL Clarity: show everything left in its true form and ring it until it
     /// is faced. The next room's Clarity is set to (revealed + 1): one
-    /// revealed, two; two revealed, three. Returns how many were revealed.</summary>
+    /// revealed, two; two revealed, three. Returns how many were revealed.
+    /// Spending down to zero starts the collapse in an unfinished room,
+    /// exactly like spending the last ordinary charge does.</summary>
     public int PerformRecollection(bool announce = true)
     {
         if (Globals.Instance == null || !CanRecollect(out var remaining, out int carry))
@@ -716,6 +718,13 @@ public partial class GameState : Node
         ClarifiesUsed++;
         _pendingClarityCarry = carry;
         ClarityChanged?.Invoke(0);
+
+        // Remembering spends the light down to nothing — and emptied light
+        // is emptied light, however it was spent. While this room's lock is
+        // still shut, the house starts its count just as it does for the
+        // last ordinary Clarify. The count itself holds while the reveal
+        // plays (input is blocked), so the fifteen seconds are all hers.
+        MaybeBeginCollapse();
         if (announce)
         {
             AudioManager.Play(Sfx.ClarifyReveal, -3f);

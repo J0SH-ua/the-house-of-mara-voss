@@ -130,6 +130,10 @@ public partial class GameUI : CanvasLayer
     private bool _cutsceneSkipRequested;
     private (string ImagePath, string Caption, float HoldSeconds)[] _activeShots;
     private Action _cutsceneOnComplete;
+    private ColorRect _cutsceneBackdrop;
+    private ColorRect _cutsceneBand;
+    private ColorRect _cutsceneWash;
+    private bool _cutsceneFadeFromWhite;
 
     // Overlay
     private ColorRect _corruptionRect;
@@ -2976,7 +2980,8 @@ public partial class GameUI : CanvasLayer
             "A blue ring will stay around each until you touch it and hear what it remembers.";
         _recollectionHeldLabel.Text = $"Held now — {charges}";
         _recollectionNextLabel.Text = $"In the next room — {nextRoomClarity}";
-        _recollectionCost.Text = "Here, remembering will spend every charge you hold.";
+        _recollectionCost.Text = "Here, remembering will spend every charge you hold — and emptied light invites the house. " +
+                                 "If this room's lock is still shut, the red count starts the moment the revealing ends.";
 
         for (int i = 0; i < _recollectionBeforePips.GetChildCount(); i++)
         {
@@ -3746,6 +3751,7 @@ public partial class GameUI : CanvasLayer
         var black = new ColorRect { Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Ignore };
         black.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _cutsceneRoot.AddChild(black);
+        _cutsceneBackdrop = black;
 
         _cutsceneImage = new TextureRect
         {
@@ -3755,6 +3761,16 @@ public partial class GameUI : CanvasLayer
         };
         _cutsceneImage.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _cutsceneRoot.AddChild(_cutsceneImage);
+
+        // The truth reveal arrives through white, not black (see
+        // PlayFinaleTruthReveal); this wash stays transparent otherwise.
+        _cutsceneWash = new ColorRect
+        {
+            Color = new Color(1, 1, 1, 0),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _cutsceneWash.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _cutsceneRoot.AddChild(_cutsceneWash);
 
         var band = new ColorRect
         {
@@ -3770,6 +3786,7 @@ public partial class GameUI : CanvasLayer
             OffsetBottom = 0,
         };
         _cutsceneRoot.AddChild(band);
+        _cutsceneBand = band;
 
         _cutsceneCaption = MakeLabel("", 30, new Color(0.96f, 0.92f, 0.84f));
         _cutsceneCaption.AutowrapMode = TextServer.AutowrapMode.Word;
@@ -3869,6 +3886,32 @@ public partial class GameUI : CanvasLayer
             // One frame so the full-rect controls have real sizes (zoom pivot).
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
+            bool fromWhite = _cutsceneFadeFromWhite;
+            if (fromWhite && _cutsceneWash != null)
+            {
+                // The room behind whites out: backdrop and caption band hide
+                // so nothing dark stands between the player and the light,
+                // and the wash reads as the world going overexposed into
+                // somewhere else entirely.
+                if (_cutsceneBackdrop != null)
+                    _cutsceneBackdrop.Visible = false;
+                if (_cutsceneBand != null)
+                    _cutsceneBand.Visible = false;
+                _cutsceneCaption.Modulate = new Color(1, 1, 1, 0);
+                _cutsceneWash.Color = new Color(1, 1, 1, 0);
+                AudioManager.Play(Sfx.ClarifyReveal, -12f, 0.8f);
+                _cutsceneTween = CreateTween();
+                _cutsceneTween.SetPauseMode(Tween.TweenPauseMode.Process);
+                _cutsceneTween.TweenProperty(_cutsceneWash, "color:a", 1f,
+                    Settings.ReduceMotionOrDefault() ? 0.3f : 1.5f);
+                await ToSignal(_cutsceneTween, Tween.SignalName.Finished);
+                if (_cutsceneBackdrop != null)
+                    _cutsceneBackdrop.Visible = true;
+                if (_cutsceneBand != null)
+                    _cutsceneBand.Visible = true;
+            }
+
+            bool firstShot = true;
             foreach (var shot in (_activeShots ?? CutsceneShots))
             {
                 if (_cutsceneSkipRequested)
@@ -3888,9 +3931,22 @@ public partial class GameUI : CanvasLayer
 
                 _cutsceneTween = CreateTween();
                 _cutsceneTween.SetPauseMode(Tween.TweenPauseMode.Process);
-                _cutsceneTween.TweenProperty(_cutsceneImage, "modulate:a", 1f, 0.9);
-                _cutsceneTween.Parallel().TweenProperty(_cutsceneCaption, "modulate:a", 1f, 0.9);
+                if (fromWhite && firstShot && _cutsceneWash != null)
+                {
+                    // The place resolves out of the white: the image is
+                    // already at full strength underneath, the wash
+                    // lifting off it like breath off glass.
+                    _cutsceneImage.Modulate = new Color(1, 1, 1, 1);
+                    _cutsceneTween.TweenProperty(_cutsceneWash, "color:a", 0f, 1.4f);
+                    _cutsceneTween.Parallel().TweenProperty(_cutsceneCaption, "modulate:a", 1f, 1.2f);
+                }
+                else
+                {
+                    _cutsceneTween.TweenProperty(_cutsceneImage, "modulate:a", 1f, 0.9);
+                    _cutsceneTween.Parallel().TweenProperty(_cutsceneCaption, "modulate:a", 1f, 0.9);
+                }
                 _cutsceneTween.Parallel().TweenProperty(_cutsceneImage, "scale", Vector2.One * 1.07f, shot.HoldSeconds + 1.5f);
+                firstShot = false;
                 AudioManager.Play(Sfx.PageTurn, -16f, 0.65f);
 
                 ulong deadline = Time.GetTicksMsec() + (ulong)(shot.HoldSeconds * 1000f);
@@ -3932,6 +3988,13 @@ public partial class GameUI : CanvasLayer
         // A borrowed screening (the finale's truth reveal) hands control
         // back to its caller instead of falling into the tutorial flow.
         _activeShots = null;
+        _cutsceneFadeFromWhite = false;
+        if (_cutsceneWash != null)
+            _cutsceneWash.Color = new Color(1, 1, 1, 0);
+        if (_cutsceneBackdrop != null)
+            _cutsceneBackdrop.Visible = true;
+        if (_cutsceneBand != null)
+            _cutsceneBand.Visible = true;
         if (_cutsceneOnComplete != null)
         {
             var onComplete = _cutsceneOnComplete;
@@ -3944,25 +4007,50 @@ public partial class GameUI : CanvasLayer
         MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
     }
 
-    /// <summary>What really happened, shown in the game's own rooms once
-    /// the six fragments stand in order and Release is spent — before any
-    /// choice is offered. Click advances; Esc/Skip works as everywhere.</summary>
+    /// <summary>What really happened, replayed first-person once the six
+    /// fragments stand in order and Release is spent — before any choice is
+    /// offered. The last room fades to white and Mara finds herself back in
+    /// the garden on that day: she recognises it, she tries to be heard,
+    /// and then she can only watch the whole of it — the morning Ida left
+    /// home, the promise, the waiting, Mara's own ordinary lateness, the
+    /// walk, the bridge — the way it actually went. Click advances;
+    /// Esc/Skip works as everywhere.</summary>
     private static readonly (string ImagePath, string Caption, float HoldSeconds)[] TruthShots =
     [
-        ("res://assets/images/bgs/Room_1_BG.png",
-         "That morning, the kitchen was only a kitchen: toast, a clock, a sister already loud and already herself.", 6.5f),
-        ("res://assets/images/bgs/Room_3_BG.png",
-         "Ida named what frightened her, so she could say it aloud. It was her whole way of being brave.", 6f),
         ("res://assets/images/bgs/Room_6_Final.png",
-         "She waited where she had been told to wait. Four o'clock came. Then, slowly, it went.", 6.5f),
+         "“Where... am I?”", 4f),
+        ("res://assets/images/bgs/Room_6_Final.png",
+         "“This place. I know this place. The apple trees — the swing —”", 5f),
+        ("res://assets/images/bgs/Truth_Ida_Waits.png",
+         "“Wai—”", 3f),
+        ("res://assets/images/bgs/Truth_Ida_Waits.png",
+         "“Ida. Ida, look at me — please look at me.” She doesn't. She can't.", 5f),
+        ("res://assets/images/bgs/Truth_Ida_Waits.png",
+         "This isn't a place I've walked into. It's that day — the whole of it. And all I can do is watch it the way it actually went.", 6f),
+        ("res://assets/images/bgs/Room_1_BG.png",
+         "That day she left home loud — toast in one hand, already talking. I said I'd fetch her at four. I said it like a fact. She believed me.", 6.5f),
+        ("res://assets/images/bgs/Room_3_BG.png",
+         "She spent her days naming the things that frightened her so they couldn't jump out of the dark. It was her whole way of being brave.", 6f),
+        ("res://assets/images/bgs/Truth_Ida_Waits.png",
+         "She waited by the apples, where I'd told her to wait. One swing for every minute she meant not to mind. She counted a long way past four.", 6.5f),
+        ("res://assets/images/bgs/Room_1_BG.png",
+         "And me? A book. Somebody's kitchen. A clock I didn't look at. I remember being sure there would be time. I remember choosing.", 6.5f),
+        ("res://assets/images/bgs/Truth_Ida_Walks.png",
+         "Nobody came for her, so in the end she came for herself. Her own hand worried that latch loose. Her own feet took the road home.", 6.5f),
+        ("res://assets/images/bgs/Truth_Ida_Walks.png",
+         "“Ida, don't —” She never looked back. There was no stranger on that road. No monster waiting. There never was.", 6f),
+        ("res://assets/images/bgs/Truth_Bridge.png",
+         "The little bridge over the Harren canal, a child's walk from home. Its railing was older than both of us. Rotten through. Nobody's job to mend.", 6.5f),
+        ("res://assets/images/bgs/Truth_Bridge.png",
+         "It gave all at once, the way bad wood gives. She went into the black water in her yellow coat. The water keeps moving whether anyone crosses or not.", 7f),
         ("res://assets/images/bgs/Porch_447_BG.png",
-         "At 4:47 Mara reached the house. The light was on. The garden was empty. The swing was still moving.", 7f),
+         "4:47. I came through that gate calling her name — and the garden gave me back a swing, still moving, finishing its swing.", 6.5f),
         ("res://assets/images/bgs/BgRoom4.png",
-         "That night, their mother sat on the landing until morning, under the light she left for latecomers.", 6.5f),
+         "That night our mother sat on the landing until morning, under the light she left for latecomers. All of us, waiting for a girl on a road.", 6.5f),
         ("res://assets/images/bgs/Apartment_Now_BG.png",
-         "Afterwards, Mara built a quieter life — and came back to the house every night instead of living in it.", 6.5f),
+         "Afterwards I built a quieter life and came back here every night instead of living in either. I became the one on the swing. I just count in years.", 6.5f),
         ("res://assets/images/bgs/room_7_bg.png",
-         "Nothing in those rooms was a monster. Only minutes, and who did not come in them.", 6.5f),
+         "Nothing in those rooms was a monster. Only minutes, and who did not come in them. I did not come. Say it the way it was.", 6.5f),
     ];
 
     /// <summary>Room 7 calls this after a true Release; the choice is
@@ -3975,6 +4063,7 @@ public partial class GameUI : CanvasLayer
             return;
         }
         _activeShots = TruthShots;
+        _cutsceneFadeFromWhite = true;
         _cutsceneOnComplete = onComplete;
         PlayCutsceneAsync();
     }

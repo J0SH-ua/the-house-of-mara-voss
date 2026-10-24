@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Godot;
 
 public partial class MainMenu : Control
@@ -136,7 +137,10 @@ public partial class MainMenu : Control
 		if (_fullStoryModal == null)
 			return;
 
-		_fullStoryModal.Open(FullStoryTitle, FullStoryBody, FullStoryArt);
+		// The journal's pages live in code so the story told here is the
+		// story the finished game tells — room for room, scene for scene —
+		// and every page carries the picture of the place it is about.
+		_fullStoryModal.OpenBook(FullStoryTitle, BuildFullStoryPages());
 	}
 
 	private void OnAboutPressed()
@@ -144,7 +148,90 @@ public partial class MainMenu : Control
 		if (_aboutModal == null)
 			return;
 
-		_aboutModal.Open(AboutTitle, AboutBody, AboutArt);
+		_aboutModal.OpenBook(AboutTitle, BuildAboutPages());
+	}
+
+	private static List<InfoModal.BookPage> BuildFullStoryPages()
+	{
+		return new List<InfoModal.BookPage>
+		{
+			new InfoModal.BookPage("Premise", "Mara Voss is thirty-four, and she has not left her apartment in four months — she does not know that. In her mind she still lives in the house in Eldfen where she grew up: seven rooms, cedarwood and old paper, every morning ordinary.\n\nYou are not Mara. You are the part of her memory that still knows something is wrong.", "res://assets/images/bgs/Main_Menu_BG.png"),
+			new InfoModal.BookPage("That Day — The Morning", "Ida, eight years younger, left home the way she left every room: loud, hungry, already herself. Mara, twenty-two, promised to fetch her at four o'clock — said it like a fact, like the toast, like the clock.\n\nIda believed her the way she believed the weather.", "res://assets/images/bgs/Room_1_BG.png"),
+			new InfoModal.BookPage("That Day — The Waiting", "She waited by the apple trees where she'd been told to wait, basket packed for two. She counted on the swing — one swing for every minute she meant not to mind.\n\nFour o'clock came. Then, slowly, it went. Mara was somewhere ordinary — a book, somebody's kitchen, a clock she didn't look at. She remembers being sure there was time. She remembers choosing.", "res://assets/images/bgs/Truth_Ida_Waits.png"),
+			new InfoModal.BookPage("That Day — The Road", "Nobody came for her, so in the end she came for herself. Her own hand worried the gate latch loose. Her own feet took the road home.\n\nThere was no stranger on that road. No monster on the bridge. There never was.", "res://assets/images/bgs/Truth_Ida_Walks.png"),
+			new InfoModal.BookPage("That Day — The Bridge", "The road home crosses the little bridge over the Harren canal. Its railing was older than both sisters, rotten through, and nobody's job to mend.\n\nIt gave all at once, the way bad wood gives. Ida went into the black water in her yellow coat, a child's walk from home. She was fourteen.", "res://assets/images/bgs/Truth_Bridge.png"),
+			new InfoModal.BookPage("4:47", "Mara remembered at 4:47 and came through the gate calling her sister's name. The garden gave her back a swing, still moving, finishing its swing.\n\nThat night their mother sat on the landing until morning, under the light she always left for latecomers. Their parents never said it was Mara's fault. That was worse.", "res://assets/images/bgs/Porch_447_BG.png"),
+			new InfoModal.BookPage("Afterwards", "Mara left Eldfen and built a careful, quiet life she showed almost no one. For twelve years she wrote an apology every October and never sent it.\n\nFour months ago she found a glass jar on the street, lid rusted shut, and something in her closed. She locked her door — and her mind built the house again, filled it with Ida, made it safe.", "res://assets/images/bgs/Apartment_Now_BG.png"),
+			new InfoModal.BookPage("The Kitchen", "In memory: bright, warm, two cups out, toast going. What it holds: the morning of that day, kept overexposed so Mara does not have to look at where her mind already was — somewhere else.\n\nThe brass key begins here. So does the clock.", "res://assets/images/bgs/Room_1_BG.png"),
+			new InfoModal.BookPage("The Photograph", "A chair Ida fell asleep in, happy just to fall asleep to someone else breathing, someone turning a page. The house keeps the photograph in this room, and one word on its lock: what home used to mean before it meant this.", "res://assets/images/bgs/Room2_no_objects.png"),
+			new InfoModal.BookPage("The Preserved Names", "Ida kept spiders in jars and named them so she would not be afraid of them — her whole way of being brave. Mara kept the jars.\n\nIt is easier to preserve a thing than to admit the hands that labelled it are gone.", "res://assets/images/bgs/Room_3_BG.png"),
+			new InfoModal.BookPage("The Hallway", "Family photographs, and a mother's sentence in the hall, years too late, to a daughter still measuring every distance from the morning she did not come.\n\nThe brass door here is stamped with a bridge — water moving underneath whether anyone crosses or not. The house hid its truest shape in plain sight.", "res://assets/images/bgs/BgRoom4.png"),
+			new InfoModal.BookPage("The Unsent Apology", "Mara's bedroom in two years at once, its furniture sliding between the girl who slept here and the woman who cannot: a desk beginning the same letter for twelve years, twelve sealed envelopes with no address — and one lamp that never changes, a light left on for whoever comes home late.", "res://assets/images/bgs/Room_5_BG.png"),
+			new InfoModal.BookPage("The Garden & the Porch", "Basket. Swing. Gate. Road. Traced in order, the garden stops being four separate truths and becomes the afternoon itself.\n\nBeyond the bend lies the porch at 4:47 — the light on, the steps worn by arriving too late, the garden path shorter than memory allows.", "res://assets/images/bgs/Room_6_Final.png"),
+			new InfoModal.BookPage("The Last Room", "Six fragments, carried jumbled in a bag, must be set back in the order they were lived. The house answers only once — when all six stand together — and then Mara watches that day whole, and chooses: let the house go and wake; keep it and stay; or be held so roughly by memory that it shatters.\n\nNothing in those rooms was a monster. Only minutes, and who did not come in them.", "res://assets/images/bgs/room_7_bg.png"),
+		};
+	}
+
+	/// <summary>The About text stays the exported document; it is simply
+	/// bound into the same journal — short standing lines become page
+	/// headings, paragraphs are gathered a page at a time, and each page
+	/// is pictured with a scene its words are nearest to.</summary>
+	private List<InfoModal.BookPage> BuildAboutPages()
+	{
+		string[] artCycle =
+		{
+			"res://assets/images/bgs/Main_Menu_BG.png",
+			"res://assets/images/bgs/Room_1_BG.png",
+			"res://assets/images/bgs/Room_5_BG.png",
+			"res://assets/images/bgs/Room_6_Final.png",
+			"res://assets/images/bgs/Apartment_Now_BG.png",
+			"res://assets/images/bgs/room_7_bg.png",
+		};
+
+		var pages = new List<InfoModal.BookPage>();
+		string heading = string.Empty;
+		string body = string.Empty;
+
+		void Flush()
+		{
+			if (body.Trim().Length == 0 && heading.Length == 0)
+				return;
+			string text = body.Trim();
+			string lower = text.ToLowerInvariant();
+			string art = artCycle[pages.Count % artCycle.Length];
+			if (lower.Contains("corrupt"))
+				art = "res://assets/images/bgs/Room_5_BG.png";
+			else if (lower.Contains("verb") || lower.Contains("echo")
+				|| lower.Contains("anchor") || lower.Contains("release"))
+				art = "res://assets/images/bgs/room_7_bg.png";
+			pages.Add(new InfoModal.BookPage(heading, text, art));
+			heading = string.Empty;
+			body = string.Empty;
+		}
+
+		foreach (var raw in (AboutBody ?? string.Empty)
+			.Split(new[] { "\n\n" }, System.StringSplitOptions.None))
+		{
+			string para = raw.Trim();
+			if (para.Length == 0)
+				continue;
+			bool isHeading = !para.Contains("\n") && para.Length <= 42
+				&& !para.EndsWith(".") && !para.EndsWith(":");
+			if (isHeading)
+			{
+				Flush();
+				heading = para;
+				continue;
+			}
+			if (body.Length > 0 && body.Length + para.Length > 780)
+				Flush();
+			body = body.Length == 0 ? para : body + "\n\n" + para;
+		}
+		Flush();
+
+		if (pages.Count == 0)
+			pages.Add(new InfoModal.BookPage(string.Empty, AboutBody ?? string.Empty, artCycle[0]));
+		return pages;
 	}
 
 	private BaseButton ResolveButton(NodePath configuredPath, string logicalName, params string[] fallbackPaths)

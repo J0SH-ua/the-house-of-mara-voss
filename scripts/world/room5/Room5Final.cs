@@ -472,7 +472,7 @@ public partial class Room5Final : MemoryRoomBase
         var gs = GameState.Instance;
         if (hotspot.Id != "Lamp" && gs != null && !gs.HasFlag(AnchoredFlag))
         {
-            AudioManager.Play(Sfx.CorruptionGlitch, -13f, 0.85f);
+            AudioManager.Play(Sfx.CorruptionGlitch, -9f, 0.85f);
             Hotspots.SpawnRipple(hotspot.Center, new Color(0.65f, 0.8f, 1f));
             QueueRedraw();
         }
@@ -498,27 +498,41 @@ public partial class Room5Final : MemoryRoomBase
         Rect2 src = SourceRectFor(rect, texture);
         Vector2 texel = texture.GetSize() / new Vector2(1152f, 648f);
 
-        float t = Settings.ReduceMotionOrDefault()
+        bool still = Settings.ReduceMotionOrDefault();
+        float t = still
             ? 0.5f
-            : 0.5f + 0.5f * (float)System.Math.Sin(Time.GetTicksMsec() / 850.0 + phase);
-        float slide = Mathf.Lerp(-4f, 4f, t);
+            : 0.5f + 0.5f * (float)System.Math.Sin(Time.GetTicksMsec() / 640.0 + phase);
 
-        var warm = new Color(1.18f, 0.94f, 0.68f, 0.32f + 0.3f * t);
-        var cold = new Color(0.62f, 0.8f, 1.18f, 0.62f - 0.3f * t);
+        // Every few seconds the room hiccups: the two years jump hard apart
+        // for a blink before settling back into the slow slide. Between the
+        // travel, the colour split and the doubled outline, a shifted thing
+        // should be impossible to miss — that is the point of it.
+        float hiccup = 0f;
+        if (!still)
+        {
+            double cycle = Time.GetTicksMsec() / 4300.0 + phase;
+            if (cycle - System.Math.Floor(cycle) < 0.055)
+                hiccup = 9f;
+        }
+        float slide = still ? 8f : Mathf.Lerp(-9f, 9f, t) + hiccup;
+        float drop = slide * 0.35f;
 
-        // Childhood copy, slid one way.
+        var warm = new Color(1.34f, 0.94f, 0.56f, 0.52f + 0.34f * t);
+        var cold = new Color(0.48f, 0.72f, 1.38f, 0.86f - 0.34f * t);
+
+        // Childhood copy, slid one way and sitting slightly higher.
         DrawTextureRectRegion(texture, rect,
-            new Rect2(src.Position + new Vector2(-slide * texel.X, 0f), src.Size), warm);
+            new Rect2(src.Position + new Vector2(-slide * texel.X, -drop * texel.Y), src.Size), warm);
 
         // Adult copy, slid the other, in three bands so the middle tears.
         float bandH = rect.Size.Y / 3f;
         for (int band = 0; band < 3; band++)
         {
-            float extra = band == 1 ? 5f : 0f;
+            float extra = band == 1 ? 12f + hiccup : 0f;
             var dest = new Rect2(rect.Position + new Vector2(0f, band * bandH),
                 new Vector2(rect.Size.X, bandH + 1f));
             var bandSrc = new Rect2(
-                src.Position + new Vector2((slide + extra) * texel.X, band * bandH * texel.Y),
+                src.Position + new Vector2((slide + extra) * texel.X, (band * bandH + drop) * texel.Y),
                 new Vector2(src.Size.X, src.Size.Y / 3f));
             DrawTextureRectRegion(texture, dest, bandSrc, cold);
         }
@@ -531,11 +545,17 @@ public partial class Room5Final : MemoryRoomBase
             Vector2 centre = rect.GetCenter();
             DrawSetTransform(centre, 0f, new Vector2(-1f, 1f));
             DrawTextureRectRegion(texture, new Rect2(-rect.Size / 2f, rect.Size), src,
-                new Color(1f, 1f, 1f, 0.16f + 0.12f * t));
+                new Color(1f, 1f, 1f, 0.3f + 0.22f * t));
             DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
         }
 
-        DrawRect(rect, new Color(0.75f, 0.85f, 1f, 0.1f + 0.1f * t), false, 1.5f);
+        // Both silhouettes at once: the shape of the thing in two places,
+        // warm where it was, cold where it is, never agreeing.
+        DrawRect(new Rect2(rect.Position + new Vector2(-slide, -drop), rect.Size),
+            new Color(1f, 0.78f, 0.46f, 0.2f + 0.18f * t), false, 1.5f);
+        DrawRect(new Rect2(rect.Position + new Vector2(slide, drop), rect.Size),
+            new Color(0.6f, 0.8f, 1f, 0.38f - 0.18f * t), false, 1.5f);
+        DrawRect(rect, new Color(0.75f, 0.85f, 1f, 0.28f + 0.22f * t), false, 2f);
     }
 
     /// <summary>After the letters: the wardrobe's inside is October. The
