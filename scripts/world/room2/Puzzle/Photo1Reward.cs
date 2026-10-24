@@ -53,6 +53,11 @@ public partial class Photo1Reward : Area2D
 		if (rect.HasPoint(localMousePos))
 		{
 			GetTree().Root.SetInputAsHandled();
+			if (GameState.Instance?.IsRoomSealed("Room2") == true)
+			{
+				GameState.Instance.NotifySealedInteraction();
+				return;
+			}
 			CollectAndChangeScene();
 		}
 	}

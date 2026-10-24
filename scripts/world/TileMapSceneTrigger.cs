@@ -30,6 +30,13 @@ public partial class TileMapSceneTrigger : TileMapLayer
         if (!HasPointedTile(mouseButton.Position))
             return;
 
+        if (GameState.Instance?.IsCurrentSceneSealed() == true)
+        {
+            GameState.Instance.NotifySealedInteraction();
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
         TriggerSceneChange();
         GetTree().Root.SetInputAsHandled();
     }

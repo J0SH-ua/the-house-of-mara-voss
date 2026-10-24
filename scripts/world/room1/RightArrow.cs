@@ -23,6 +23,13 @@ public partial class RightArrow : Area2D
         if (!mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
             return;
 
+        if (GameState.Instance?.IsRoomSealed("Room1") == true)
+        {
+            GameState.Instance.NotifySealedInteraction();
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
         AudioManager.Play(Sfx.UiClick, -6f);
         SceneManager.ChangeScene("res://scenes/world/room_2.tscn");
         GetTree().Root.SetInputAsHandled();

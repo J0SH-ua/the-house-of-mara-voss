@@ -143,6 +143,10 @@ public abstract partial class MemoryRoomBase : Node2D
         ClearHover();
     }
 
+    /// <summary>True when this room is finished and the player has moved
+    /// beyond it: examinables rest. Exits (non-examinable hotspots) never seal.</summary>
+    protected bool SealedHere => GameState.Instance?.IsRoomSealed(RoomName) == true;
+
     public override void _Process(double delta)
     {
         if (Busy || Dialogue.IsInputBlocked || Dialogue.IsShowing ||
@@ -153,7 +157,10 @@ public abstract partial class MemoryRoomBase : Node2D
         }
 
         Vector2 mouse = GetGlobalMousePosition();
-        SetHovered(IsOverUi(mouse) ? null : FindHotspot(mouse));
+        var hovered = IsOverUi(mouse) ? null : FindHotspot(mouse);
+        if (hovered != null && SealedHere && hovered.Examinable)
+            hovered = null;
+        SetHovered(hovered);
         if (_hovered != null)
             QueueRedraw();
     }
@@ -175,6 +182,13 @@ public abstract partial class MemoryRoomBase : Node2D
         var hotspot = FindHotspot(position);
         if (hotspot == null)
             return;
+
+        if (SealedHere && hotspot.Examinable)
+        {
+            GetTree().Root.SetInputAsHandled();
+            GameState.Instance?.NotifySealedInteraction();
+            return;
+        }
 
         GetTree().Root.SetInputAsHandled();
         Hotspots.SpawnRipple(position);
@@ -471,6 +485,11 @@ public abstract partial class MemoryRoomBase : Node2D
 
         if (position.X >= 12f && position.X <= 276f && position.Y >= 552f &&
             SceneManager.TryGetBackTarget(SceneManager.CurrentScenePath, out _, out _))
+            return true;
+
+        // "Return to the new room" forward button, bottom-right.
+        if (position.X >= 876f && position.Y >= 552f &&
+            GameState.Instance != null && GameState.Instance.TryGetForwardScene(out _))
             return true;
 
         var gs = GameState.Instance;

@@ -145,6 +145,17 @@ public partial class Room1Puzzle : Area2D
 		if (Dialogue.IsInputBlocked)
 			return;
 
+		if (GameState.Instance?.IsRoomSealed("Room1") == true)
+		{
+			if (@event is InputEventMouseButton sealedClick && sealedClick.Pressed
+				&& sealedClick.ButtonIndex == MouseButton.Left)
+			{
+				GameState.Instance.NotifySealedInteraction();
+				GetViewport().SetInputAsHandled();
+			}
+			return;
+		}
+
 		if (@event is not InputEventMouseButton mouseEvent)
 			return;
 
@@ -300,6 +311,12 @@ public partial class Room1Puzzle : Area2D
 
 	private void OnUnlockPressed()
 	{
+		if (GameState.Instance?.IsRoomSealed("Room1") == true)
+		{
+			GameState.Instance.NotifySealedInteraction();
+			return;
+		}
+
 		if (_isSolved)
 			return;
 

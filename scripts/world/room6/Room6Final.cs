@@ -60,9 +60,7 @@ public partial class Room6Final : MemoryRoomBase
             if (gs != null && !gs.IsShardRecovered(5))
             {
                 _ = PlayStoryLessonOnceAsync("story_lesson_room6_trace_garden",
-                    "The garden is not hiding one more object for Mara to collect. It is keeping an afternoon in separate places because joined together, they become the way Ida went.",
-                    "First click each stop normally and hear what happened there. The basket, the swing, the gate and the road will tell you whether Ida was waiting, counting, leaving, or already beyond anyone's call.",
-                    "When all four have been faced, Trace can draw the line: press T — or click Trace — then click those same stops again in causal order. This second touching is not examining. It is joining.");
+                    "The garden is not hiding one more object for Mara to collect. It is keeping an afternoon in separate places because joined together, they become the way Ida went.");
             }
             return;
         }
@@ -86,17 +84,12 @@ public partial class Room6Final : MemoryRoomBase
         if (gs == null || gs.IsShardRecovered(5))
             return;
 
-        string traceHand = MemoryVerbSystem.IsArmed(MemoryVerb.Trace)
-            ? "Trace is already in Mara's hands. Now click the stops again — not to examine them, but to join them in the order the afternoon actually happened. Each one has already told you its place in the day."
-            : "Now choose Trace — press T, or click Trace in the Memory bar — and click the stops again in the order the afternoon actually happened. Each one has already told you its place in the day.";
         await SayStoryLessonOnceAsync("story_monologue_room6_afternoon",
             "Now hear it whole, the way Mara has never once let herself hear it. Nothing monstrous happened in this garden. That is the unbearable part — there is no villain hiding in it for her to finally blame instead of herself.",
             "A fourteen-year-old waited to be fetched by the person she trusted most in the world. The minutes went somewhere ordinary: a book, a friend's kitchen, a clock her sister simply did not look at. Ordinary minutes. Mara has been tried for them every night for twelve years, by the only court that sits.",
             "Trace will not undo a single one of them. Trace is Mara finally walking the afternoon in the direction it actually went, instead of standing at the end of it, screaming backward.");
         await SayStoryLessonOnceAsync("story_lesson_room6_all_faced",
-            "Now the garden has told four separate truths. Separately, Mara can survive them. Joined, they are the afternoon.",
-            traceHand,
-            "A rising note and a gold line mean a cause has found the next moment. If the line breaks, begin again where the waiting began. Mara's Journal (J) keeps each stop's story under Notes & Clues.");
+            "Now the garden has told four separate truths. Separately, Mara can survive them. Joined, they are the afternoon.");
     }
 
     protected override void OnHotspotClicked(Hotspot hotspot)
@@ -196,9 +189,8 @@ public partial class Room6Final : MemoryRoomBase
 
         if (!AllRequiredExamined())
         {
-            GetProgress(out int done, out int total);
             AudioManager.Play(Sfx.Denied, -8f);
-            gs?.Toast($"Trace can only connect stops Mara has faced. Click the remaining places normally first ({done}/{total}); Trace will stay in her hands.");
+            gs?.Toast("The line will not hold where she has not looked.");
             return;
         }
 
@@ -209,7 +201,7 @@ public partial class Room6Final : MemoryRoomBase
         if (_traceIndex > 0 && hotspot.Id == TraceSequence[_traceIndex - 1])
         {
             AudioManager.Play(Sfx.UiHover, -11f, 1.05f);
-            gs?.Toast($"Held: {hotspot.DisplayName}. Next: {GetHotspot(TraceSequence[_traceIndex])?.DisplayName}.");
+            gs?.Toast($"Held: {hotspot.DisplayName}.");
             return;
         }
 
@@ -222,7 +214,7 @@ public partial class Room6Final : MemoryRoomBase
                 _traceIndex = 0;
                 _tracePoints.Clear();
                 QueueRedraw();
-                gs?.Toast("The line breaks. Causes have an order — begin where the waiting began: the apple basket.");
+                gs?.Toast("The line breaks.");
             }
             else
             {
@@ -250,8 +242,7 @@ public partial class Room6Final : MemoryRoomBase
         }
         else
         {
-            string nextName = GetHotspot(TraceSequence[_traceIndex])?.DisplayName ?? "the next stop";
-            gs?.Toast($"Traced: {hotspot.DisplayName} ({_traceIndex}/{TraceSequence.Length}) · next: {nextName}.");
+            gs?.Toast($"Traced: {hotspot.DisplayName} ({_traceIndex}/{TraceSequence.Length}).");
         }
     }
 
@@ -289,8 +280,7 @@ public partial class Room6Final : MemoryRoomBase
                     "She waited with the apples. She counted on the swing until counting became another way to be alone. Then she opened the broken gate herself.",
                     "Mara was twenty-two, and certain there would be time to finish what she was doing. She remembered at 4:47. The swing was still moving. The road was already empty.",
                     "This is the afternoon under every room: not a monster, not a mystery with clean edges. Only a sister who waited, and a sister who did not come.",
-                    "Now that the line can be followed without looking away, the last way of remembering wakes: Release. It will not examine anything for Mara, and it will not arrange the truth kindly.",
-                    "In the last room, return the six fragments in the order she lived them first. Only then choose Release (R, or its Memory-bar button) and click the assembled memory — that click is Mara deciding what the truth is for.");
+                    "Now that the line can be followed without looking away, the last way of remembering wakes: Release. It will not arrange the truth kindly.");
             }
             else
             {
@@ -314,8 +304,8 @@ public partial class Room6Final : MemoryRoomBase
             AudioManager.Play(Sfx.Denied, -9f, 0.92f);
             string line = verb switch
             {
-                MemoryVerb.Echo => "Echo hears leaves, rope, and a name called too late. The garden's truth is not a sentence; after every stop is faced, Trace (T) must join its sequence.",
-                MemoryVerb.Anchor => "Nothing here can be held in one year. After every stop is faced, Trace (T) lets the garden become true by allowing its moments to lead to one another.",
+                MemoryVerb.Echo => "Echo hears leaves, rope, and a name called too late. The garden's truth is not a sentence.",
+                MemoryVerb.Anchor => "Nothing here can be held in one year. The garden only becomes true by letting its moments lead to one another.",
                 MemoryVerb.Release => "There is nothing to release until Mara knows the way Ida went.",
                 _ => "That way of remembering does not cross this garden.",
             };
@@ -337,8 +327,8 @@ public partial class Room6Final : MemoryRoomBase
             AudioManager.Play(Sfx.DoorCreak, -8f, 0.82f);
             await SaySequence(
                 "You take the road Ida took, but in the opposite tense: not leaving a person behind, only carrying what is known back toward her sister.",
-                "At the bend, the fields give way to the last room of the house.");
-            SceneManager.ChangeScene("res://scenes/world/room_7.tscn");
+                "At the bend, the fields give way to the front of the house. The porch. The light is on.");
+            SceneManager.ChangeScene("res://scenes/world/porch_447.tscn");
         }
         finally
         {

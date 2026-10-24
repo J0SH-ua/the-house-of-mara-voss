@@ -20,7 +20,6 @@ public partial class Room7Final : Node2D
     private const string ChoiceMadeFlag = "room7_choice_made";
 
     private static readonly Rect2 PanelRect = new(236, 96, 680, 330);
-    private static readonly string[] RomanNumerals = ["I", "II", "III", "IV", "V", "VI"];
     private static readonly string[] ShortNames =
     [
         "Brass Key",
@@ -47,7 +46,6 @@ public partial class Room7Final : Node2D
     ];
     private readonly Texture2D[] _fragmentIcons = new Texture2D[GameState.MaxShards];
     private readonly Button[] _trayButtons = new Button[GameState.MaxShards];
-    private readonly Label[] _frameNumerals = new Label[GameState.MaxShards];
     private readonly Label[] _frameTitles = new Label[GameState.MaxShards];
 
     private PanelContainer _choicePanel;
@@ -108,15 +106,13 @@ public partial class Room7Final : Node2D
             {
                 await SaySequence(
                     "The last room has six hollow frames because Mara's story still has places she has not brought back with her.",
-                    $"Only {gs.CountRecovered()} of the six fragments are recovered. Open Mara's Bag (B) to see what is missing, then Step Back (Q). The earlier rooms still hold the pieces she needs before Release can mean anything.");
+                    $"Only {gs.CountRecovered()} of the six fragments are recovered. The frames will wait. They are very good at that.");
             }
             else
             {
                 await SaySequence(
-                    "You have carried six pieces of one girl through six rooms of one woman's unfinished night. Understand, before you touch a frame: nothing chosen here gives Ida back. It only decides what carrying her means.",
-                    "Six hollow frames. Six pieces of one life, carried here in Mara's bag. This room is not another lock; it is Mara putting the morning back where she lived it.",
-                    "Choose a fragment from the tray below, then click the hollow frame where it belongs. Gold means the piece stands in its lived place. Blue-grey means the house has accepted it somewhere kinder — click that filled frame to take it back and try again.",
-                    "If the order slips, the Bag (B) shows what Mara carries — numbered as she found them — and the Journal (J) keeps her notes. Release comes last: when all six stand where she lived them, press R — or click Release — then click the assembled memory and choose what Mara does with the truth.");
+                    "You have carried six pieces of one girl through one woman's unfinished night. Understand, before you touch a frame: nothing chosen here gives Ida back. It only decides what carrying her means.",
+                    "Six hollow frames. Six pieces of one life. Nothing in this room is labelled.");
             }
 
             if (GodotObject.IsInstanceValid(this))
@@ -181,8 +177,7 @@ public partial class Room7Final : Node2D
         {
             GetTree().Root.SetInputAsHandled();
             AudioManager.Play(Sfx.Denied, -10f, 1.02f);
-            GameState.Instance?.Toast(
-                "Clarity cannot order a life. Place the fragments, then Release them.");
+            GameState.Instance?.Toast("Clarity cannot order a life.");
             return;
         }
 
@@ -233,21 +228,18 @@ public partial class Room7Final : Node2D
             Rect2 rect = GetFrameRect(slot);
             int placedShard = gs != null ? gs.PlacedShardBySlot[slot] : -1;
             bool placed = placedShard >= 0;
-            bool correct = placedShard == slot;
             bool hovered = slot == _hoveredSlot;
 
+            // A placed piece simply rests. The house does not grade pieces
+            // one at a time — it answers only when all six stand together.
             Color fill = !placed
                 ? new Color(0.07f, 0.06f, 0.05f, 0.78f)
-                : correct
-                    ? new Color(0.34f, 0.25f, 0.1f, 0.92f)
-                    : new Color(0.12f, 0.17f, 0.23f, 0.92f);
+                : new Color(0.2f, 0.16f, 0.1f, 0.92f);
             Color border = hovered
                 ? new Color(1f, 0.9f, 0.6f, 0.98f)
                 : !placed
                     ? new Color(0.58f, 0.5f, 0.4f, 0.55f)
-                    : correct
-                        ? new Color(1f, 0.84f, 0.48f, 0.96f)
-                        : new Color(0.62f, 0.76f, 0.92f, 0.88f);
+                    : new Color(0.86f, 0.72f, 0.48f, 0.9f);
 
             DrawRect(rect, fill);
             DrawRect(rect, border, false, hovered ? 3f : 2f);
@@ -265,12 +257,12 @@ public partial class Room7Final : Node2D
                 var iconTex = _fragmentIcons[placedShard];
                 if (iconTex != null)
                 {
-                    // The keepsake itself stands in the frame: true colours
-                    // where it was lived, cold where the house is being kind.
+                    // The keepsake itself stands in the frame, in its own
+                    // colours wherever Mara has put it.
                     DrawTextureRect(iconTex,
                         new Rect2(c - new Vector2(28, 28), new Vector2(56, 56)),
                         false,
-                        correct ? Colors.White : new Color(0.72f, 0.83f, 1f, 0.95f));
+                        Colors.White);
                 }
                 else
                 {
@@ -282,8 +274,7 @@ public partial class Room7Final : Node2D
                         c + new Vector2(-20, 0),
                     ];
                     DrawColoredPolygon(diamond,
-                        correct ? new Color(1f, 0.82f, 0.42f, 0.88f)
-                                : new Color(0.58f, 0.72f, 0.9f, 0.82f));
+                        new Color(0.92f, 0.78f, 0.52f, 0.85f));
                 }
                 DrawArc(c, 31f, 0f, Mathf.Tau, 40, border, 1.4f, true);
                 DrawCircle(c, 3f, new Color(1f, 0.97f, 0.86f, 0.95f));
@@ -319,11 +310,8 @@ public partial class Room7Final : Node2D
         {
             Rect2 rect = GetFrameRect(i);
 
-            var numeral = CreateLabel(RomanNumerals[i], rect.Position + new Vector2(9, 6), 17,
-                new Color(0.9f, 0.78f, 0.54f, 0.92f), new Vector2(62, 24));
-            numeral.HorizontalAlignment = HorizontalAlignment.Left;
-            _frameNumerals[i] = numeral;
-
+            // Nothing here is numbered. The frames are six hollows; the order
+            // they want is the order Mara lived, and only she knows it.
             var label = CreateLabel("hollow", rect.Position + new Vector2(10, 64), 17,
                 new Color(0.82f, 0.78f, 0.7f, 0.78f), new Vector2(142, 42));
             _frameTitles[i] = label;
@@ -519,7 +507,7 @@ public partial class Room7Final : Node2D
         if (System.Array.IndexOf(gs.PlacedShardBySlot, shard) >= 0)
         {
             AudioManager.Play(Sfx.Denied, -9f);
-            gs.Toast("That fragment is already in a frame. Click its frame to take it back.");
+            gs.Toast("That fragment is already in a frame.");
             return;
         }
 
@@ -538,7 +526,7 @@ public partial class Room7Final : Node2D
         else
         {
             _selectedShard = shard;
-            gs.Toast($"{GameState.ShardTitles[shard]} — chosen. Click a hollow frame.");
+            gs.Toast($"{GameState.ShardTitles[shard]} — chosen.");
         }
         UpdateVisuals();
     }
@@ -563,7 +551,7 @@ public partial class Room7Final : Node2D
                 AudioManager.Play(Sfx.ShardPlace, -7f, 0.78f);
                 Hotspots.SpawnRipple(GetFrameRect(slot).GetCenter(),
                     new Color(0.68f, 0.82f, 1f));
-                gs.Toast($"{ShortNames[removedShard]} taken back. Choose its true frame.");
+                gs.Toast($"{ShortNames[removedShard]} taken back.");
             }
             else
             {
@@ -576,7 +564,7 @@ public partial class Room7Final : Node2D
         if (_selectedShard < 0)
         {
             AudioManager.Play(Sfx.Denied, -8f);
-            gs.Toast("Choose a fragment from the tray below, then click a hollow frame.");
+            gs.Toast("The frame is hollow.");
             return;
         }
 
@@ -593,10 +581,8 @@ public partial class Room7Final : Node2D
                 UpdateVisuals();
                 if (result == ShardPlaceResult.AllPlaced)
                     _ = HandleAllPlacedAsync();
-                else if (shardToPlace == slot)
-                    gs.Toast($"Gold warms around it — that is where Mara lived this piece. ({gs.CountPlaced()}/{GameState.MaxShards} returned)");
                 else
-                    gs.Toast($"It rests blue-grey: the house accepts it there, but Mara's life does not. Leave it for now, or click the frame to take it back. ({gs.CountPlaced()}/{GameState.MaxShards} returned)");
+                    gs.Toast($"It rests there. ({gs.CountPlaced()}/{GameState.MaxShards} returned)");
                 break;
 
             case ShardPlaceResult.AlreadyPlaced:
@@ -630,12 +616,12 @@ public partial class Room7Final : Node2D
                 UpdateVisuals();
                 await SaySequence(
                     "One morning, in the order she lived it: the key, the photograph, the names she preserved, the sentence in the hall, the apology she never sent, the last afternoon.",
-                    "Nothing is missing now except the decision. Press R — Release — and click the assembled memory when Mara is ready to answer it.");
+                    "Nothing is missing now except the decision.");
             }
             else
             {
                 AudioManager.Play(Sfx.CorruptionGlitch, -9f, 0.82f);
-                await Say("All six pieces are here, but the house has arranged them into a kinder lie. Click any filled frame to take its fragment back and put the morning in lived order.");
+                await Say("All six pieces are here, but the house has arranged them into a kinder lie.");
             }
         }
         finally
@@ -653,15 +639,13 @@ public partial class Room7Final : Node2D
 
         if (gs.CountPlaced() < GameState.MaxShards)
         {
-            _ = WrongReleaseAsync(
-                $"Release cannot decide an unfinished memory. {gs.CountPlaced()} of six fragments have been returned. Put Release down, choose fragments from the tray, and place them in the frames first.");
+            _ = WrongReleaseAsync("Release cannot decide an unfinished memory.");
             return;
         }
 
         if (!gs.FragmentsInOrder())
         {
-            _ = WrongReleaseAsync(
-                "Release would preserve the house's arrangement, not Mara's life. Put Release down, click blue-grey frames to take their fragments back, and make all six stand gold in lived order first.");
+            _ = WrongReleaseAsync("Release would preserve the house's arrangement, not Mara's life.");
             return;
         }
 
@@ -671,7 +655,25 @@ public partial class Room7Final : Node2D
         AudioManager.Play(Sfx.ClarifyReveal, -5f, 1.12f);
         AudioManager.Play(Sfx.PuzzleSolve, -8f, 1.08f);
         Hotspots.SpawnRipple(PanelRect.GetCenter(), new Color(1f, 0.9f, 0.58f));
-        ShowChoice();
+
+        // Before Mara decides anything, the house finally shows her — and
+        // the player — the whole of what happened, in its own rooms.
+        if (GameUI.Instance != null)
+        {
+            _busy = true;
+            UpdateVisuals();
+            GameUI.Instance.PlayFinaleTruthReveal(() =>
+            {
+                if (!GodotObject.IsInstanceValid(this))
+                    return;
+                _busy = false;
+                ShowChoice();
+            });
+        }
+        else
+        {
+            ShowChoice();
+        }
     }
 
     private async Task WrongReleaseAsync(string line)
@@ -759,7 +761,7 @@ public partial class Room7Final : Node2D
 
         if (GameUI.Instance != null)
         {
-            GameUI.Instance.PlayAuthoredEnding(endingId);
+            GameUI.Instance.PlayAuthoredEnding(endingId, withIdaConversation: true);
         }
         else
         {
@@ -789,14 +791,14 @@ public partial class Room7Final : Node2D
             button.Text = !recovered
                 ? "· · ·"
                 : placedSlot >= 0
-                    ? $"{RomanNumerals[shard]} · {ShortNames[shard]}\nreturned"
+                    ? $"{ShortNames[shard]}\nreturned"
                     : selected
-                        ? $"◆ {RomanNumerals[shard]} · {ShortNames[shard]}"
-                        : $"{RomanNumerals[shard]} · {ShortNames[shard]}";
+                        ? $"◆ {ShortNames[shard]}"
+                        : ShortNames[shard];
             button.TooltipText = !recovered
                 ? "Not recovered yet"
                 : placedSlot >= 0
-                    ? $"{GameState.ShardTitles[shard]} — in frame {RomanNumerals[placedSlot]}. Click that frame to reclaim it."
+                    ? $"{GameState.ShardTitles[shard]} — returned. Its frame can give it back."
                     : GameState.ShardTitles[shard];
             button.Disabled = !carried || _busy || _choiceOpen || _endingStarted ||
                               Dialogue.IsShowing || GetTree().Paused;
@@ -813,23 +815,13 @@ public partial class Room7Final : Node2D
             if (placedShard >= 0)
             {
                 label.Text = ShortNames[placedShard];
-                label.AddThemeColorOverride("font_color", placedShard == slot
-                    ? new Color(1f, 0.9f, 0.64f)
-                    : new Color(0.72f, 0.84f, 1f));
+                label.AddThemeColorOverride("font_color", new Color(0.95f, 0.87f, 0.68f));
             }
             else
             {
                 label.Text = "hollow";
                 label.AddThemeColorOverride("font_color",
                     new Color(0.82f, 0.78f, 0.7f, 0.62f));
-            }
-
-            if (_frameNumerals[slot] != null)
-            {
-                _frameNumerals[slot].AddThemeColorOverride("font_color",
-                    placedShard == slot
-                        ? new Color(1f, 0.86f, 0.52f)
-                        : new Color(0.9f, 0.78f, 0.54f, 0.86f));
             }
         }
 
@@ -926,6 +918,10 @@ public partial class Room7Final : Node2D
 
         if (position.X >= 12f && position.X <= 276f && position.Y >= 552f &&
             SceneManager.TryGetBackTarget(SceneManager.CurrentScenePath, out _, out _))
+            return true;
+
+        if (position.X >= 876f && position.Y >= 552f &&
+            GameState.Instance != null && GameState.Instance.TryGetForwardScene(out _))
             return true;
 
         var gs = GameState.Instance;

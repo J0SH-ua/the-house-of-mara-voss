@@ -122,6 +122,12 @@ public partial class Room2Puzzle : Area2D
 		if (_isSolved)
 			return;
 
+		if (GameState.Instance?.IsRoomSealed("Room2") == true)
+		{
+			GameState.Instance.NotifySealedInteraction();
+			return;
+		}
+
 		if (@event is not InputEventKey keyEvent)
 			return;
 
@@ -226,6 +232,12 @@ public partial class Room2Puzzle : Area2D
 
 	private void OnUnlockPressed()
 	{
+		if (GameState.Instance?.IsRoomSealed("Room2") == true)
+		{
+			GameState.Instance.NotifySealedInteraction();
+			return;
+		}
+
 		if (_isSolved || _feedbackPlaying)
 			return;
 

@@ -29,19 +29,19 @@ public static class MemoryVerbSystem
 
     public static string Description(MemoryVerb verb) => verb switch
     {
-        MemoryVerb.Echo => "Arm Echo, then drift or click memories in the order they were spoken.",
-        MemoryVerb.Anchor => "Arm Anchor, then click the one thing whose meaning never changed.",
-        MemoryVerb.Trace => "Arm Trace after facing every stop, then click them again in causal order.",
-        MemoryVerb.Release => "Arm Release only after the six fragments stand in lived order, then click the whole memory.",
+        MemoryVerb.Echo => "Listen to memories in the order they were spoken.",
+        MemoryVerb.Anchor => "Hold one unchanged thing still.",
+        MemoryVerb.Trace => "Join causes in the order they happened.",
+        MemoryVerb.Release => "Answer a memory that is whole.",
         _ => string.Empty,
     };
 
     private static string Instruction(MemoryVerb verb) => verb switch
     {
-        MemoryVerb.Echo => "Echo is in Mara's hands — now drift or click what still has a voice, in spoken order. Right-click/Esc stops listening.",
-        MemoryVerb.Anchor => "Anchor is in Mara's hands — now click the one thing that has not changed meaning. Wrong choices won't spend it; right-click/Esc lets go.",
-        MemoryVerb.Trace => "Trace is in Mara's hands — face every stop first, then click them again in causal order. Right-click/Esc breaks away.",
-        MemoryVerb.Release => "Release is in Mara's hands — click only a completed memory in lived order. Right-click/Esc if she is not ready.",
+        MemoryVerb.Echo => "Echo is in Mara's hands.",
+        MemoryVerb.Anchor => "Anchor is in Mara's hands.",
+        MemoryVerb.Trace => "Trace is in Mara's hands.",
+        MemoryVerb.Release => "Release is in Mara's hands.",
         _ => string.Empty,
     };
 

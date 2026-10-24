@@ -1,0 +1,6 @@
+[gd_scene format=4 uid="uid://cmaraaptsc001"]
+
+[ext_resource type="Script" uid="uid://cmaraapt00001" path="res://scripts/world/room5/ApartmentNow.cs" id="1_apt"]
+
+[node name="ApartmentNow" type="Node2D" unique_id=1506000001]
+script = ExtResource("1_apt")

@@ -31,8 +31,10 @@ public partial class SceneManager : Node
 		["Room_4_puzzle.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),
 		["flashback_landing.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),
 		["room_5.tscn"] = ("res://scenes/world/room_4.tscn", "← Previous Room"),
+		["apartment_now.tscn"] = ("res://scenes/world/room_5.tscn", "← Step Back"),
 		["room_6.tscn"] = ("res://scenes/world/room_5.tscn", "← Previous Room"),
-		["room_7.tscn"] = ("res://scenes/world/room_6.tscn", "← Previous Room"),
+		["porch_447.tscn"] = ("res://scenes/world/room_6.tscn", "← Previous Room"),
+		["room_7.tscn"] = ("res://scenes/world/porch_447.tscn", "← Previous Room"),
 	};
 
 	/// <summary>Where "step back" leads from <paramref name="scenePath"/>, if anywhere.</summary>

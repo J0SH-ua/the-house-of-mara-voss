@@ -39,7 +39,6 @@ public partial class Room4Puzzle : MemoryRoomBase
     private Label _statusLabel;
     private int _knockProgress;
     private bool _opened;
-    private bool _ordinaryKnockReminderShown;
 
     protected override string RoomName => "Room4";
     protected override string BackgroundPath => "res://assets/images/bgs/DoorCloseup.png";
@@ -89,9 +88,7 @@ public partial class Room4Puzzle : MemoryRoomBase
         if (!_opened)
         {
             _ = PlayStoryLessonOnceAsync("story_lesson_room4_door_echo",
-                "Close, the door is not locked with one key. It is listening for the knock Mara and Ida used when one of them came home after dark: picture, then the key beneath it; cross, enter, close.",
-                "Ordinary clicks only let Mara examine the brass, and each piece will teach its pair. When you mean to knock, choose Echo first (E, or its Memory-bar button), then click a brass plate and the keyhole directly beneath it. Do that three times, left to right.",
-                "A gold ring and a rising note mean the other side answered. A wrong knock loosens the whole pattern, so begin again at the bridge.");
+                "Close, the door is not locked with one key. It is listening for the knock Mara and Ida used when one of them came home after dark.");
         }
     }
 
@@ -198,7 +195,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             _knockProgress = 1;
             UpdateStatusLabel();
             QueueRedraw();
-            GameState.Instance?.Toast("The knock begins again where crossing begins.");
+            GameState.Instance?.Toast("The knock begins again.");
             return;
         }
 
@@ -230,11 +227,6 @@ public partial class Room4Puzzle : MemoryRoomBase
             if (first)
             {
                 await SaySequence(FirstLines(hotspot.Id));
-                if (!_ordinaryKnockReminderShown && !_opened)
-                {
-                    _ordinaryKnockReminderShown = true;
-                    GameState.Instance?.Toast("That was looking. To knock: press E (Echo), then click plate → keyhole beneath, three pairs left to right.");
-                }
             }
             else
                 await Say(RepeatLine(hotspot.Id), 3.5f, 23);
@@ -251,44 +243,44 @@ public partial class Room4Puzzle : MemoryRoomBase
         "BridgePlate" =>
         [
             "A bridge stamped in brass, water moving underneath whether anyone crosses or not.",
-            "Directly below it waits a keyhole. The pairing feels deliberate: cross first, then turn what waits under the crossing.",
+            "Directly below it waits a keyhole, polished bright by thumbs.",
         ],
         "LeftKeyhole" =>
         [
-            "The keyhole beneath the bridge. Its brass is polished brighter than the others, as if this one is always turned first.",
-            "It belongs to the picture above it. Bridge, then bridge-key.",
+            "The keyhole beneath the bridge. Its brass is polished brighter than the others.",
+            "From inside, the faintest smell of river mud.",
         ],
         "DoorPlate" =>
         [
             "A little door set into the door, complete with its own impossible knob.",
-            "After a crossing comes an entrance. Below the little door waits the middle keyhole.",
+            "Below the little door waits the middle keyhole.",
         ],
         "CenterKeyhole" =>
         [
             "The middle keyhole sits exactly beneath the little door. From inside comes the faintest smell of rain on a bedroom curtain.",
-            "Little door, then its key. The door is teaching pairs, not a single row.",
+            "Something on the other side is holding very still, listening back.",
         ],
         "CirclePlate" =>
         [
             "An empty brass circle. No face, no landscape, no way through except around again.",
-            "What is crossed and entered has to be closed. One keyhole remains beneath the circle.",
+            "One keyhole remains beneath the circle.",
         ],
         "RightKeyhole" =>
         [
             "The final keyhole, under the circle. Something behind it shifts — not a lock giving way, but a room deciding which year to be.",
-            "Circle, then circle-key. That would close the knock.",
+            "It is the coldest of the three.",
         ],
         _ => ["cold brass, patient under her fingers."],
     };
 
     private static string RepeatLine(string id) => id switch
     {
-        "BridgePlate" => "Bridge first.",
-        "LeftKeyhole" => "Then the keyhole beneath the bridge.",
-        "DoorPlate" => "Then the little door.",
-        "CenterKeyhole" => "Then the middle keyhole.",
-        "CirclePlate" => "Then close the circle.",
-        "RightKeyhole" => "Then the final keyhole.",
+        "BridgePlate" => "Water underneath, whether anyone crosses or not.",
+        "LeftKeyhole" => "Brass, polished by thumbs.",
+        "DoorPlate" => "A little door, complete with its own impossible knob.",
+        "CenterKeyhole" => "Rain on a bedroom curtain, from inside.",
+        "CirclePlate" => "No way through except around again.",
+        "RightKeyhole" => "The coldest of the three.",
         _ => "cold brass.",
     };
 
@@ -305,8 +297,8 @@ public partial class Room4Puzzle : MemoryRoomBase
             QueueRedraw();
             AudioManager.Play(Sfx.Denied, -8f, 0.86f);
             await Say(hadProgress
-                ? "The note falls out of the pattern and the whole knock loosens. Begin again where crossing begins: the bridge."
-                : "No answer. A knock has to begin somewhere — and this door begins with a crossing.", 4f, 23);
+                ? "The note falls out of the pattern and the whole knock loosens."
+                : "No answer.", 4f, 23);
         }
         finally
         {
@@ -324,10 +316,10 @@ public partial class Room4Puzzle : MemoryRoomBase
             AudioManager.Play(Sfx.Denied, -9f, 0.92f);
             string line = verb switch
             {
-                MemoryVerb.Anchor => "You could hold this door still forever and it would only become a better-kept wall. A knock is movement, in order. Put Anchor down and choose Echo (E), then plate → keyhole beneath.",
-                MemoryVerb.Trace => "There is no chain of causes to trace in the brass — only six answers waiting to sound. Put Trace down and choose Echo (E), then plate → keyhole beneath.",
-                MemoryVerb.Release => "There is nothing whole enough here to release. First let the door hear its knock.",
-                _ => "That way of remembering does not fit a knock. Echo does.",
+                MemoryVerb.Anchor => "You could hold this door still forever and it would only become a better-kept wall. A knock is movement.",
+                MemoryVerb.Trace => "There is no chain of causes to trace in the brass — only answers waiting to sound.",
+                MemoryVerb.Release => "There is nothing whole enough here to release.",
+                _ => "That way of remembering does not fit a knock.",
             };
             await Say(line, 4f, 23);
         }
@@ -347,7 +339,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             AudioManager.Play(Sfx.LockRattle, -7f, 0.82f);
             await SaySequence(
                 "The brass takes the sound and gives nothing back.",
-                "This door will not listen until the hallway behind Mara has finished its sentence. Step back and Echo the photographs in order.");
+                "This door will not listen until the hallway behind Mara has finished its sentence.");
         }
         finally
         {

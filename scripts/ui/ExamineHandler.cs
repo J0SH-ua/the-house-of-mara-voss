@@ -27,6 +27,7 @@ public partial class ExamineHandler : TileMapLayer
     [Export] public string ExamineSfxId = Sfx.Examine;
 
     private bool _isHovering = false;
+    private string _roomNameCache;
     private string _currentHoverCursorTexturePath = string.Empty;
     private Rect2I _usedRect;
     private bool _hasUsedRect;
@@ -171,6 +172,14 @@ public partial class ExamineHandler : TileMapLayer
         if (!MouseOnTile(out _))
             return;
 
+        // A finished room, revisited from further on, has gone quiet.
+        if (GameState.Instance?.IsRoomSealed(_roomNameCache ??= RoomExamineTracker.ResolveRoomName(this)) == true)
+        {
+            GameState.Instance.NotifySealedInteraction();
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
         // If clarifying, delegate entirely to clarify logic and return.
         // ClaritySystem keeps the mode armed when there's nothing to reveal.
         if (ClaritySystem.IsArmed)
@@ -309,7 +318,9 @@ public partial class ExamineHandler : TileMapLayer
     {
         // While input is blocked (dialogue playing), forcibly end any hover so
         // the cursor doesn't stay stuck as a magnifying glass during dialogue.
-        if (Dialogue.IsInputBlocked || !HoverEnabled)
+        // Sealed rooms offer no hover either: nothing here answers anymore.
+        if (Dialogue.IsInputBlocked || !HoverEnabled
+            || GameState.Instance?.IsRoomSealed(_roomNameCache ??= RoomExamineTracker.ResolveRoomName(this)) == true)
         {
             if (_isHovering)
             {

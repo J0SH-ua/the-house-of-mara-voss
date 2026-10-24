@@ -188,8 +188,7 @@ public partial class Room4 : Node2D
 		try
 		{
 			await Dialogue.ShowText(this, "The photographs are not ten captions. They are one sentence Mara's mother once said in this hall, broken across the wall so Mara would not have to hear all of it at once.", 5.5f, 576f, 324f, HoverFontPath, 24);
-			await Dialogue.ShowText(this, "Looking finds the words. Echo hears their order. Press E — or click Echo in the Memory bar — then drift across the photographs without clicking. A rising note means her mother's voice has taken the next word.", 5.5f, 576f, 324f, HoverFontPath, 24);
-			await Dialogue.ShowText(this, "Begin where the voice begins. If a word answers low and separate, it belongs later; return to the next frame in the spoken order.", 5.0f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "Looking finds the words. They do not yet sound like anyone speaking.", 5.0f, 576f, 324f, HoverFontPath, 24);
 		}
 		finally
 		{
@@ -258,8 +257,8 @@ public partial class Room4 : Node2D
 		try
 		{
 			await Dialogue.ShowText(this, "The sentence does not rescue Mara. It gives her one sentence that does not move when she repeats it: She would have loved to see how far you've come.", 5.5f, 576f, 324f, HoverFontPath, 24);
-			await Dialogue.ShowText(this, "That stillness becomes Anchor. When the next room slides between childhood and adulthood, look at its contradictions normally first. Then press A — or click Anchor — and choose the one thing whose meaning never changed.", 5.5f, 576f, 324f, HoverFontPath, 24);
-			await Dialogue.ShowText(this, "The door at the end of this hall still belongs to Echo, though. Its brass will want sound in pairs before Anchor is asked to hold anything.", 5.0f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "That stillness has a name now, the way listening did. Anchor.", 5.0f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "Somewhere down the hall, brass is listening.", 4.5f, 576f, 324f, HoverFontPath, 24);
 		}
 		finally
 		{
@@ -431,6 +430,17 @@ public partial class Room4 : Node2D
 
 	public override void _Process(double delta)
 	{
+		// A finished hallway, revisited from further on, keeps its words.
+		if (GameState.Instance?.IsRoomSealed("Room4") == true)
+		{
+			if (_currentHoveredIndex != -1)
+			{
+				HideRuntimeLabel();
+				_currentHoveredIndex = -1;
+			}
+			return;
+		}
+
 		if (Dialogue.IsInputBlocked)
 		{
 			if (_currentHoveredIndex != -1)
@@ -445,7 +455,7 @@ public partial class Room4 : Node2D
 		if (echoArmedNow && !_wasEchoArmed && !_echoArmLessonShown && _currentSequenceIndex < HoverWords.Length)
 		{
 			_echoArmLessonShown = true;
-			GameState.Instance?.Toast("Echo settles over the hall like a voice from another room. Don't click — drift across the photographs in the order she speaks.");
+			GameState.Instance?.Toast("Echo settles over the hall like a voice from another room.");
 		}
 		_wasEchoArmed = echoArmedNow;
 
@@ -468,6 +478,17 @@ public partial class Room4 : Node2D
 	{
 		if (SceneManager.IsChanging)
 			return;
+
+		if (GameState.Instance?.IsRoomSealed("Room4") == true)
+		{
+			if (@event is InputEventMouseButton sealedClick && sealedClick.Pressed
+				&& sealedClick.ButtonIndex == MouseButton.Left)
+			{
+				GameState.Instance.NotifySealedInteraction();
+				GetTree().Root.SetInputAsHandled();
+			}
+			return;
+		}
 
 		if (@event is not InputEventMouseButton mouseButton)
 			return;
@@ -567,7 +588,7 @@ public partial class Room4 : Node2D
 			{
 				_echoHintShown = true;
 				AudioManager.Play(Sfx.Denied, -12f, 0.8f);
-				GameState.Instance?.Toast("The words are separate when you only look. Press E — Echo — then drift across the photographs.");
+				GameState.Instance?.Toast("The words are separate when you only look.");
 			}
 			return;
 		}
@@ -578,9 +599,7 @@ public partial class Room4 : Node2D
 			if (!_echoOutOfOrderHintShown)
 			{
 				_echoOutOfOrderHintShown = true;
-				GameState.Instance?.Toast(_currentSequenceIndex == 0
-					? "That word belongs later. Her mother's sentence begins with \"She\" — start at the first photograph."
-					: $"That word belongs later. Mara is holding \"...{HoverWords[_currentSequenceIndex - 1]}\" — find the next photograph in the spoken order.");
+				GameState.Instance?.Toast("That word belongs later.");
 			}
 		}
 
@@ -598,9 +617,7 @@ public partial class Room4 : Node2D
 				_echoUseRegistered = true;
 				MemoryVerbSystem.RegisterUse(MemoryVerb.Echo);
 			}
-			GameState.Instance?.Toast(_currentSequenceIndex == 0
-				? $"\"{HoverWords[index]}\"  (1/{HoverWords.Length}) — the note rose. Keep drifting; Echo is listening, not clicking."
-				: $"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
+			GameState.Instance?.Toast($"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
 
 			if (_sentenceLabel != null)
 			{

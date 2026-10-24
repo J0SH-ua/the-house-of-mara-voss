@@ -53,7 +53,6 @@ public partial class GameUI : CanvasLayer
         "Unsent Apology",
         "Last Afternoon",
     ];
-    private static readonly string[] BagRomanNumerals = ["I", "II", "III", "IV", "V", "VI"];
     private static readonly string[] BagIconPaths =
     [
         "res://assets/images/core/shards/brass_key.png",
@@ -71,6 +70,13 @@ public partial class GameUI : CanvasLayer
     // Back navigation (puzzle -> room, room -> previous room)
     private Button _backButton;
 
+    // Forward navigation ("go back to the new room") + Recollection offer
+    private Button _forwardButton;
+    private string _forwardTargetPath = string.Empty;
+    private string _forwardCacheKey = string.Empty;
+    private Button _rememberButton;
+    private bool _recollectionOfferedThisArming;
+
     // Memory Verb bar (Echo / Anchor / Trace / Release)
     private PanelContainer _verbPanel;
     private readonly System.Collections.Generic.Dictionary<MemoryVerb, Button> _verbButtons = new();
@@ -78,6 +84,7 @@ public partial class GameUI : CanvasLayer
     // Authored endings (Waking / Kept House)
     private Control _endingRoot;
     private TextureRect _endingImage;
+    private ColorRect _endingFade;
     private Label _endingTitle;
     private Label _endingCaption;
     private Label _endingStats;
@@ -102,7 +109,6 @@ public partial class GameUI : CanvasLayer
     private HBoxContainer _shatterChoices;
     private bool _shatterPlaying;
     private bool _shatterAdvanceRequested;
-    private bool _wasClarityArmed;
     private ShatterCrackOverlay _shatterCracks;
 
     // Recollection choice (custom panel in the game's own voice)
@@ -122,6 +128,8 @@ public partial class GameUI : CanvasLayer
     private bool _cutscenePlaying;
     private bool _cutsceneAdvanceRequested;
     private bool _cutsceneSkipRequested;
+    private (string ImagePath, string Caption, float HoldSeconds)[] _activeShots;
+    private Action _cutsceneOnComplete;
 
     // Overlay
     private ColorRect _corruptionRect;
@@ -176,7 +184,9 @@ public partial class GameUI : CanvasLayer
         BuildCollapseOverlay();
         BuildHud();
         BuildBackButton();
+        BuildForwardButton();
         BuildBagButton();
+        BuildRememberButton();
         BuildMemoryVerbBar();
         BuildPausePanel();
         BuildSettingsPanel();
@@ -246,15 +256,20 @@ public partial class GameUI : CanvasLayer
         }
 
         RefreshBackButton();
+        RefreshForwardButton();
+        RefreshRememberButton();
         RefreshMemoryVerbBar();
         UpdateCollapsePulse();
 
-        // Arming Clarity in a nearly-known room offers the Recollection once
-        // per arming — the player chooses: one reveal, or everything at once.
+        // "Remember it all": offered once per Clarity arming — but retried
+        // every frame until the moment is actually free (no dialogue, no
+        // panel), so arming Clarity a breath too early can no longer lose
+        // the offer for the whole room. The HUD button offers it any time.
         bool armedNow = ClaritySystem.IsArmed;
-        if (armedNow && !_wasClarityArmed)
+        if (!armedNow)
+            _recollectionOfferedThisArming = false;
+        else if (!_recollectionOfferedThisArming)
             MaybeOfferRecollection();
-        _wasClarityArmed = armedNow;
 
         // Corruption overlay follows the live value, easing toward it.
         if (_corruptionMaterial != null && _corruptionRect.Visible)
@@ -764,6 +779,189 @@ public partial class GameUI : CanvasLayer
         Hotspots.HideAll();
         AudioManager.Play(Sfx.UiBack, -6f);
         SceneManager.ChangeScene(_backTargetPath);
+    }
+
+    /// <summary>The Step Back button's mirror, bottom-right: after stepping
+    /// back through finished rooms, this returns to the furthest ("new")
+    /// room reached — finished rooms in between no longer answer clicks,
+    /// so the way forward lives here instead of in their doors.</summary>
+    private void BuildForwardButton()
+    {
+        _forwardButton = new Button { Text = "Return \u2192", Visible = false };
+        if (_font != null)
+            _forwardButton.AddThemeFontOverride("font", _font);
+        _forwardButton.AddThemeFontSizeOverride("font_size", 20);
+        _forwardButton.AddThemeColorOverride("font_color", new Color(0.93f, 0.89f, 0.82f));
+        _forwardButton.AddThemeColorOverride("font_hover_color", new Color(1f, 0.96f, 0.85f));
+
+        var normal = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.5f),
+            BorderColor = new Color(0.72f, 0.62f, 0.45f, 0.35f),
+        };
+        normal.SetBorderWidthAll(1);
+        normal.SetCornerRadiusAll(4);
+        normal.SetContentMarginAll(8);
+        var hover = new StyleBoxFlat
+        {
+            BgColor = new Color(0.85f, 0.75f, 0.55f, 0.16f),
+            BorderColor = new Color(0.85f, 0.75f, 0.55f, 0.5f),
+        };
+        hover.SetBorderWidthAll(1);
+        hover.SetCornerRadiusAll(4);
+        hover.SetContentMarginAll(8);
+        _forwardButton.AddThemeStyleboxOverride("normal", normal);
+        _forwardButton.AddThemeStyleboxOverride("hover", hover);
+        _forwardButton.AddThemeStyleboxOverride("pressed", hover);
+        _forwardButton.AddThemeStyleboxOverride("focus", hover);
+
+        _forwardButton.AnchorLeft = 1;
+        _forwardButton.AnchorRight = 1;
+        _forwardButton.AnchorTop = 1;
+        _forwardButton.AnchorBottom = 1;
+        _forwardButton.OffsetLeft = -268;
+        _forwardButton.OffsetRight = -16;
+        _forwardButton.OffsetTop = -88;
+        _forwardButton.OffsetBottom = -44;
+        _forwardButton.TooltipText = "Return to the furthest room you have reached";
+        _forwardButton.FocusMode = Control.FocusModeEnum.None;
+        _forwardButton.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -9f);
+        _forwardButton.Pressed += GoForward;
+        _hud.AddChild(_forwardButton);
+    }
+
+    private void RefreshForwardButton()
+    {
+        if (_forwardButton == null)
+            return;
+
+        var gs = GameState.Instance;
+        string cacheKey = $"{SceneManager.CurrentScenePath}|{gs?.FurthestScenePath}";
+        if (cacheKey != _forwardCacheKey)
+        {
+            _forwardCacheKey = cacheKey;
+            if (gs != null && gs.TryGetForwardScene(out string target))
+            {
+                _forwardTargetPath = target;
+                _forwardButton.Text = $"Return to {ForwardSceneName(target)} \u2192";
+            }
+            else
+            {
+                _forwardTargetPath = string.Empty;
+            }
+        }
+
+        _forwardButton.Visible = _context == UiContext.Game
+                                 && !string.IsNullOrEmpty(_forwardTargetPath)
+                                 && !AnyPanelOpen()
+                                 && !Dialogue.IsShowing
+                                 && !SceneManager.IsChanging
+                                 && !GetTree().Paused;
+    }
+
+    private static string ForwardSceneName(string scenePath)
+    {
+        string file = scenePath ?? string.Empty;
+        int slash = file.LastIndexOf('/');
+        if (slash >= 0)
+            file = file.Substring(slash + 1);
+        return file switch
+        {
+            "room_1.tscn" => "the kitchen",
+            "room_1_puzzle.tscn" => "the kitchen drawer",
+            "room_2.tscn" => "the sitting room",
+            "room_2_puzzle.tscn" => "the table drawer",
+            "room_3.tscn" => "the kept room",
+            "room_4.tscn" => "the hallway",
+            "Room_4_puzzle.tscn" => "the brass door",
+            "room_5.tscn" => "the sliding room",
+            "room_6.tscn" => "the last afternoon",
+            "porch_447.tscn" => "the porch",
+            "room_7.tscn" => "the last room",
+            _ => "the new room",
+        };
+    }
+
+    private void GoForward()
+    {
+        if (string.IsNullOrEmpty(_forwardTargetPath) || SceneManager.IsChanging ||
+            Dialogue.IsShowing || AnyPanelOpen() || GetTree().Paused)
+            return;
+
+        MemoryVerbSystem.Cancel(silent: true);
+        if (ClaritySystem.IsArmed)
+            ClaritySystem.Disarm(silent: true);
+        Hotspots.HideAll();
+        AudioManager.Play(Sfx.UiClick, -6f);
+        SceneManager.ChangeScene(_forwardTargetPath);
+    }
+
+    /// <summary>"Remember it all" as a standing HUD affordance: while a
+    /// Recollection is available it sits beside the bag, in gold, instead of
+    /// depending on the player arming Clarity at the lucky moment.</summary>
+    private void BuildRememberButton()
+    {
+        _rememberButton = new Button { Name = "RememberItAllButton", Text = "\u2726 Remember it all", Visible = false };
+        if (_font != null)
+            _rememberButton.AddThemeFontOverride("font", _font);
+        _rememberButton.AddThemeFontSizeOverride("font_size", 20);
+        _rememberButton.AddThemeColorOverride("font_color", new Color(1f, 0.88f, 0.58f));
+        _rememberButton.AddThemeColorOverride("font_hover_color", new Color(1f, 0.95f, 0.75f));
+
+        var normal = new StyleBoxFlat
+        {
+            BgColor = new Color(0.16f, 0.11f, 0.04f, 0.62f),
+            BorderColor = new Color(1f, 0.82f, 0.45f, 0.55f),
+        };
+        normal.SetBorderWidthAll(1);
+        normal.SetCornerRadiusAll(4);
+        normal.SetContentMarginAll(8);
+        var hover = new StyleBoxFlat
+        {
+            BgColor = new Color(0.85f, 0.65f, 0.3f, 0.3f),
+            BorderColor = new Color(1f, 0.9f, 0.6f, 0.85f),
+        };
+        hover.SetBorderWidthAll(1);
+        hover.SetCornerRadiusAll(4);
+        hover.SetContentMarginAll(8);
+        _rememberButton.AddThemeStyleboxOverride("normal", normal);
+        _rememberButton.AddThemeStyleboxOverride("hover", hover);
+        _rememberButton.AddThemeStyleboxOverride("pressed", hover);
+        _rememberButton.AddThemeStyleboxOverride("focus", hover);
+
+        // Under the top-right status chip, just left of the bag icon.
+        _rememberButton.AnchorLeft = 1;
+        _rememberButton.AnchorRight = 1;
+        _rememberButton.AnchorTop = 0;
+        _rememberButton.AnchorBottom = 0;
+        _rememberButton.OffsetLeft = -316;
+        _rememberButton.OffsetRight = -88;
+        _rememberButton.OffsetTop = 140;
+        _rememberButton.OffsetBottom = 184;
+        _rememberButton.TooltipText = "Spend ALL Clarity: everything left in this room shows itself truly";
+        _rememberButton.FocusMode = Control.FocusModeEnum.None;
+        _rememberButton.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -9f);
+        _rememberButton.Pressed += () =>
+        {
+            _recollectionOfferedThisArming = true;
+            MaybeOfferRecollection();
+        };
+        _hud.AddChild(_rememberButton);
+    }
+
+    private void RefreshRememberButton()
+    {
+        if (_rememberButton == null)
+            return;
+
+        var gs = GameState.Instance;
+        _rememberButton.Visible = _context == UiContext.Game
+                                  && gs != null
+                                  && gs.CanRecollect(out _, out _)
+                                  && !AnyPanelOpen()
+                                  && !Dialogue.IsShowing
+                                  && !SceneManager.IsChanging
+                                  && !GetTree().Paused;
     }
 
     // ================================================================= context
@@ -1451,7 +1649,7 @@ public partial class GameUI : CanvasLayer
             }
             else
             {
-                var sigil = MakeLabel(recovered ? BagRomanNumerals[index] : "?", 31,
+                var sigil = MakeLabel(recovered ? "\u25C6" : "?", 31,
                     recovered ? new Color(1f, 0.86f, 0.52f, 0.96f)
                               : new Color(0.55f, 0.5f, 0.44f, 0.55f));
                 sigil.CustomMinimumSize = new Vector2(0, 58);
@@ -1484,11 +1682,10 @@ public partial class GameUI : CanvasLayer
         if (_bagSelectedIndex >= 0 && gs.IsShardRecovered(_bagSelectedIndex))
         {
             int index = _bagSelectedIndex;
-            int placedSlot = System.Array.IndexOf(gs.PlacedShardBySlot, index);
             _bagDetailTitle.Text = GameState.ShardTitles[index];
             _bagDetailStatus.Text = Globals.SHARDS_COLLECTED[index]
                 ? "In Mara's bag"
-                : $"Returned to frame {BagRomanNumerals[Mathf.Clamp(placedSlot, 0, GameState.MaxShards - 1)]}";
+                : "Returned to the last room";
             string body = !string.IsNullOrWhiteSpace(gs.ShardFragments[index])
                 ? gs.ShardFragments[index]
                 : GameState.DefaultShardFragments[index];
@@ -2335,24 +2532,31 @@ public partial class GameUI : CanvasLayer
 
     // ================================================================ tutorial
 
-    private static readonly (string Title, string Body)[] TutorialPages =
+    private static readonly (string Title, string Body, string Visual)[] TutorialPages =
     [
         ("The House",
-         "This is Mara's childhood home as she remembers it — which is not the same as how it was.\n\nClick objects to examine them. The objective at the top-left keeps count: face everything a room is holding, and its locked place will open."),
+         "Mara's childhood home, as she remembers it — which is not the same as how it was.\n\nFace everything a room is holding, and its locked place opens.",
+         "house"),
         ("Look Deeper — Gently",
-         "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage.\n\nIf the MEMORY meter ever empties, the memory shatters. That is an ending — the hollow one."),
+         "Looking again looks deeper, and deeper looks fray the memory. If the MEMORY meter ever empties, the memory shatters — that is an ending, the hollow one.",
+         "meter"),
         ("Clarity",
-         "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nBut spend the LAST charge in a room you haven't finished and the house starts taking the room back: fifteen seconds on a blood-red count to find what remains and open its lock before everything corrupts. The count holds while you read, think, or check your journal — it only drains while you could be acting.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to show everything that remains in its true form and ring it in blue — a chosen spending, so no count begins — and wake in the next room with fewer charges."),
-        ("Memory Verbs — learned in the house",
-         "The house teaches these one fragment at a time, in Mara's own words. When a way of remembering wakes, Mara writes it down under Journal (J) → Notes & Clues.\n\nTheir grammar never changes:\n1. Choose the verb — E/A/T/R, or its button in the bottom Memory bar.\n2. Touch the memory it belongs to.\n\nEcho listens in order. Anchor holds one unchanged thing still. Trace joins causes. Release answers a memory only after it is whole. A chosen verb stays in Mara's hands while she tries; right-click or Esc puts it down."),
+         "Clarity shows a thing as it truly is, and steadies the memory a little. Spend the LAST charge in an unfinished room and the house starts taking it back: fifteen seconds, in red.\n\nIn a room you nearly know, you may instead Remember it all: spend everything, and everything left shows itself.",
+         "clarity"),
+        ("Memory Verbs",
+         "Four ways of remembering, learned one fragment at a time and written down in Mara's Journal when they wake. Their grammar never changes: choose the verb, then touch the memory.",
+         "verbs"),
         ("Finding Things",
-         "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress B (or click Bag) for Mara's inventory: the fragments she is carrying, what has been returned, and the Memory Verbs she has learned.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
+         "The house notices being noticed. If you are stuck, it would rather nudge than tell — and finished rooms behind you go quiet, so the way forward is the Return button.",
+         "finding"),
         ("What You Are Doing Here",
-         "Recover the six fragments of what actually happened, and return them in the last room.\n\nSome of what the house shows you is a kindness Mara is doing herself. Your work is to tell the difference."),
+         "Recover the six fragments of what actually happened, and return them in the last room. Nothing there is labelled.\n\nSome of what the house shows you is a kindness. Your work is to tell the difference.",
+         "fragments"),
     ];
 
     private Control _tutorialPanel;
     private Label _tutorialTitle;
+    private HBoxContainer _tutorialVisual;
     private Label _tutorialBody;
     private Label _tutorialPageLabel;
     private Button _tutorialNextButton;
@@ -2373,7 +2577,7 @@ public partial class GameUI : CanvasLayer
         _tutorialPanel.AddChild(center);
 
         var panel = MakePanel();
-        panel.CustomMinimumSize = new Vector2(640, 0);
+        panel.CustomMinimumSize = new Vector2(760, 0);
         center.AddChild(panel);
 
         var vbox = new VBoxContainer();
@@ -2385,9 +2589,19 @@ public partial class GameUI : CanvasLayer
         vbox.AddChild(_tutorialTitle);
         vbox.AddChild(new HSeparator());
 
-        _tutorialBody = MakeLabel("", 22);
+        // The picture teaches first; the words underneath only caption it.
+        _tutorialVisual = new HBoxContainer
+        {
+            Alignment = BoxContainer.AlignmentMode.Center,
+            CustomMinimumSize = new Vector2(680, 208),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _tutorialVisual.AddThemeConstantOverride("separation", 16);
+        vbox.AddChild(_tutorialVisual);
+
+        _tutorialBody = MakeLabel("", 20);
         _tutorialBody.AutowrapMode = TextServer.AutowrapMode.Word;
-        _tutorialBody.CustomMinimumSize = new Vector2(580, 190);
+        _tutorialBody.CustomMinimumSize = new Vector2(680, 96);
         vbox.AddChild(_tutorialBody);
 
         _tutorialPageLabel = MakeLabel("", 17, new Color(0.75f, 0.7f, 0.62f, 0.8f));
@@ -2459,12 +2673,171 @@ public partial class GameUI : CanvasLayer
     private void ShowTutorialPage(int index)
     {
         _tutorialIndex = Mathf.Clamp(index, 0, TutorialPages.Length - 1);
-        var (title, body) = TutorialPages[_tutorialIndex];
+        var (title, body, visual) = TutorialPages[_tutorialIndex];
         _tutorialTitle.Text = title;
         _tutorialBody.Text = body;
+        BuildTutorialVisual(visual);
         _tutorialPageLabel.Text = $"{_tutorialIndex + 1} / {TutorialPages.Length}";
         _tutorialPrevButton.Disabled = _tutorialIndex == 0;
         _tutorialNextButton.Text = _tutorialIndex == TutorialPages.Length - 1 ? "Begin" : "Next";
+    }
+
+    // ------------------------------------------------------- tutorial visuals
+
+    private Control TutorialImage(string path, Vector2 size, bool cover)
+    {
+        var tex = GD.Load<Texture2D>(path);
+        if (tex == null)
+            return new ColorRect { CustomMinimumSize = size, Color = new Color(0.1f, 0.09f, 0.07f), MouseFilter = Control.MouseFilterEnum.Ignore };
+        return new TextureRect
+        {
+            Texture = tex,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            CustomMinimumSize = size,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = cover
+                ? TextureRect.StretchModeEnum.KeepAspectCovered
+                : TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+    }
+
+    private Control TutorialChip(string text, Color border, Color? bg = null, int fontSize = 19)
+    {
+        var chip = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        var style = new StyleBoxFlat
+        {
+            BgColor = bg ?? new Color(0.07f, 0.06f, 0.05f, 0.9f),
+            BorderColor = border,
+        };
+        style.SetBorderWidthAll(1);
+        style.SetCornerRadiusAll(4);
+        style.ContentMarginLeft = 12;
+        style.ContentMarginRight = 12;
+        style.ContentMarginTop = 7;
+        style.ContentMarginBottom = 7;
+        chip.AddThemeStyleboxOverride("panel", style);
+        var label = MakeLabel(text, fontSize);
+        label.HorizontalAlignment = HorizontalAlignment.Center;
+        label.MouseFilter = Control.MouseFilterEnum.Ignore;
+        chip.AddChild(label);
+        return chip;
+    }
+
+    private static VBoxContainer TutorialColumn(int separation = 10)
+    {
+        var col = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        col.AddThemeConstantOverride("separation", separation);
+        return col;
+    }
+
+    private void BuildTutorialVisual(string kind)
+    {
+        if (_tutorialVisual == null)
+            return;
+        foreach (var child in _tutorialVisual.GetChildren())
+        {
+            _tutorialVisual.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        var gold = new Color(0.85f, 0.7f, 0.42f, 0.85f);
+        switch (kind)
+        {
+            case "house":
+            {
+                _tutorialVisual.AddChild(TutorialImage("res://assets/images/bgs/Room_1_BG.png", new Vector2(400, 205), cover: true));
+                var col = TutorialColumn();
+                col.AddChild(TutorialChip("CLICK — look closer", gold));
+                col.AddChild(TutorialChip("look again — deeper, at a cost", gold));
+                col.AddChild(TutorialChip("Tab — what still waits", gold));
+                _tutorialVisual.AddChild(col);
+                break;
+            }
+
+            case "meter":
+            {
+                var cracks = new ShatterCrackOverlay
+                {
+                    CustomMinimumSize = new Vector2(300, 200),
+                    MouseFilter = Control.MouseFilterEnum.Ignore,
+                };
+                _tutorialVisual.AddChild(cracks);
+                cracks.SetFracture(0.55f);
+                var col = TutorialColumn();
+                col.AddChild(MakeLabel("MEMORY", 20, new Color(0.85f, 0.79f, 0.67f)));
+                col.AddChild(TutorialChip("Intact", new Color(0.82f, 0.71f, 0.5f, 0.9f), new Color(0.3f, 0.25f, 0.14f, 0.9f)));
+                col.AddChild(TutorialChip("Strained", new Color(0.8f, 0.62f, 0.38f, 0.9f), new Color(0.32f, 0.2f, 0.1f, 0.9f)));
+                col.AddChild(TutorialChip("Fractured", new Color(0.78f, 0.45f, 0.3f, 0.9f), new Color(0.3f, 0.14f, 0.08f, 0.9f)));
+                col.AddChild(TutorialChip("Shattered", new Color(0.75f, 0.25f, 0.22f, 0.95f), new Color(0.28f, 0.06f, 0.05f, 0.95f)));
+                _tutorialVisual.AddChild(col);
+                break;
+            }
+
+            case "clarity":
+            {
+                _tutorialVisual.AddChild(TutorialImage(ClaritySystem.EyeCursorPath, new Vector2(150, 150), cover: false));
+                var col = TutorialColumn();
+                var pips = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+                pips.AddThemeConstantOverride("separation", 6);
+                for (int i = 0; i < Globals.MaxClarity; i++)
+                {
+                    pips.AddChild(new ColorRect
+                    {
+                        CustomMinimumSize = new Vector2(18, 18),
+                        Color = i < Globals.MaxClarity - 1
+                            ? new Color(0.95f, 0.87f, 0.65f, 0.95f)
+                            : new Color(0.4f, 0.36f, 0.3f, 0.5f),
+                        MouseFilter = Control.MouseFilterEnum.Ignore,
+                    });
+                }
+                col.AddChild(MakeLabel("C — Clarity, and its charges", 19));
+                col.AddChild(pips);
+                col.AddChild(TutorialChip("0:15 — spend the last one carelessly",
+                    new Color(0.85f, 0.25f, 0.22f, 0.95f), new Color(0.3f, 0.05f, 0.06f, 0.92f)));
+                col.AddChild(TutorialChip("\u2726 Remember it all — spend everything, see everything",
+                    new Color(1f, 0.82f, 0.45f, 0.9f), new Color(0.2f, 0.14f, 0.05f, 0.92f)));
+                _tutorialVisual.AddChild(col);
+                break;
+            }
+
+            case "verbs":
+            {
+                var col = TutorialColumn(14);
+                var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+                row.AddThemeConstantOverride("separation", 10);
+                row.AddChild(TutorialChip("E · Echo\nlisten", gold));
+                row.AddChild(TutorialChip("A · Anchor\nhold still", gold));
+                row.AddChild(TutorialChip("T · Trace\njoin", gold));
+                row.AddChild(TutorialChip("R · Release\ndecide", gold));
+                col.AddChild(row);
+                var arrow = MakeLabel("choose the verb  \u2192  touch the memory      ·      right-click puts it down", 19,
+                    new Color(0.88f, 0.83f, 0.72f, 0.9f));
+                arrow.HorizontalAlignment = HorizontalAlignment.Center;
+                col.AddChild(arrow);
+                _tutorialVisual.AddChild(col);
+                break;
+            }
+
+            case "finding":
+            {
+                _tutorialVisual.AddChild(TutorialImage("res://assets/images/core/ui/bag_icon.png", new Vector2(150, 150), cover: false));
+                var col = TutorialColumn();
+                col.AddChild(TutorialChip("Tab — what still waits    ·    H — a nudge", gold));
+                col.AddChild(TutorialChip("B — Mara's bag    ·    J — her journal", gold));
+                col.AddChild(TutorialChip("Q — step back    ·    Return \u2192 — the new room", gold));
+                col.AddChild(TutorialChip("click — dialogue    ·    Esc — pause", gold));
+                _tutorialVisual.AddChild(col);
+                break;
+            }
+
+            default: // "fragments"
+            {
+                foreach (var path in BagIconPaths)
+                    _tutorialVisual.AddChild(TutorialImage(path, new Vector2(96, 120), cover: false));
+                break;
+            }
+        }
     }
 
     /// <summary>First ever entry into Room 1: teach, once. Replayable any time
@@ -2714,6 +3087,7 @@ public partial class GameUI : CanvasLayer
         if (!gs.CanRecollect(out var remaining, out int carry))
             return;
 
+        _recollectionOfferedThisArming = true;
         int charges = gs.ClarityCount;
         var remembered = new List<string>(remaining);
         ShowRecollectionPanel(charges, remembered.Count, carry, () =>
@@ -2965,6 +3339,11 @@ public partial class GameUI : CanvasLayer
         _endingImage.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _endingRoot.AddChild(_endingImage);
 
+        // The branch wash: light for waking, black for the kept house.
+        _endingFade = new ColorRect { Color = new Color(1, 1, 1, 0), MouseFilter = Control.MouseFilterEnum.Ignore };
+        _endingFade.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _endingRoot.AddChild(_endingFade);
+
         _endingTitle = MakeLabel(string.Empty, 54, new Color(0.9f, 0.78f, 0.56f));
         _endingTitle.HorizontalAlignment = HorizontalAlignment.Center;
         _endingTitle.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -3039,12 +3418,14 @@ public partial class GameUI : CanvasLayer
         };
     }
 
-    private static (string ImagePath, string Title, string FinalCaption, string[] Cards) EndingData(string endingId)
+    private static (string ImagePath, string FinalStillPath, string MusicPath, string Title, string FinalCaption, string[] Cards) EndingData(string endingId)
     {
         return endingId switch
         {
             "kept_house" => (
                 "res://assets/images/bgs/Ending_Kept_House.png",
+                "res://assets/images/bgs/Ending_Mara_Curled.png",
+                AudioManager.MusicEndingKept,
                 "THE KEPT HOUSE",
                 "Nothing changes. That was the choice.",
                 new[]
@@ -3056,6 +3437,8 @@ public partial class GameUI : CanvasLayer
                 }),
             _ => (
                 "res://assets/images/bgs/Ending_Waking.png",
+                "res://assets/images/bgs/Ending_Mara_Smile.png",
+                AudioManager.MusicEndingRelease,
                 "THE WAKING ENDING",
                 "She does not stop grieving. She stops living inside the grief.",
                 new[]
@@ -3069,10 +3452,60 @@ public partial class GameUI : CanvasLayer
         };
     }
 
+    /// <summary>First-person frames + lines for the last conversation.
+    /// Frames: 0 = listening, 1 = speaking, 2 = her last expression
+    /// (a smile if Mara lets go; turned away if she does not).</summary>
+    private static (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) IdaConversation(string endingId)
+    {
+        if (endingId == "kept_house")
+        {
+            return (
+                new[]
+                {
+                    "res://assets/images/bgs/Ending_Ida_Gloom.png",
+                    "res://assets/images/bgs/Ending_Ida_Gloom_Speak.png",
+                    "res://assets/images/bgs/Ending_Ida_Gloom_Away.png",
+                },
+                new (int, string, string)[]
+                {
+                    (0, "Mara", "Ida. Stay. Please — the house is right here. Everything is where you left it."),
+                    (1, "Ida", "That's the problem. Nothing here is allowed to change. Not even me."),
+                    (0, "Mara", "I kept it all for you. The jars. Your coat. If I let any of it go, then that day—"),
+                    (1, "Ida", "That day happened whether you keep the coat or not. I'm not in the coat, Mara."),
+                    (0, "Mara", "Then where are you? Tell me where to be sorry. Tell me how to fix it."),
+                    (1, "Ida", "You can't fix it. You can only stop living in the fixing. I didn't wait all this time to watch you do this."),
+                    (2, "Ida", "I'm tired of being the reason you won't wake up."),
+                    (2, "Mara", "Ida—"),
+                    (2, "", "She does not turn back. The rain takes the rest."),
+                });
+        }
+
+        return (
+            new[]
+            {
+                "res://assets/images/bgs/Ending_Ida_Warm_Listen.png",
+                "res://assets/images/bgs/Ending_Ida_Warm_Speak.png",
+                "res://assets/images/bgs/Ending_Ida_Warm.png",
+            },
+            new (int, string, string)[]
+            {
+                (0, "Mara", "Ida. Ida — look at me. I'm so sorry. I was supposed to come at four."),
+                (1, "Ida", "I know what time you came. I've had twelve years of you telling me."),
+                (0, "Mara", "Then you know. If I'd just— if I hadn't—"),
+                (1, "Ida", "Mara. Listen to me properly, for once. It wasn't your fault."),
+                (0, "Mara", "Don't. Don't be kind about it. I chose what I was doing. I remember choosing."),
+                (1, "Ida", "And I chose too. I chose to stop waiting and walk. No one made me. That's mine."),
+                (0, "Mara", "You were fourteen."),
+                (1, "Ida", "And you were twenty-two, and late, and human. Late isn't the same as gone. You came."),
+                (2, "Ida", "I let go a long time ago, Mara. I've just been waiting for you to notice I'm not the one holding on."),
+                (2, "Mara", "...Okay. Okay. I'll carry you differently, then."),
+            });
+    }
+
     /// <summary>Play one of the two authored endings chosen in Room 7.
     /// Reaching its title records cross-run completion and deletes the run
     /// save; Return to title deliberately does not call QuitToMenu/SaveGame.</summary>
-    public async void PlayAuthoredEnding(string endingId)
+    public async void PlayAuthoredEnding(string endingId, bool withIdaConversation = false)
     {
         if (_endingPlaying || _endingRoot == null || (endingId != "waking" && endingId != "kept_house"))
             return;
@@ -3092,15 +3525,28 @@ public partial class GameUI : CanvasLayer
         _endingCaption.Text = string.Empty;
         _endingTitle.Modulate = new Color(1, 1, 1, 0);
         _endingCaption.Modulate = new Color(1, 1, 1, 0);
+        if (_endingFade != null)
+            _endingFade.Color = new Color(1, 1, 1, 0);
         GetTree().Paused = true;
-        AudioManager.Instance?.StopAmbience();
-        AudioManager.Instance?.PlayMusic(AudioManager.MusicFinale, -10f, 2.2f);
 
-        var (imagePath, title, finalCaption, cards) = EndingData(endingId);
+        var (imagePath, finalStillPath, musicPath, title, finalCaption, cards) = EndingData(endingId);
+        AudioManager.Instance?.StopAmbience();
+        // The conversation carries its own weather: relief, or gloom. The
+        // older direct path (no conversation) keeps the finale track.
+        AudioManager.Instance?.PlayMusic(withIdaConversation ? musicPath : AudioManager.MusicFinale, -10f, 2.2f);
+
         try
         {
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            _endingImage.Texture = GD.Load<Texture2D>(imagePath);
+
+            string startImage = imagePath;
+            (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo = default;
+            if (withIdaConversation)
+            {
+                convo = IdaConversation(endingId);
+                startImage = convo.Frames[convo.Lines[0].Frame];
+            }
+            _endingImage.Texture = GD.Load<Texture2D>(startImage);
             _endingImage.PivotOffset = _endingImage.Size / 2f;
             _endingImage.Scale = Vector2.One * 1.03f;
             _endingImage.Modulate = new Color(1, 1, 1, 0);
@@ -3111,6 +3557,82 @@ public partial class GameUI : CanvasLayer
             _endingTween.TweenProperty(_endingImage, "modulate:a", 1f, 1.4f);
             _endingTween.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * 1.08f, 18f);
             await WaitForEndingAdvance(1.2f);
+
+            if (withIdaConversation)
+            {
+                // Talk to Ida — from inside Mara's own eyes. Her expression
+                // changes as the conversation turns; a slow drift keeps the
+                // frame breathing between the changes.
+                _endingTween?.Kill();
+                _endingTween = CreateTween();
+                _endingTween.SetPauseMode(Tween.TweenPauseMode.Process);
+                _endingTween.TweenProperty(_endingImage, "scale", Vector2.One * 1.1f, 45f);
+
+                int currentFrame = convo.Lines[0].Frame;
+                foreach (var line in convo.Lines)
+                {
+                    if (_endingSkipRequested)
+                        break;
+
+                    if (line.Frame != currentFrame)
+                    {
+                        currentFrame = line.Frame;
+                        var outTween = CreateTween();
+                        outTween.SetPauseMode(Tween.TweenPauseMode.Process);
+                        outTween.TweenProperty(_endingImage, "modulate:a", 0.25f, 0.35f);
+                        await ToSignal(outTween, Tween.SignalName.Finished);
+                        if (_endingSkipRequested)
+                            break;
+                        _endingImage.Texture = GD.Load<Texture2D>(convo.Frames[currentFrame]);
+                        var inTween = CreateTween();
+                        inTween.SetPauseMode(Tween.TweenPauseMode.Process);
+                        inTween.TweenProperty(_endingImage, "modulate:a", 1f, 0.45f);
+                    }
+
+                    _endingCaption.Text = string.IsNullOrEmpty(line.Speaker)
+                        ? line.Text
+                        : $"{line.Speaker}: {line.Text}";
+                    var capIn = CreateTween();
+                    capIn.SetPauseMode(Tween.TweenPauseMode.Process);
+                    capIn.TweenProperty(_endingCaption, "modulate:a", 1f, 0.5f);
+                    AudioManager.Play(Sfx.PageTurn, -16f, 0.7f);
+                    await WaitForEndingAdvance(6.4f);
+                    if (_endingSkipRequested)
+                        break;
+                    var capOut = CreateTween();
+                    capOut.SetPauseMode(Tween.TweenPauseMode.Process);
+                    capOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.4f);
+                    await ToSignal(capOut, Tween.SignalName.Finished);
+                }
+
+                // Out of the conversation the way each choice deserves:
+                // waking dissolves into light; the kept house cuts to black.
+                _endingCaption.Text = string.Empty;
+                _endingImage.Modulate = Colors.White;
+                _endingTween?.Kill();
+                _endingTween = null;
+                if (_endingFade != null)
+                {
+                    _endingFade.Color = endingId == "waking"
+                        ? new Color(1f, 0.98f, 0.92f, 0f)
+                        : new Color(0f, 0f, 0f, 0f);
+                    var washIn = CreateTween();
+                    washIn.SetPauseMode(Tween.TweenPauseMode.Process);
+                    washIn.TweenProperty(_endingFade, "color:a", 1f, endingId == "waking" ? 1.8f : 1.1f);
+                    await ToSignal(washIn, Tween.SignalName.Finished);
+                    _endingImage.Texture = GD.Load<Texture2D>(imagePath);
+                    _endingImage.Scale = Vector2.One * 1.03f;
+                    var washOut = CreateTween();
+                    washOut.SetPauseMode(Tween.TweenPauseMode.Process);
+                    washOut.TweenProperty(_endingFade, "color:a", 0f, 1.4f);
+                    washOut.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * 1.08f, 16f);
+                    await WaitForEndingAdvance(1.2f);
+                }
+                else
+                {
+                    _endingImage.Texture = GD.Load<Texture2D>(imagePath);
+                }
+            }
 
             foreach (var card in cards)
             {
@@ -3128,6 +3650,32 @@ public partial class GameUI : CanvasLayer
                 fadeOut.SetPauseMode(Tween.TweenPauseMode.Process);
                 fadeOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.5f);
                 await ToSignal(fadeOut, Tween.SignalName.Finished);
+            }
+
+            // The very last thing seen is Mara herself: smiling into the
+            // distance she finally gets to have — or still curled in the
+            // corner of her room, keeping everything.
+            if (withIdaConversation)
+            {
+                if (!_endingSkipRequested)
+                {
+                    var stillOut = CreateTween();
+                    stillOut.SetPauseMode(Tween.TweenPauseMode.Process);
+                    stillOut.TweenProperty(_endingImage, "modulate:a", 0f, 0.9f);
+                    await ToSignal(stillOut, Tween.SignalName.Finished);
+                    _endingImage.Texture = GD.Load<Texture2D>(finalStillPath);
+                    _endingImage.Scale = Vector2.One * 1.02f;
+                    var stillIn = CreateTween();
+                    stillIn.SetPauseMode(Tween.TweenPauseMode.Process);
+                    stillIn.TweenProperty(_endingImage, "modulate:a", 1f, 1.2f);
+                    stillIn.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * 1.06f, 14f);
+                    await WaitForEndingAdvance(2.4f);
+                }
+                else
+                {
+                    _endingImage.Texture = GD.Load<Texture2D>(finalStillPath);
+                    _endingImage.Modulate = Colors.White;
+                }
             }
 
             // The decision is complete once its title appears. Record it
@@ -3318,7 +3866,7 @@ public partial class GameUI : CanvasLayer
             // One frame so the full-rect controls have real sizes (zoom pivot).
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-            foreach (var shot in CutsceneShots)
+            foreach (var shot in (_activeShots ?? CutsceneShots))
             {
                 if (_cutsceneSkipRequested)
                     break;
@@ -3378,8 +3926,54 @@ public partial class GameUI : CanvasLayer
         if (GetTree().Paused)
             GetTree().Paused = false;
 
+        // A borrowed screening (the finale's truth reveal) hands control
+        // back to its caller instead of falling into the tutorial flow.
+        _activeShots = null;
+        if (_cutsceneOnComplete != null)
+        {
+            var onComplete = _cutsceneOnComplete;
+            _cutsceneOnComplete = null;
+            onComplete();
+            return;
+        }
+
         // First visit ever: how-to-play follows the memory.
         MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
+    }
+
+    /// <summary>What really happened, shown in the game's own rooms once
+    /// the six fragments stand in order and Release is spent — before any
+    /// choice is offered. Click advances; Esc/Skip works as everywhere.</summary>
+    private static readonly (string ImagePath, string Caption, float HoldSeconds)[] TruthShots =
+    [
+        ("res://assets/images/bgs/Room_1_BG.png",
+         "That morning, the kitchen was only a kitchen: toast, a clock, a sister already loud and already herself.", 6.5f),
+        ("res://assets/images/bgs/Room_3_BG.png",
+         "Ida named what frightened her, so she could say it aloud. It was her whole way of being brave.", 6f),
+        ("res://assets/images/bgs/Room_6_Final.png",
+         "She waited where she had been told to wait. Four o'clock came. Then, slowly, it went.", 6.5f),
+        ("res://assets/images/bgs/Porch_447_BG.png",
+         "At 4:47 Mara reached the house. The light was on. The garden was empty. The swing was still moving.", 7f),
+        ("res://assets/images/bgs/BgRoom4.png",
+         "That night, their mother sat on the landing until morning, under the light she left for latecomers.", 6.5f),
+        ("res://assets/images/bgs/Apartment_Now_BG.png",
+         "Afterwards, Mara built a quieter life — and came back to the house every night instead of living in it.", 6.5f),
+        ("res://assets/images/bgs/room_7_bg.png",
+         "Nothing in those rooms was a monster. Only minutes, and who did not come in them.", 6.5f),
+    ];
+
+    /// <summary>Room 7 calls this after a true Release; the choice is
+    /// offered only once Mara (and the player) has seen the whole of it.</summary>
+    public void PlayFinaleTruthReveal(Action onComplete)
+    {
+        if (_cutscenePlaying || _cutsceneRoot == null)
+        {
+            onComplete?.Invoke();
+            return;
+        }
+        _activeShots = TruthShots;
+        _cutsceneOnComplete = onComplete;
+        PlayCutsceneAsync();
     }
 
     /// <summary>First entry into Room 1: the house ASKS before it teaches.

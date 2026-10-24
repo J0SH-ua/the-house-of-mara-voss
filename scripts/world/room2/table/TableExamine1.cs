@@ -16,6 +16,13 @@ public partial class TableExamine1 : ExamineHandler
 
         bool hasTile = GetCellSourceId(cell) != -1;
 
+        if (hasTile && GameState.Instance?.IsRoomSealed("Room2") == true)
+        {
+            GameState.Instance.NotifySealedInteraction();
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
         if (hasTile)
         {
             RoomExamineTracker.OnExamineClicked(this);

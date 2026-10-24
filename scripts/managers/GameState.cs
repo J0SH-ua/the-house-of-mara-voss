@@ -71,12 +71,12 @@ public partial class GameState : Node
 
     public static readonly string[] ShardTitles =
     [
-        "Fragment I — The Brass Key",
-        "Fragment II — The Photograph",
-        "Fragment III — The Preserved Names",
-        "Fragment IV — The Hallway Sentence",
-        "Fragment V — The Unsent Apology",
-        "Fragment VI — The Last Afternoon",
+        "The Brass Key",
+        "The Photograph",
+        "The Preserved Names",
+        "The Hallway Sentence",
+        "The Unsent Apology",
+        "The Last Afternoon",
     ];
 
     /// <summary>Canonical journal text for every fragment. Collectors may
@@ -104,7 +104,9 @@ public partial class GameState : Node
         ["flashback_landing.tscn"] = "Room4",
         ["Room_4_puzzle.tscn"] = "Room4",
         ["room_5.tscn"] = "Room5",
+        ["apartment_now.tscn"] = "Room5",
         ["room_6.tscn"] = "Room6",
+        ["porch_447.tscn"] = "Room6",
         ["room_7.tscn"] = "Room7",
     };
 
@@ -147,6 +149,12 @@ public partial class GameState : Node
         ["LastPhotograph"] = "the last photograph",
         ["WallLight"] = "the wall light",
         ["CarpetRunner"] = "the carpet runner",
+        ["UnopenedMail"] = "the unopened mail",
+        ["SilentPhone"] = "the silent phone",
+        ["CornerChair"] = "the chair in the corner",
+        ["LitWindow"] = "the lit window",
+        ["PorchSteps"] = "the porch steps",
+        ["GardenPath"] = "the garden path",
     };
 
     // -------------------------------------------------------------------- state
@@ -200,6 +208,14 @@ public partial class GameState : Node
     private int? _pendingClarityCarry;
     private string _lastRoomName;
 
+    /// <summary>Deepest main-path scene reached this run. Drives the
+    /// "go back to the new room" forward button and sealed finished rooms.</summary>
+    private string _furthestScenePath = string.Empty;
+    private ulong _lastSealedNotifyMsec;
+
+    /// <summary>Full path of the furthest main-path scene reached ("" = none yet).</summary>
+    public string FurthestScenePath => _furthestScenePath;
+
     /// <summary>Extra examinables a Recollection can ring beyond the required set.</summary>
     private static readonly System.Collections.Generic.Dictionary<string, string[]> RecollectionExtrasByRoom = new()
     {
@@ -249,7 +265,7 @@ public partial class GameState : Node
             "An afternoon only runs one way. Trace is asking you to walk it that way."),
         ["fragment_order"] = ("One morning, in order",
             "The fragments belong in the order Mara lived them: a morning in the kitchen; a quiet room and someone breathing in it; a childhood kept and labelled; a sentence spoken in a hall; years of Octobers at a writing desk; one last afternoon.\n\n" +
-            "Your Bag (B) carries them numbered as she found them. Gold means a piece stands where it was lived."),
+            "Nothing in the last room is labelled. The house will accept any order it is offered. Only one of them is the order she lived."),
         ["blank_keys"] = ("The blank keys",
             "In the hall drawer: a locksmith's ring of keys that were never cut, and one key tag in a child's careful hand — \"for when I'm taller.\" Their father cut keys for half of Eldfen. He never got to cut hers.\n\n" +
             "Mara has opened this drawer a hundred times in the memory and closed it without seeing them. That is what this house does with the sharpest things: it lets her look straight at them, gently."),
@@ -268,7 +284,13 @@ public partial class GameState : Node
             "Examine each stop normally first. When all of them have been faced, choose Trace (T, or its Memory-bar button) and click the same places again in the order the afternoon actually happened — each stop already told you whether she was waiting, passing time, leaving, or gone. Rising notes and the gold line mean the memory is joining. A wrong click breaks the line, so begin again where the waiting began."),
         ["way_release"] = ("A way of remembering — Release: decide",
             "Release wakes only when Mara knows the way Ida went. It is not a better way to examine, and it cannot put a life in order for her.\n\n" +
-            "In the last room, choose a fragment from the tray, then click a hollow frame. Gold means that piece stands where she lived it; blue-grey means the house has accepted a kinder arrangement. Click any filled frame to take its fragment back. When every piece stands true, choose Release (R, or its Memory-bar button), click the assembled memory, and decide: wake with Ida carried forward, or keep the house that pretends she is coming back."),
+            "In the last room, choose a fragment from the tray, then click a hollow frame. The frames are not labelled and the house will not grade each piece as it lands — it answers only once, when the whole morning stands assembled. Click any filled frame to take its fragment back. Then choose Release (R, or its Memory-bar button), click the assembled memory, and decide: wake with Ida carried forward, or keep the house that pretends she is coming back."),
+        ["apartment_now"] = ("The life that continued",
+            "Outside the house there is an apartment with mail unopened behind the door, a phone no one calls, and a chair worn into the shape of waiting. Mara did not stop living at twenty-two. She only stopped letting the life be witnessed.\n\n" +
+            "The house is not where she lives. It is where she goes instead."),
+        ["porch_447"] = ("The porch, at 4:47",
+            "The light was on. The garden was empty. Between the garden and the last room there is a porch Mara has crossed a thousand times in the memory without ever stopping on it: the exact place where being late became being too late.\n\n" +
+            "She called from the steps until her voice gave out. The house has been answering for Ida ever since."),
     };
 
     // ---------------------------------------------------------------- lifecycle
@@ -393,6 +415,14 @@ public partial class GameState : Node
         AudioManager.Instance?.PlayMusicForScene(scenePath);
         EnsureFinalActProgress();
 
+        // Forward progress: remember the deepest main-path room reached, so
+        // stepping back into finished rooms can offer the way forward again.
+        if (IsMainPathScene(scenePath) &&
+            SceneProgressIndex(scenePath) > SceneProgressIndex(_furthestScenePath))
+        {
+            _furthestScenePath = scenePath;
+        }
+
         // Fleeing a collapsing room abandons it to the house (room <-> its
         // puzzle close-up is the same room and never counts as fleeing).
         if (CollapseActive)
@@ -422,6 +452,9 @@ public partial class GameState : Node
             }
             _lastRoomName = room;
         }
+
+        if (IsCurrentSceneSealed())
+            Toast("This room has given what it had. It rests now.");
 
         ObjectiveChanged?.Invoke();
         SaveGame("scene change");
@@ -455,6 +488,12 @@ public partial class GameState : Node
         // The landing flashback writes itself down once all of it is faced.
         if (roomName == "Room4Flashback" && RoomExamineTracker.HasRoomBeenFullyExamined("Room4Flashback"))
             UnlockClue("landing_evening");
+
+        if (roomName == "ApartmentNow" && RoomExamineTracker.HasRoomBeenFullyExamined("ApartmentNow"))
+            UnlockClue("apartment_now");
+
+        if (roomName == "Porch447" && RoomExamineTracker.HasRoomBeenFullyExamined("Porch447"))
+            UnlockClue("porch_447");
     }
 
     public bool HasClue(string clueId) => clueId != null && _unlockedClues.Contains(clueId);
@@ -528,6 +567,10 @@ public partial class GameState : Node
         AddIfExamined("Room5", "Desk", "unsent_letters");
         if (RoomExamineTracker.HasRoomBeenFullyExamined("Room6") && !_unlockedClues.Contains("last_afternoon_trace"))
             _unlockedClues.Add("last_afternoon_trace");
+        if (RoomExamineTracker.HasRoomBeenFullyExamined("ApartmentNow") && !_unlockedClues.Contains("apartment_now"))
+            _unlockedClues.Add("apartment_now");
+        if (RoomExamineTracker.HasRoomBeenFullyExamined("Porch447") && !_unlockedClues.Contains("porch_447"))
+            _unlockedClues.Add("porch_447");
 
         bool allMorning = true;
         foreach (var id in MorningClueIds)
@@ -572,13 +615,15 @@ public partial class GameState : Node
         return remaining;
     }
 
-    /// <summary>The offer appears when Clarity is armed: a nearly-known room
-    /// (at least 60% examined, never more than 5 required) and >= 4 charges.</summary>
+    /// <summary>"Remember it all": a nearly-known room (at least 60%
+    /// examined, never more than 5 required) and >= 3 Clarity charges.
+    /// Offered when Clarity is armed, and always visible as its own HUD
+    /// button while it is available.</summary>
     public bool CanRecollect(out List<string> remaining, out int nextRoomClarity)
     {
         remaining = new List<string>();
         nextRoomClarity = 0;
-        if (_shattered || ClarityCount < 4)
+        if (_shattered || ClarityCount < 3)
             return false;
 
         string room = CurrentRoomName();
@@ -689,6 +734,107 @@ public partial class GameState : Node
         return "the " + (objectName ?? "room").ToLowerInvariant();
     }
 
+    // ------------------------------------------------- progression & sealing
+    // The main path, in order. Side places (the landing flashback, the
+    // present-day apartment) borrow their parent room's place in line.
+    private static readonly string[] MainPathSceneFiles =
+    [
+        "room_1.tscn", "room_1_puzzle.tscn",
+        "room_2.tscn", "room_2_puzzle.tscn",
+        "room_3.tscn",
+        "room_4.tscn", "Room_4_puzzle.tscn",
+        "room_5.tscn",
+        "room_6.tscn", "porch_447.tscn",
+        "room_7.tscn",
+    ];
+
+    private static bool IsMainPathScene(string scenePath)
+    {
+        string file = FileNameOf(scenePath ?? string.Empty);
+        return System.Array.IndexOf(MainPathSceneFiles, file) >= 0;
+    }
+
+    /// <summary>Position of a scene along the main path (-1 = not on it).
+    /// Side places resolve to the room they branch from.</summary>
+    public static int SceneProgressIndex(string scenePath)
+    {
+        string file = FileNameOf(scenePath ?? string.Empty);
+        file = file switch
+        {
+            "flashback_landing.tscn" => "room_4.tscn",
+            "apartment_now.tscn" => "room_5.tscn",
+            _ => file,
+        };
+        return System.Array.IndexOf(MainPathSceneFiles, file);
+    }
+
+    /// <summary>The "go back to the new room" target: the furthest main-path
+    /// scene, whenever the player has stepped back behind it.</summary>
+    public bool TryGetForwardScene(out string scenePath)
+    {
+        scenePath = _furthestScenePath;
+        if (string.IsNullOrWhiteSpace(scenePath))
+            return false;
+        return SceneProgressIndex(scenePath) > SceneProgressIndex(SceneManager.CurrentScenePath);
+    }
+
+    /// <summary>Tracker room for a scene file, keeping side places distinct
+    /// (CurrentRoomName folds them into their parent room on purpose).</summary>
+    private static string SceneTrackerRoomName(string scenePath)
+    {
+        string file = FileNameOf(scenePath ?? string.Empty);
+        return file switch
+        {
+            "flashback_landing.tscn" => "Room4Flashback",
+            "apartment_now.tscn" => "ApartmentNow",
+            "porch_447.tscn" => "Porch447",
+            _ => SceneToRoom.TryGetValue(file, out var room) ? room : null,
+        };
+    }
+
+    private bool RoomFullyDone(string trackerRoom) => trackerRoom switch
+    {
+        "Room1" => IsShardRecovered(0),
+        "Room2" => IsShardRecovered(1),
+        "Room3" => IsShardRecovered(2),
+        "Room4" => IsShardRecovered(3) && HasFlag("room4_door_opened"),
+        "Room4Flashback" => HasFlag("flashback_landing_seen"),
+        "Room5" => IsShardRecovered(4),
+        "ApartmentNow" => HasFlag("apartment_seen"),
+        "Room6" => IsShardRecovered(5),
+        "Porch447" => HasFlag("porch_passed"),
+        _ => false,
+    };
+
+    /// <summary>A finished room the player has moved beyond: it can be
+    /// looked at, but nothing in it answers anymore. Navigation (Step Back /
+    /// Return) is never sealed, and neither is a room still being worked —
+    /// stepping back mid-puzzle to re-read a clue stays possible.</summary>
+    public bool IsRoomSealed(string trackerRoom)
+    {
+        if (string.IsNullOrEmpty(trackerRoom) || !RoomFullyDone(trackerRoom))
+            return false;
+        int here = SceneProgressIndex(SceneManager.CurrentScenePath);
+        int furthest = SceneProgressIndex(_furthestScenePath);
+        return furthest > here;
+    }
+
+    public bool IsCurrentSceneSealed()
+    {
+        return IsRoomSealed(SceneTrackerRoomName(SceneManager.CurrentScenePath));
+    }
+
+    /// <summary>Throttled refusal for clicks inside a sealed room.</summary>
+    public void NotifySealedInteraction()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (now - _lastSealedNotifyMsec < 1600)
+            return;
+        _lastSealedNotifyMsec = now;
+        AudioManager.Play(Sfx.Denied, -11f, 0.9f);
+        Toast("Nothing here answers anymore.");
+    }
+
     public string GetCurrentObjective()
     {
         string path = SceneManager.CurrentScenePath;
@@ -701,36 +847,42 @@ public partial class GameState : Node
         switch (file)
         {
             case "room_1_puzzle.tscn":
-                return "Open the five-dial padlock. The combination is hidden in the kitchen — Step Back (Q) to go and look.";
+                return "Open the five-dial padlock. The kitchen remembers the combination.";
             case "room_2_puzzle.tscn":
-                return "Spell the four-letter word to open the lock. The sitting room has been saying it all along — Step Back (Q) to check.";
+                return "Spell the four-letter word. The sitting room has been saying it all along.";
             case "room_4.tscn":
-                if (IsShardRecovered(3))
-                    return "The sentence is whole. Take the door at the end of the hallway.";
-                if (HasFlag("room4_sentence_complete"))
-                    return "The sentence is whole. The hallway door is a door again — click it.";
+                if (IsShardRecovered(3) || HasFlag("room4_sentence_complete"))
+                    return "The sentence is whole. The hallway door is a door again.";
                 RoomExamineTracker.GetRoomProgress("Room4", out int r4Done, out int r4Total, out var r4Left);
                 if (r4Total > 0 && r4Left.Count > 0)
-                    return $"First face what this hallway keeps — its mirror, its drawer, its turned frames ({r4Done}/{r4Total}). The mirror keeps more than a reflection.";
-                return HasVerb(MemoryVerb.Echo)
-                    ? "Echo (E): drift across the hallway photographs and hear their sentence in order."
-                    : "Cross the hallway. The photographs are trying to say something in order.";
+                    return $"Face what this hallway keeps ({r4Done}/{r4Total}). The mirror keeps more than a reflection.";
+                return "Cross the hallway. The photographs are trying to say something in order.";
             case "flashback_landing.tscn":
-                return "A memory inside the memory — the landing, that evening. Look at what it kept. The end of the hall leads back.";
+                return "A memory inside the memory — the landing, that evening.";
+            case "apartment_now.tscn":
+                RoomExamineTracker.GetRoomProgress("ApartmentNow", out int apDone, out int apTotal, out var apLeft);
+                return apLeft.Count > 0
+                    ? $"The life that continued, unopened ({apDone}/{apTotal})."
+                    : "Nothing here is a puzzle. The door remembers the way back.";
+            case "porch_447.tscn":
+                RoomExamineTracker.GetRoomProgress("Porch447", out int pDone, out int pTotal, out var pLeft);
+                return pLeft.Count > 0
+                    ? $"The porch, at 4:47 ({pDone}/{pTotal})."
+                    : "The front door. The last room is through it.";
             case "Room_4_puzzle.tscn":
                 return HasFlag("room4_door_opened")
-                    ? "The way through stands open. Click the door to enter the room that will not stay one room."
-                    : "Echo (E) the door's last knock — each brass picture, then the keyhole beneath it.";
+                    ? "The way through stands open."
+                    : "The door is listening for an old knock.";
             case "room_7.tscn":
                 if (!string.IsNullOrEmpty(CompletedEnding))
                     return "This memory has been decided.";
                 if (CountRecovered() < MaxShards)
                     return $"The last room is waiting for every fragment ({CountRecovered()}/{MaxShards}). Step back and keep remembering.";
                 if (CountPlaced() < MaxShards)
-                    return $"Return the fragments to the six hollow frames ({CountPlaced()}/{MaxShards}). Choose one below, then a frame — gold is its lived place; click a filled frame to reclaim.";
+                    return $"Return the fragments to the six hollow frames ({CountPlaced()}/{MaxShards}).";
                 return FragmentsInOrder()
-                    ? "One morning, in order. Release (R) the assembled memory — or choose to keep the house."
-                    : "All six are here, but not in the order she lived them. Click a frame to take its fragment back and rearrange.";
+                    ? "One morning, in order."
+                    : "All six are here. The house is being kind about the order.";
         }
 
         if (room != null && RoomExamineTracker.RoomHasRequirements(room))
@@ -757,11 +909,11 @@ public partial class GameState : Node
                 "Room3" => "Everything faced — open the jars, then take the hallway.",
                 "Room1" => "Fragment recovered. Onward: take the arrow to the sitting room.",
                 "Room2" => "Fragment recovered. Onward: through the table drawer.",
-                "Room5" when !IsShardRecovered(4) && !HasFlag("room5_anchored_lamp") => "Everything faced — Anchor (A) the one thing whose meaning never changed between the child's room and the woman's.",
-                "Room5" when !IsShardRecovered(4) => "The room is holding still. Open the writing-desk drawer.",
-                "Room5" => "Fragment recovered. The wardrobe has remembered the garden — click it.",
-                "Room6" when !IsShardRecovered(5) => "Everything faced — Trace (T) the afternoon in the order it happened. Each stop told you its part; your journal (J) keeps their stories.",
-                "Room6" => "Fragment recovered. Follow the road beyond the broken gate.",
+                "Room5" when !IsShardRecovered(4) && !HasFlag("room5_anchored_lamp") => "Everything faced — and still the room will not stay one room.",
+                "Room5" when !IsShardRecovered(4) => "The room is holding still, in the present tense.",
+                "Room5" => "Fragment recovered. The wardrobe has remembered the garden.",
+                "Room6" when !IsShardRecovered(5) => "Everything faced — four separate truths, and one afternoon.",
+                "Room6" => "Fragment recovered. The road beyond the broken gate.",
                 _ => string.Empty,
             };
         }
@@ -846,13 +998,19 @@ public partial class GameState : Node
             return NextHintLevel("Room7") switch
             {
                 1 => ("A frame is not filled merely by having any memory in it. The order matters — and a placed fragment can be taken back.", null),
-                2 => ("Choose a carried fragment at the bottom, then click its hollow frame. Click a filled frame to reclaim it. The journal clue \"One morning, in order\" keeps the sequence.", null),
-                _ => ("Put them in the order Mara lived them — your Bag (B) carries them numbered as she found them, and gold means true. Then press R and click the assembled memory — or choose the kept house.", null),
+                2 => ("Choose a carried fragment at the bottom, then click its hollow frame. Click a filled frame to reclaim it. Nothing here is labelled; the house answers only when all six stand together.", null),
+                _ => ("Put them in the order Mara lived them: a morning in the kitchen; a quiet room; a childhood kept and labelled; a sentence in a hall; Octobers at a writing desk; one last afternoon. Your journal (J) keeps each fragment's words.", null),
             };
         }
 
         if (file == "flashback_landing.tscn")
             return ("Nothing here can be changed — only finally seen. The photograph, the light, the runner. The end of the hall leads back when you are ready.", null);
+
+        if (file == "apartment_now.tscn")
+            return ("This is not a puzzle room. It is the life that continued while she was in the house. The mail, the phone, the chair. The door leads back.", null);
+
+        if (file == "porch_447.tscn")
+            return ("She stopped here for twelve years without ever stopping. The light, the steps, the path. The front door is the way on.", null);
 
         if (room == null || !RoomExamineTracker.RoomHasRequirements(room))
             return ("Keep looking. The house notices being noticed.", null);
@@ -1489,6 +1647,7 @@ public partial class GameState : Node
         ClarifiesUsed = 0;
         CorruptionPeak = 0;
         _pendingStartScene = null;
+        _furthestScenePath = string.Empty;
 
         AudioManager.Instance?.SetCorruption01(0f);
         CorruptionChanged?.Invoke(0, CorruptionTier.Calm);
@@ -1575,6 +1734,7 @@ public partial class GameState : Node
         data["story_flags"] = flags;
         data["verb_uses"] = VerbUses;
         data["completed_ending"] = CompletedEnding;
+        data["furthest_scene"] = _furthestScenePath;
 
         using var file = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
         if (file == null)
@@ -1690,6 +1850,7 @@ public partial class GameState : Node
         }
         VerbUses = Get(data, "verb_uses", 0).AsInt32();
         CompletedEnding = Get(data, "completed_ending", string.Empty).AsString();
+        _furthestScenePath = Get(data, "furthest_scene", string.Empty).AsString();
         CluesChanged?.Invoke();
         VerbsChanged?.Invoke();
         StoryFlagsChanged?.Invoke();
@@ -1707,6 +1868,10 @@ public partial class GameState : Node
         ObjectiveChanged?.Invoke();
 
         string scene = Get(data, "scene", string.Empty).AsString();
+        // Older saves never recorded progress depth: the room a save opens
+        // in is, at minimum, as far as its Mara ever got.
+        if (string.IsNullOrWhiteSpace(_furthestScenePath) && IsMainPathScene(scene))
+            _furthestScenePath = scene;
         Logger.Info($"GameState: loaded save (scene: {scene}).");
         return string.IsNullOrWhiteSpace(scene) ? null : scene;
     }
@@ -1744,6 +1909,7 @@ public partial class GameState : Node
         _persistentReveals.Clear();
         _pendingClarityCarry = null;
         _lastRoomName = null;
+        _furthestScenePath = string.Empty;
         _shattered = false;
         CollapseActive = false;
         _collapseRoom = null;

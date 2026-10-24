@@ -51,7 +51,7 @@ public static class ClaritySystem
         CursorHelper.ApplyCursor(EyeCursorPath, 35, 35);
         Globals.Instance.IS_CLARIFYING = true;
         AudioManager.Play(Sfx.ClarifyArm, -5f);
-        GameState.Instance?.Toast("Clarity — choose what to see truly. Right-click to release it.");
+        GameState.Instance?.Toast("Clarity — the room, as it is.");
         return true;
     }
 

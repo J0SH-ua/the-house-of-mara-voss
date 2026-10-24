@@ -30,6 +30,12 @@ public partial class BrassKey1 : Area2D
 		if (!mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
 			return;
 
+		if (GameState.Instance?.IsRoomSealed("Room1") == true)
+		{
+			GameState.Instance.NotifySealedInteraction();
+			return;
+		}
+
 		_collecting = true;
 		bool firstTime;
 		if (GameState.Instance != null)

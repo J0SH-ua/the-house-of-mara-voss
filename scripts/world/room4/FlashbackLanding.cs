@@ -46,8 +46,7 @@ public partial class FlashbackLanding : MemoryRoomBase
         SetBackgroundTint(new Color(0.62f, 0.72f, 0.95f));
 
         _ = PlayStoryLessonOnceAsync("story_lesson_flashback_landing",
-            "This is the landing as it was that evening — not the hallway the house shows Mara now. The light is wrong because grief remembers light wrong: everything the colour of a held breath.",
-            "Nothing here can be changed, and nothing here needs solving. Look at what the evening kept — the last photograph, the wall light, the runner. When Mara has seen enough, the far end of the hall leads back.");
+            "This is the landing as it was that evening — not the hallway the house shows Mara now. The light is wrong because grief remembers light wrong: everything the colour of a held breath.");
     }
 
     protected override void OnHotspotClicked(Hotspot hotspot)

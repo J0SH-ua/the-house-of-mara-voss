@@ -24,7 +24,9 @@ public partial class RoomExamineTracker : Node
             ["Room4"] = ["Mirror", "HallDrawer", "TurnedFrames"],
             ["Room4Flashback"] = ["LastPhotograph", "WallLight", "CarpetRunner"],
             ["Room5"] = ["RainWindow", "Bed", "Lamp", "Desk", "RotaryPhone", "Wardrobe"],
+            ["ApartmentNow"] = ["UnopenedMail", "SilentPhone", "CornerChair"],
             ["Room6"] = ["AppleBasket", "Swing", "BrokenGate", "EmptyRoad"],
+            ["Porch447"] = ["LitWindow", "PorchSteps", "GardenPath"],
         };
 
     // Track which examine nodes have been clicked: roomName -> objectName -> set of examine layer names

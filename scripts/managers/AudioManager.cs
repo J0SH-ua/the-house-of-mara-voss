@@ -65,6 +65,10 @@ public partial class AudioManager : Node
     public const string MusicFinale = "res://assets/Music/bg/conclusion.mp3";
     /// <summary>Tense 15-second bed under the Clarity-collapse countdown.</summary>
     public const string MusicCollapse = "res://assets/Music/bg/collapse.wav";
+    /// <summary>Release ending: still F minor, but relieved — breathing again.</summary>
+    public const string MusicEndingRelease = "res://assets/Music/bg/ending_release.wav";
+    /// <summary>Kept-house ending: the same room tone, giving up.</summary>
+    public const string MusicEndingKept = "res://assets/Music/bg/ending_kept.wav";
 
     private const string SfxDir = "res://assets/Music/SFX/";
     private const string AmbiencePath = SfxDir + "ambience_room_tone.wav";
@@ -305,6 +309,10 @@ public partial class AudioManager : Node
 
         if (scene.Contains("flashback"))
             PlayMusic(MusicRoom4, -16f);
+        else if (scene.Contains("apartment"))
+            PlayMusic(MusicRoom5, -16f);
+        else if (scene.Contains("porch"))
+            PlayMusic(MusicRoom6, -14f);
         else if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
             PlayMusic(MusicFinale, -6f);
         else if (scene.Contains("room_1"))

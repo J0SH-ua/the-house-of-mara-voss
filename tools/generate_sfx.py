@@ -522,6 +522,77 @@ def build_collapse_music():
     write_wav("collapse.wav", filt(track, "lp", 2800), peak=0.62, out_dir=BG_DIR)
 
 
+
+def build_ending_music():
+    """The two authored-ending beds, under the last conversation with Ida.
+
+    ending_release.wav — still F minor, but relieved: the harmony keeps
+    leaning toward the relative major (Db-Ab-Eb), the felt piano answers
+    higher each bar and the music box is allowed a little light. Grief,
+    breathing again.
+
+    ending_kept.wav — the same room giving up: a slow descending line that
+    never finishes, detuned wow, a low neighbour-tone cluster, tape dropouts.
+    Nothing resolves because nothing does.
+    Both are seamless loops in the room loops' felt/music-box world.
+    """
+    print("Generating ending music ->", os.path.normpath(BG_DIR))
+
+    def pad(midi, dur, gain, track, at, lp=1600):
+        tone = tone_wow(mf(midi), dur, depth=0.003, rate=0.23)
+        env_ar(tone, min(1.3, dur * 0.3), min(1.8, dur * 0.36))
+        add_into(track, filt(tone, "lp", lp), at, gain)
+
+    fm = [53, 56, 60]
+    db = [49, 53, 56]
+    ab = [56, 60, 63]
+    eb = [51, 55, 58]
+    cm = [48, 51, 55]
+    bbm = [46, 49, 53]
+
+    # ---- Release: F minor leaning home toward Ab major, rising answers.
+    duration, bar = 36.0, 6.0
+    track = zeros(duration + 2.5)
+    answers = [65, 68, 70, 72, 75, 72]
+    sparkle = [[77, 75, 72], [79, 77, 75], [80, 79, 77], [82, 80, 79], [84, 82, 80], [82, 79, 77]]
+    for i, ch in enumerate([fm, db, ab, eb, ab, fm]):
+        at = i * bar
+        add_into(track, felt_piano(ch[0] - 12, 3.8, 1.2), at, 0.20)
+        for midi in ch:
+            pad(midi, bar * 1.08, 0.070, track, at, lp=1900)
+        for j, idx in enumerate([0, 1, 2, 1]):
+            add_into(track, felt_piano(ch[idx] + 12, 2.4, 0.8), at + 0.3 + j * 1.35, 0.090)
+        add_into(track, felt_piano(answers[i], 3.2, 1.0), at + 2.7, 0.110)
+        for j, midi in enumerate(sparkle[i]):
+            add_into(track, music_box(midi, 2.0, tau=0.55), at + 0.9 + j * 1.55, 0.060)
+    add_into(track, crackle(duration + 2.0, 20, gain=0.028), 0, 0.5)
+    out = seamless(track, duration, 2.0)
+    write_wav("ending_release.wav", filt(out, "lp", 3100), peak=0.48, out_dir=BG_DIR)
+
+    # ---- Kept house: descending, detuned, dropping out.
+    duration, bar = 36.0, 6.0
+    track = zeros(duration + 2.5)
+    descent = [65, 63, 61, 60, 58, 56]
+    for i, ch in enumerate([fm, cm, bbm, fm, db, fm]):
+        at = i * bar
+        add_into(track, felt_piano(ch[0] - 12, 4.4, 1.45), at, 0.24)
+        for midi in ch:
+            pad(midi - 12, bar * 1.05, 0.082, track, at, lp=1300)
+        # The neighbour that will not resolve (F's semitone shadow).
+        pad(ch[0] - 11, bar * 1.05, 0.035, track, at, lp=1100)
+        add_into(track, thump(44, 0.7, sweep_to=0.5), at + 0.05, 0.09)
+        add_into(track, felt_piano(descent[i], 3.4, 1.1), at + 2.9, 0.085)
+        if i % 2 == 0:
+            add_into(track, music_box(descent[i] + 12, 2.2, tau=0.5), at + 1.1, 0.045)
+    add_into(track, crackle(duration + 2.0, 70, gain=0.045), 0, 0.7)
+    add_into(track, filt(brown(duration + 2.0), "lp", 420), 0, 0.020)
+    track = sag_resample(track, min_rate=0.94, center=0.55, width=0.4)
+    track = (track + zeros(duration + 2.5))[: sec(duration + 2.5)]
+    out = seamless(track, duration, 2.0)
+    out = dropout(out, [(11.0, 0.18, 0.65), (24.0, 0.24, 0.8)])
+    write_wav("ending_kept.wav", filt(out, "lp", 1700), peak=0.46, out_dir=BG_DIR)
+
+
 def build():
     print("Generating SFX pack v2 (F minor, felt & worn) ->", os.path.normpath(OUT_DIR))
 
@@ -743,6 +814,7 @@ def build():
     build_crack_sfx()
     build_room_music()
     build_collapse_music()
+    build_ending_music()
 
     print("Done.")
 
