@@ -515,7 +515,7 @@ public partial class AudioManager : Node
             return null;
 
         byte[] data = new byte[dataLength];
-        Array.Copy(bytes, dataOffset, data, 0, dataLength);
+        System.Array.Copy(bytes, dataOffset, data, 0, dataLength);
 
         return new AudioStreamWav
         {

@@ -393,7 +393,7 @@ public partial class GameState : Node
             return false;
 
         bool already = Globals.SHARDS_COLLECTED[index] ||
-                       Array.IndexOf(PlacedShardBySlot, index) >= 0;
+                       System.Array.IndexOf(PlacedShardBySlot, index) >= 0;
         if (!string.IsNullOrWhiteSpace(fragmentText) && string.IsNullOrWhiteSpace(ShardFragments[index]))
             ShardFragments[index] = fragmentText;
 

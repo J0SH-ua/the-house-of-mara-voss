@@ -428,7 +428,7 @@ public partial class GameUI : CanvasLayer
             {
                 int index = i;
                 bool recovered = gs != null && (Globals.SHARDS_COLLECTED[index]
-                                                || Array.IndexOf(gs.PlacedShardBySlot, index) >= 0);
+                                                || System.Array.IndexOf(gs.PlacedShardBySlot, index) >= 0);
                 string title = GameState.ShardTitles[index];
                 var btn = MakeButton(recovered ? title : "· · ·");
                 btn.Disabled = !recovered;
@@ -438,7 +438,7 @@ public partial class GameUI : CanvasLayer
                     string body = gs != null && !string.IsNullOrWhiteSpace(gs.ShardFragments[index])
                         ? gs.ShardFragments[index]
                         : "Recovered, but its words are still surfacing.";
-                    string placed = gs != null && Array.IndexOf(gs.PlacedShardBySlot, index) >= 0
+                    string placed = gs != null && System.Array.IndexOf(gs.PlacedShardBySlot, index) >= 0
                         ? "\n\n[ Returned to the house. ]"
                         : "\n\n[ Carried. ]";
                     _journalBody.Text = $"[b]{title}[/b]\n\n{body}{placed}";
