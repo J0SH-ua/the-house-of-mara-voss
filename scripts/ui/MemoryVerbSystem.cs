@@ -29,19 +29,19 @@ public static class MemoryVerbSystem
 
     public static string Description(MemoryVerb verb) => verb switch
     {
-        MemoryVerb.Echo => "Hear the order a memory still keeps.",
-        MemoryVerb.Anchor => "Hold one true thing still while the room changes around it.",
-        MemoryVerb.Trace => "Connect linked moments in the order they happened.",
-        MemoryVerb.Release => "Let a completed memory stop being a room Mara has to live in.",
+        MemoryVerb.Echo => "Arm Echo, then drift or click memories in the order they were spoken.",
+        MemoryVerb.Anchor => "Arm Anchor, then click the one thing whose meaning never changed.",
+        MemoryVerb.Trace => "Arm Trace after facing every stop, then click them again in causal order.",
+        MemoryVerb.Release => "Arm Release only after the six fragments stand in lived order, then click the whole memory.",
         _ => string.Empty,
     };
 
     private static string Instruction(MemoryVerb verb) => verb switch
     {
-        MemoryVerb.Echo => "Echo — drift across what still has a voice. Right-click to stop listening.",
-        MemoryVerb.Anchor => "Anchor — choose the one thing that has not moved. Right-click to let go.",
-        MemoryVerb.Trace => "Trace — click linked memories in the order they happened. Right-click to break the line.",
-        MemoryVerb.Release => "Release — choose the completed memory. Right-click if Mara is not ready.",
+        MemoryVerb.Echo => "Echo is in Mara's hands — now drift or click what still has a voice, in spoken order. Right-click/Esc stops listening.",
+        MemoryVerb.Anchor => "Anchor is in Mara's hands — now click the one thing that has not changed meaning. Wrong choices won't spend it; right-click/Esc lets go.",
+        MemoryVerb.Trace => "Trace is in Mara's hands — face every stop first, then click them again in causal order. Right-click/Esc breaks away.",
+        MemoryVerb.Release => "Release is in Mara's hands — click only a completed memory in lived order. Right-click/Esc if she is not ready.",
         _ => string.Empty,
     };
 
@@ -66,10 +66,10 @@ public static class MemoryVerbSystem
             AudioManager.Play(Sfx.Denied, -7f);
             gs.Toast(verb switch
             {
-                MemoryVerb.Echo => "Echo is still beyond the hallway. Recover the preserved fragment first.",
-                MemoryVerb.Anchor => "Anchor is learned by hearing the hallway sentence whole.",
-                MemoryVerb.Trace => "Trace is learned when one true thing can be held still.",
-                MemoryVerb.Release => "Release comes only after the last afternoon has been traced.",
+                MemoryVerb.Echo => "Echo has not woken yet. It will come with the preserved names in the kept room's jars.",
+                MemoryVerb.Anchor => "Anchor has not woken yet. It will come when the hallway sentence can be heard whole.",
+                MemoryVerb.Trace => "Trace has not woken yet. It will come after one true thing is held still and the apology is recovered.",
+                MemoryVerb.Release => "Release has not woken yet. It comes only after the last afternoon has been traced.",
                 _ => "That way of remembering has not been learned yet.",
             });
             return false;

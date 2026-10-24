@@ -17,6 +17,7 @@ public partial class Room5Final : MemoryRoomBase
     private const string DrawerOpenedFlag = "room5_drawer_opened";
 
     private Label _anchorLabel;
+    private bool _wrongAnchorLessonShown;
 
     protected override string RoomName => "Room5";
     protected override string BackgroundPath => "res://assets/images/bgs/Room_5_BG.png";
@@ -56,6 +57,26 @@ public partial class Room5Final : MemoryRoomBase
         _anchorLabel.Visible = anchored;
         if (anchored)
             SetBackgroundTint(new Color(0.9f, 0.94f, 1f));
+
+        var gs = GameState.Instance;
+        if (gs == null || !gs.IsShardRecovered(4))
+        {
+            _ = PlayStoryLessonOnceAsync("story_lesson_room5_anchor_room",
+                "This is the room Mara lives in now, laid over the room she grew up in until neither year can keep its furniture. Do not try to force it still yet.",
+                "First, look normally. Click each held thing once and let it contradict itself; hold Tab if the room hides one, or press H and Mara will nudge you toward it. When every contradiction has been faced, Anchor will have something true to hold.",
+                "Then choose Anchor (A, or its Memory-bar button) and click the one thing whose meaning is the same in childhood and adulthood. If you choose wrong, Anchor stays in her hands and the object will show why it slides.");
+        }
+    }
+
+    protected override async Task OnRequiredExaminesCompletedAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.IsShardRecovered(4) || gs.HasFlag(AnchoredFlag))
+            return;
+
+        await SayStoryLessonOnceAsync("story_lesson_room5_all_faced",
+            "Now Mara has looked at every contradiction once. Looking again will only fray them; the room is ready to be remembered another way.",
+            "Choose Anchor — press A, or click Anchor in the Memory bar. The verb will stay in Mara's hands. Then click the one thing that was left on, in both years, for whoever came home late.");
     }
 
     protected override void OnHotspotClicked(Hotspot hotspot)
@@ -201,6 +222,8 @@ public partial class Room5Final : MemoryRoomBase
                     "You hold to the lamp — the one thing that means the same in both years.",
                     "The room settles around its light. For the first time, the writing-desk drawer belongs entirely to the present tense.");
             }
+
+            await Say("Anchor is spent because it worked. While the room holds, use ordinary hands: click the writing-desk drawer.");
         }
         finally
         {
@@ -229,6 +252,11 @@ public partial class Room5Final : MemoryRoomBase
                 _ => "It will not stay. Anchor needs the one thing whose meaning never changed.",
             };
             await Say(line, 4f, 23);
+            if (!_wrongAnchorLessonShown)
+            {
+                _wrongAnchorLessonShown = true;
+                await Say("Anchor is still in Mara's hands — a wrong choice did not spend it. Try the thing whose meaning never changed, or right-click to let Anchor go.", 4f, 23);
+            }
         }
         finally
         {
@@ -287,7 +315,7 @@ public partial class Room5Final : MemoryRoomBase
                 AudioManager.Play(Sfx.DrawerClose, -7f);
                 await SaySequence(
                     "For a blink the drawer belongs to a child's desk: blunt pencils, a name tape, nothing addressed to anyone.",
-                    "Then it is the adult desk again, and shut. Anchor the room around what stayed lit, and it may stay shut in only one year.");
+                    "Then it is the adult desk again, and shut. Press A — Anchor — then click the bedside lamp, the light left on in both years for whoever came home late. When the room settles around it, this drawer may stay shut in only one year.");
                 return;
             }
 
@@ -302,7 +330,9 @@ public partial class Room5Final : MemoryRoomBase
                 await SaySequence(
                     "Inside are twelve envelopes, one for every October since Ida died. Each is sealed. None has an address.",
                     "\"I should have been there at four. I remember thinking there would be time to finish what I was doing. I remember choosing it.\"",
-                    "The last letter is unfinished. Not because Mara forgave herself — because an unsent apology can still be answered by the house.");
+                    "The last letter is unfinished. Not because Mara forgave herself — because an unsent apology can still be answered by the house.",
+                    "An apology is not only the minute Mara missed. It is that minute and every minute changed by it. Holding one true thing still has taught her how the others join.",
+                    "That joining is Trace. In the garden beyond the wardrobe, examine each stop normally first. When all four have been faced, press T — or click Trace — and click the same stops again in the order they caused one another.");
             }
             else
             {

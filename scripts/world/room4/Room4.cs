@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Godot;
 
 public partial class Room4 : Node2D
@@ -84,6 +85,9 @@ public partial class Room4 : Node2D
 	private CanvasLayer _sentenceLayer;
 	private bool _echoHintShown;
 	private bool _echoUseRegistered;
+	private bool _wasEchoArmed;
+	private bool _echoArmLessonShown;
+	private bool _echoOutOfOrderHintShown;
 	private static readonly Vector2 SentencePosition = new Vector2(400, 80);
 
 	public override void _Ready()
@@ -150,6 +154,37 @@ public partial class Room4 : Node2D
 		}
 
 		RestoreCompletedState();
+		_ = MaybePlayHallwayLessonAsync();
+	}
+
+	private async Task MaybePlayHallwayLessonAsync()
+	{
+		const string lessonFlag = "story_lesson_room4_hallway_echo";
+		var gs = GameState.Instance;
+		if (gs == null || gs.HasFlag(lessonFlag) || gs.HasFlag("room4_sentence_complete") || gs.IsShardRecovered(3))
+			return;
+
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+
+		Dialogue.BeginInputBlock();
+		try
+		{
+			await Dialogue.ShowText(this, "The photographs are not ten captions. They are one sentence Mara's mother once said in this hall, broken across the wall so Mara would not have to hear all of it at once.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "Looking finds the words. Echo hears their order. Press E — or click Echo in the Memory bar — then drift across the photographs without clicking. A rising note means her mother's voice has taken the next word.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "Begin where the voice begins. If a word answers low and separate, it belongs later; return to the next frame in the spoken order.", 5.0f, 576f, 324f, HoverFontPath, 24);
+		}
+		finally
+		{
+			Dialogue.EndInputBlock();
+		}
+
+		if (GodotObject.IsInstanceValid(this))
+		{
+			gs.SetFlag(lessonFlag, save: false);
+			gs.SaveGame("story lesson: hallway Echo");
+		}
 	}
 
 	private void RestoreCompletedState()
@@ -189,6 +224,37 @@ public partial class Room4 : Node2D
 		GameState.Instance?.MarkRoomCompleted("Room4");
 		MemoryVerbSystem.Cancel(silent: true);
 		TriggerDoorAnimation();
+		_ = TeachAnchorAsync();
+	}
+
+	private async Task TeachAnchorAsync()
+	{
+		const string lessonFlag = "story_lesson_anchor_awakens";
+		var gs = GameState.Instance;
+		if (gs == null || gs.HasFlag(lessonFlag))
+			return;
+
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+
+		Dialogue.BeginInputBlock();
+		try
+		{
+			await Dialogue.ShowText(this, "The sentence does not rescue Mara. It gives her one sentence that does not move when she repeats it: She would have loved to see how far you've come.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "That stillness becomes Anchor. When the next room slides between childhood and adulthood, look at its contradictions normally first. Then press A — or click Anchor — and choose the one thing whose meaning never changed.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "The door at the end of this hall still belongs to Echo, though. Its brass will want sound in pairs before Anchor is asked to hold anything.", 5.0f, 576f, 324f, HoverFontPath, 24);
+		}
+		finally
+		{
+			Dialogue.EndInputBlock();
+		}
+
+		if (GodotObject.IsInstanceValid(this))
+		{
+			gs.SetFlag(lessonFlag, save: false);
+			gs.SaveGame("story lesson: Anchor awakens");
+		}
 	}
 
 	private async void OnMirrorCollisionPressed()
@@ -287,6 +353,14 @@ public partial class Room4 : Node2D
 			}
 			return;
 		}
+
+		bool echoArmedNow = MemoryVerbSystem.IsArmed(MemoryVerb.Echo);
+		if (echoArmedNow && !_wasEchoArmed && !_echoArmLessonShown && _currentSequenceIndex < HoverWords.Length)
+		{
+			_echoArmLessonShown = true;
+			GameState.Instance?.Toast("Echo settles over the hall like a voice from another room. Don't click — drift across the photographs in the order she speaks.");
+		}
+		_wasEchoArmed = echoArmedNow;
 
 		Vector2 mousePosition = GetGlobalMousePosition();
 		int hoveredIndex = GetHoveredIndex(mousePosition);
@@ -408,8 +482,17 @@ public partial class Room4 : Node2D
 			return;
 		}
 
-		if (index != _currentSequenceIndex && _currentSequenceIndex > 0)
+		if (index != _currentSequenceIndex)
+		{
 			AudioManager.Play(Sfx.WordChime, -13f, 0.72f);
+			if (!_echoOutOfOrderHintShown)
+			{
+				_echoOutOfOrderHintShown = true;
+				GameState.Instance?.Toast(_currentSequenceIndex == 0
+					? "That word belongs later. Her mother's sentence begins with \"She\" — start at the first photograph."
+					: $"That word belongs later. Mara is holding \"...{HoverWords[_currentSequenceIndex - 1]}\" — find the next photograph in the spoken order.");
+			}
+		}
 
 		// Compare by index, not word text, so repeated words can't satisfy
 		// the sequence out of order.
@@ -425,7 +508,9 @@ public partial class Room4 : Node2D
 				_echoUseRegistered = true;
 				MemoryVerbSystem.RegisterUse(MemoryVerb.Echo);
 			}
-			GameState.Instance?.Toast($"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
+			GameState.Instance?.Toast(_currentSequenceIndex == 0
+				? $"\"{HoverWords[index]}\"  (1/{HoverWords.Length}) — the note rose. Keep drifting; Echo is listening, not clicking."
+				: $"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
 
 			if (_sentenceLabel != null)
 			{

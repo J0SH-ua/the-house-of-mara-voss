@@ -39,6 +39,7 @@ public partial class Room4Puzzle : MemoryRoomBase
     private Label _statusLabel;
     private int _knockProgress;
     private bool _opened;
+    private bool _ordinaryKnockReminderShown;
 
     protected override string RoomName => "Room4";
     protected override string BackgroundPath => "res://assets/images/bgs/DoorCloseup.png";
@@ -84,6 +85,14 @@ public partial class Room4Puzzle : MemoryRoomBase
             new Vector2(276, 38), 21,
             new Color(1f, 0.9f, 0.62f, 0.92f), new Vector2(600, 36));
         UpdateStatusLabel();
+
+        if (!_opened)
+        {
+            _ = PlayStoryLessonOnceAsync("story_lesson_room4_door_echo",
+                "Close, the door is not locked with one key. It is listening for the knock Mara and Ida used when one of them came home after dark: picture, then the key beneath it; cross, enter, close.",
+                "Ordinary clicks only let Mara examine the brass, and each piece will teach its pair. When you mean to knock, choose Echo first (E, or its Memory-bar button), then click a brass plate and the keyhole directly beneath it. Do that three times, left to right.",
+                "A gold ring and a rising note mean the other side answered. A wrong knock loosens the whole pattern, so begin again at the bridge.");
+        }
     }
 
     public override void _Draw()
@@ -173,6 +182,11 @@ public partial class Room4Puzzle : MemoryRoomBase
 
             if (_knockProgress >= KnockSequence.Length)
                 _ = CompleteDoorAsync();
+            else
+            {
+                string nextName = GetHotspot(KnockSequence[_knockProgress])?.DisplayName ?? "the next brass piece";
+                GameState.Instance?.Toast($"The knock holds ({_knockProgress}/{KnockSequence.Length}). Next, the door listens for: {nextName}.");
+            }
             return;
         }
 
@@ -185,7 +199,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             _knockProgress = 1;
             UpdateStatusLabel();
             QueueRedraw();
-            GameState.Instance?.Toast("The knock begins again at the bridge.");
+            GameState.Instance?.Toast("The knock begins again at the bridge. Next: the keyhole beneath it.");
             return;
         }
 
@@ -215,7 +229,14 @@ public partial class Room4Puzzle : MemoryRoomBase
             bool first = RecordExamine(hotspot);
             AudioManager.PlayVaried(hotspot.SfxId, -6f, hotspot.SfxPitch, 0.04f);
             if (first)
+            {
                 await SaySequence(FirstLines(hotspot.Id));
+                if (!_ordinaryKnockReminderShown && !_opened)
+                {
+                    _ordinaryKnockReminderShown = true;
+                    GameState.Instance?.Toast("That was looking. To knock: press E (Echo), then click plate → keyhole beneath, three pairs left to right.");
+                }
+            }
             else
                 await Say(RepeatLine(hotspot.Id), 3.5f, 23);
         }
@@ -304,8 +325,8 @@ public partial class Room4Puzzle : MemoryRoomBase
             AudioManager.Play(Sfx.Denied, -9f, 0.92f);
             string line = verb switch
             {
-                MemoryVerb.Anchor => "You could hold this door still forever and it would only become a better-kept wall. A knock is movement, in order. It asks for Echo.",
-                MemoryVerb.Trace => "There is no chain of causes to trace in the brass — only six answers waiting to sound. Echo knows this language.",
+                MemoryVerb.Anchor => "You could hold this door still forever and it would only become a better-kept wall. A knock is movement, in order. Put Anchor down and choose Echo (E), then plate → keyhole beneath.",
+                MemoryVerb.Trace => "There is no chain of causes to trace in the brass — only six answers waiting to sound. Put Trace down and choose Echo (E), then plate → keyhole beneath.",
                 MemoryVerb.Release => "There is nothing whole enough here to release. First let the door hear its knock.",
                 _ => "That way of remembering does not fit a knock. Echo does.",
             };

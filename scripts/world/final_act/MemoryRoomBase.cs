@@ -77,6 +77,14 @@ public abstract partial class MemoryRoomBase : Node2D
     {
     }
 
+    /// <summary>Called inside ExamineObjectAsync, after the look that makes
+    /// every required object in the room known. Rooms use it to move the
+    /// story from ordinary looking into their Memory Verb in Mara's voice.</summary>
+    protected virtual Task OnRequiredExaminesCompletedAsync()
+    {
+        return Task.CompletedTask;
+    }
+
     /// <summary>Room-specific overlays (Anchor rings, Trace lines), drawn over the art.</summary>
     protected virtual void DrawRoom()
     {
@@ -278,6 +286,49 @@ public abstract partial class MemoryRoomBase : Node2D
         }
     }
 
+    /// <summary>Speak a one-time lesson as part of the room's story. The flag
+    /// is saved only after the lines finish, so a quit/reload mid-lesson can
+    /// hear it again; Journal clues and H remain the permanent reminders.</summary>
+    protected async Task SayStoryLessonOnceAsync(string flag, params string[] lines)
+    {
+        var gs = GameState.Instance;
+        if (gs == null || string.IsNullOrWhiteSpace(flag) || gs.HasFlag(flag) || lines == null)
+            return;
+
+        await SaySequence(lines);
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+
+        gs.SetFlag(flag, save: false);
+        gs.SaveGame($"story lesson: {flag}");
+    }
+
+    /// <summary>Entry-beat wrapper: briefly own the room so Mara can name what
+    /// this place is asking before the player starts clicking through it.</summary>
+    protected async Task PlayStoryLessonOnceAsync(string flag, params string[] lines)
+    {
+        var gs = GameState.Instance;
+        if (Busy || gs == null || string.IsNullOrWhiteSpace(flag) || gs.HasFlag(flag))
+            return;
+
+        Busy = true;
+        try
+        {
+            await WaitSeconds(0.35f);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            await SayStoryLessonOnceAsync(flag, lines);
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
     /// <summary>
     /// Standard final-act examine: record first looks, replay a short repeat
     /// line afterwards, and make repeated looking fray the memory just as it
@@ -295,10 +346,13 @@ public abstract partial class MemoryRoomBase : Node2D
         try
         {
             bool first = RecordExamine(hotspot);
+            bool completedRequiredNow = first && AllRequiredExamined();
             AudioManager.PlayVaried(hotspot.SfxId, -5f, hotspot.SfxPitch, 0.04f);
             if (first)
             {
                 await SaySequence(firstLines ?? Array.Empty<string>());
+                if (completedRequiredNow && GodotObject.IsInstanceValid(this))
+                    await OnRequiredExaminesCompletedAsync();
             }
             else
             {

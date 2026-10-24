@@ -64,6 +64,11 @@ one of three endings.
 - **Later rooms change the verb, not just the lock.** Echo teaches order,
   Anchor teaches stillness, Trace teaches causality, and Release asks what
   a whole memory is for.
+- **Mechanics are taught in Mara's voice.** Each verb wakes inside the
+  fragment that creates it, is named again when its room asks for it, and
+  gets a phase-change line when ordinary examining ends. Mara writes every
+  lesson into Journal → Notes & Clues as a “way of remembering,” so How to
+  Play is a backup, not the teacher.
 - **Three endings remember the player.** Memory shatter gives the Hollow
   Ending; completing Room 7 offers **Waking** or **The Kept House**. Found
   endings persist between New Games.
@@ -80,17 +85,22 @@ one of three endings.
    release, then clarify the toast; press B to open/close the empty bag; over-examine to hear corruption rise.
 5. Padlock: dials tick; Esc backs out; dial `71483` → an **Unlock** button appears → drawer opens → **click the key** → the bottom-right Bag count becomes 1 → Room 2. (Physics picking is switched on in GameManager — SubViewports default it off, which kills `_InputEvent` targets like the key/arrows.) Stepping back to the kitchen afterwards shows the cabinet still open.
 6. Wrong 4-letter word rattles; `HOME` opens. Photo → Room 3 → jars give
-   Fragment III/Echo. In Room 4, ordinary photo hover only shows labels;
-   arm **Echo (E)** and drift Pic 1→10 to hear the sentence and recover IV.
-7. The Room 4 door opens its close-up: Echo brass plate → keyhole beneath
-   it, three pairs left-to-right. In Room 5 examine the six required objects,
-   **Anchor (A)** the lamp, open the desk drawer for V, then use the wardrobe.
-   In Room 6 examine all four stops, **Trace (T)** basket → swing → gate →
-   road for VI, then follow the road.
-8. In Room 7 choose exact fragments from the bottom tray, place/reclaim
-   them until all six stand I→VI, arm **Release (R)**, click the assembled
-   memory, and choose **Let Mara wake** or **Keep the house**. The title
-   card records the ending and clears only that run's save.
+   Fragment III and teach **Echo** through Ida's preserved names. Room 4
+   repeats the lesson in the mother's voice: ordinary photo hover only shows
+   labels; arm **Echo (E)** and drift Pic 1→10 to hear the sentence and
+   recover IV. Check Journal → Notes & Clues for “A way of remembering.”
+7. The Room 4 door opens its close-up and explains ordinary examining vs.
+   Echo knocking: brass plate → keyhole beneath it, three pairs left-to-right.
+   Room 5 first asks for ordinary examines, then its all-faced line hands the
+   room to **Anchor (A)**; anchor the lamp, open the desk drawer for V, then
+   use the wardrobe. Room 6 likewise teaches “face first, then reclick”
+   before **Trace (T)** basket → swing → gate → road for VI.
+8. Room 7 introduces itself as Mara returning what she carries: choose exact
+   fragments from the bottom tray, watch gold (lived place) vs. blue-grey
+   (the house's kinder place), place/reclaim until all six stand I→VI, arm
+   **Release (R)**, click the assembled memory, and choose **Let Mara wake**
+   or **Keep the house**. The title card records the ending and clears only
+   that run's save.
 9. Esc → pause: save, journal, settings sliders (volumes should respond
    live), quit to menu → **Continue** appears and resumes the room.
 

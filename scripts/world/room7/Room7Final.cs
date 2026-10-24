@@ -71,6 +71,52 @@ public partial class Room7Final : Node2D
 
         UpdateVisuals();
         QueueRedraw();
+        _ = MaybePlayLastRoomLessonAsync();
+    }
+
+    private async Task MaybePlayLastRoomLessonAsync()
+    {
+        const string lessonFlag = "story_lesson_room7_release_room";
+        var gs = GameState.Instance;
+        if (_busy || gs == null || gs.HasFlag(lessonFlag) || gs.HasFlag(ChoiceMadeFlag) ||
+            !string.IsNullOrEmpty(gs.CompletedEnding))
+            return;
+
+        _busy = true;
+        try
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+
+            if (gs.CountRecovered() < GameState.MaxShards)
+            {
+                await SaySequence(
+                    "The last room has six hollow frames because Mara's story still has places she has not brought back with her.",
+                    $"Only {gs.CountRecovered()} of the six fragments are recovered. Open Mara's Bag (B) to see what is missing, then Step Back (Q). The earlier rooms still hold the pieces she needs before Release can mean anything.");
+            }
+            else
+            {
+                await SaySequence(
+                    "Six hollow frames. Six pieces of one life, carried here in Mara's bag. This room is not another lock; it is Mara putting the morning back where she lived it.",
+                    "Choose a fragment from the tray below, then click the hollow frame where it belongs. Gold means the piece stands in its lived place. Blue-grey means the house has accepted it somewhere kinder — click that filled frame to take it back and try again.",
+                    "If the order slips, the Bag (B) shows what Mara carries and the Journal (J) keeps “One morning, in order.” Release comes last: when all six stand I to VI, press R — or click Release — then click the assembled memory and choose what Mara does with the truth.");
+            }
+
+            if (GodotObject.IsInstanceValid(this))
+            {
+                gs.SetFlag(lessonFlag, save: false);
+                gs.SaveGame("story lesson: last room Release");
+            }
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                _busy = false;
+                UpdateVisuals();
+            }
+        }
     }
 
     public override void _ExitTree()
@@ -516,8 +562,10 @@ public partial class Room7Final : Node2D
                 UpdateVisuals();
                 if (result == ShardPlaceResult.AllPlaced)
                     _ = HandleAllPlacedAsync();
+                else if (shardToPlace == slot)
+                    gs.Toast($"Gold warms around it — that is where Mara lived this piece. ({gs.CountPlaced()}/{GameState.MaxShards} returned)");
                 else
-                    gs.Toast($"Returned. ({gs.CountPlaced()}/{GameState.MaxShards})");
+                    gs.Toast($"It rests blue-grey: the house accepts it there, but Mara's life does not. Leave it for now, or click the frame to take it back. ({gs.CountPlaced()}/{GameState.MaxShards} returned)");
                 break;
 
             case ShardPlaceResult.AlreadyPlaced:
@@ -575,14 +623,14 @@ public partial class Room7Final : Node2D
         if (gs.CountPlaced() < GameState.MaxShards)
         {
             _ = WrongReleaseAsync(
-                $"Release cannot decide an unfinished memory. {gs.CountPlaced()} of six fragments have been returned.");
+                $"Release cannot decide an unfinished memory. {gs.CountPlaced()} of six fragments have been returned. Put Release down, choose fragments from the tray, and place them in the frames first.");
             return;
         }
 
         if (!gs.FragmentsInOrder())
         {
             _ = WrongReleaseAsync(
-                "Release would preserve the house's arrangement, not Mara's life. Put the six fragments in the order she lived them first.");
+                "Release would preserve the house's arrangement, not Mara's life. Put Release down, click blue-grey frames to take their fragments back, and make all six stand gold in lived order first.");
             return;
         }
 

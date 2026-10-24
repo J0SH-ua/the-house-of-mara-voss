@@ -219,6 +219,19 @@ public partial class GameState : Node
         ["fragment_order"] = ("One morning, in order",
             "The fragments belong in the order Mara lived them:\n\n" +
             "I The Brass Key · II The Photograph · III The Preserved Names · IV The Hallway Sentence · V The Unsent Apology · VI The Last Afternoon."),
+        ["way_echo"] = ("A way of remembering — Echo: listen",
+            "Ida named the spiders so fear could be spoken aloud. Echo is that courage turned into listening.\n\n" +
+            "Choose Echo first (E, or its button in the Memory bar), then touch the memory. In the hallway, drift across the photographs rather than clicking them: a rising note means the next word of her mother's sentence. At the brass door, Echo turns clicks into knocks — picture first, then the keyhole beneath it.\n\n" +
+            "A verb stays in Mara's hands while she is using it. Right-click or Esc puts it down."),
+        ["way_anchor"] = ("A way of remembering — Anchor: hold still",
+            "\"She would have loved to see how far you've come.\" One whole sentence gives Mara one thing that does not move when she repeats it.\n\n" +
+            "Look at a room normally first, so its contradictions can speak. Then choose Anchor (A, or its Memory-bar button) and click the one thing whose meaning never changed. A wrong Anchor does not spend the verb; the object will show why it slides. When the right thing is held, Anchor is spent and ordinary hands can work in the stillness it made."),
+        ["way_trace"] = ("A way of remembering — Trace: connect",
+            "An apology is not one missed minute. It is the minute, and every minute that followed because of it.\n\n" +
+            "Examine each stop normally first. When all of them have been faced, choose Trace (T, or its Memory-bar button) and click the same places again in causal order: waiting, then counting, then leaving, then the road. Rising notes and the gold line mean the memory is joining. A wrong click breaks the line, so begin again where the waiting began."),
+        ["way_release"] = ("A way of remembering — Release: decide",
+            "Release wakes only when Mara knows the way Ida went. It is not a better way to examine, and it cannot put a life in order for her.\n\n" +
+            "In the last room, choose a fragment from the tray, then click a hollow frame. Gold means that piece stands where she lived it; blue-grey means the house has accepted a kinder arrangement. Click any filled frame to take its fragment back. When all six stand I→VI, choose Release (R, or its Memory-bar button), click the assembled memory, and decide: wake with Ida carried forward, or keep the house that pretends she is coming back."),
     };
 
     // ---------------------------------------------------------------- lifecycle
@@ -558,7 +571,7 @@ public partial class GameState : Node
                 if (CountRecovered() < MaxShards)
                     return $"The last room is waiting for every fragment ({CountRecovered()}/{MaxShards}). Step back and keep remembering.";
                 if (CountPlaced() < MaxShards)
-                    return $"Return the fragments to the six hollow frames ({CountPlaced()}/{MaxShards}). Choose a fragment below, then a frame.";
+                    return $"Return the fragments to the six hollow frames ({CountPlaced()}/{MaxShards}). Choose one below, then a frame — gold is its lived place; click a filled frame to reclaim.";
                 return FragmentsInOrder()
                     ? "One morning, in order. Release (R) the assembled memory — or choose to keep the house."
                     : "All six are here, but not in the order she lived them. Click a frame to take its fragment back and rearrange.";
@@ -574,8 +587,8 @@ public partial class GameState : Node
                     "Room1" => "Examine everything in the kitchen",
                     "Room2" => "Examine everything in the sitting room",
                     "Room3" => "Examine everything kept in this room",
-                    "Room5" => "Examine the room that will not stay one room",
-                    "Room6" => "Examine every stop on the last afternoon",
+                    "Room5" => "First look normally — examine the room that will not stay one room",
+                    "Room6" => "First face each stop normally — examine the last afternoon",
                     _ => "Examine everything here",
                 };
                 return $"{lead} ({done}/{total})";
@@ -591,7 +604,7 @@ public partial class GameState : Node
                 "Room5" when !IsShardRecovered(4) && !HasFlag("room5_anchored_lamp") => "Everything faced — Anchor (A) the bedside lamp, the one thing that stayed lit.",
                 "Room5" when !IsShardRecovered(4) => "The room is holding still. Open the writing-desk drawer.",
                 "Room5" => "Fragment recovered. The wardrobe has remembered the garden — click it.",
-                "Room6" when !IsShardRecovered(5) => "Everything faced — Trace (T) basket, swing, broken gate, empty road. The arrangement is in your journal.",
+                "Room6" when !IsShardRecovered(5) => "Everything faced — Trace (T): click the stops again in causal order (waiting → counting → leaving → road). The arrangement is in your journal.",
                 "Room6" => "Fragment recovered. Follow the road beyond the broken gate.",
                 _ => string.Empty,
             };
@@ -837,6 +850,44 @@ public partial class GameState : Node
 
     public bool HasVerb(MemoryVerb verb) => verb != MemoryVerb.None && _unlockedVerbs.Contains(verb);
 
+    private static string ClueIdForVerb(MemoryVerb verb) => verb switch
+    {
+        MemoryVerb.Echo => "way_echo",
+        MemoryVerb.Anchor => "way_anchor",
+        MemoryVerb.Trace => "way_trace",
+        MemoryVerb.Release => "way_release",
+        _ => null,
+    };
+
+    /// <summary>Keep the story's own lesson for a verb in Notes &amp; Clues.
+    /// The room still teaches it in dialogue; this is Mara writing it down so
+    /// the player can return to it with J instead of relying on a toast.</summary>
+    private void RememberVerbLesson(MemoryVerb verb, bool announce)
+    {
+        string clueId = ClueIdForVerb(verb);
+        if (string.IsNullOrEmpty(clueId) || _unlockedClues.Contains(clueId))
+            return;
+
+        if (announce)
+        {
+            UnlockClue(clueId);
+        }
+        else
+        {
+            _unlockedClues.Add(clueId);
+            CluesChanged?.Invoke();
+        }
+    }
+
+    private void BackfillVerbLessons()
+    {
+        foreach (var verb in new[] { MemoryVerb.Echo, MemoryVerb.Anchor, MemoryVerb.Trace, MemoryVerb.Release })
+        {
+            if (HasVerb(verb))
+                RememberVerbLesson(verb, announce: false);
+        }
+    }
+
     /// <summary>Unlock a way of remembering. Silent unlocks are used by save
     /// backfills; the surrounding scene-change/load save persists them.</summary>
     public bool UnlockVerb(MemoryVerb verb, bool announce = true)
@@ -846,15 +897,16 @@ public partial class GameState : Node
 
         VerbsChanged?.Invoke();
         ObjectiveChanged?.Invoke();
+        RememberVerbLesson(verb, announce);
         if (announce)
         {
             AudioManager.Play(Sfx.ClarifyReveal, -5f, verb == MemoryVerb.Release ? 1.15f : 1f);
             Toast(verb switch
             {
-                MemoryVerb.Echo => "Echo learned — press E to hear the order a memory keeps.",
-                MemoryVerb.Anchor => "Anchor learned — press A to hold one true thing still.",
-                MemoryVerb.Trace => "Trace learned — press T to connect moments in cause and order.",
-                MemoryVerb.Release => "Release learned — press R when the memory is whole.",
+                MemoryVerb.Echo => "Echo wakes in Mara — listen for order. Her note is in the Journal (J).",
+                MemoryVerb.Anchor => "Anchor wakes in Mara — one true thing can hold still. Her note is in the Journal (J).",
+                MemoryVerb.Trace => "Trace wakes in Mara — moments can be joined by cause. Her note is in the Journal (J).",
+                MemoryVerb.Release => "Release wakes in Mara — a whole memory can be answered. Her note is in the Journal (J).",
                 _ => $"{VerbDisplayName(verb)} learned.",
             });
             SaveGame($"verb unlocked: {verb}");
@@ -970,6 +1022,8 @@ public partial class GameState : Node
                 CollectShard(5, null, silent: true);
             UnlockVerb(MemoryVerb.Release, announce: false);
         }
+
+        BackfillVerbLessons();
 
         if (CountRecovered() >= MaxShards && !_unlockedClues.Contains("fragment_order"))
         {

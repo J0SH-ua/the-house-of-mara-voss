@@ -1352,8 +1352,8 @@ public partial class GameUI : CanvasLayer
                 learned.Add($"{GameState.VerbDisplayName(verb)} ({MemoryVerbSystem.HotkeyLabel(verb)})");
         }
         _bagVerbsLabel.Text = learned.Count > 0
-            ? "Ways of remembering: " + string.Join(" · ", learned)
-            : "Ways of remembering: none learned yet — the house teaches later.";
+            ? "Ways of remembering: " + string.Join(" · ", learned) + " — Mara's notes are in the Journal (J)."
+            : "Ways of remembering: none learned yet — the house will teach them as the story gives them to her.";
     }
 
     private static void ApplyBagSlotStyle(Button button, bool selected, bool recovered, bool carried)
@@ -2020,8 +2020,8 @@ public partial class GameUI : CanvasLayer
          "Clicking something you have already seen looks deeper. Deeper looks fray the memory: the MEMORY meter (top-right) falls, and the house begins to slip — sight, sound, even words.\n\nSometimes the truth is in the fraying. Sometimes it is only damage.\n\nIf the MEMORY meter ever empties, the memory shatters. That is an ending — the hollow one."),
         ("Clarity",
          "Press C — or click the eye in the room — to arm Clarity, then click an object to see it as it truly is.\n\nCharges are the pips at the top-right; finishing a room restores one. Right-click releases Clarity unspent, and seeing truly steadies a fraying memory a little.\n\nIn a room you nearly know, with at least 4 charges, arming Clarity offers a Recollection: spend it all to show everything that remains in its true form and ring it in blue — and wake in the next room with fewer charges."),
-        ("Memory Verbs",
-         "Later rooms teach new ways of remembering, one at a time:\n\nE — Echo: hear words and moments in their spoken order.\nA — Anchor: hold one true thing still.\nT — Trace: connect causes in the order they happened.\nR — Release: decide what a completed memory is for.\n\nLearned verbs also appear as buttons at the bottom of the screen. Right-click or Esc releases one unspent."),
+        ("Memory Verbs — learned in the house",
+         "The house teaches these one fragment at a time, in Mara's own words. When a way of remembering wakes, Mara writes it down under Journal (J) → Notes & Clues.\n\nTheir grammar never changes:\n1. Choose the verb — E/A/T/R, or its button in the bottom Memory bar.\n2. Touch the memory it belongs to.\n\nEcho listens in order. Anchor holds one unchanged thing still. Trace joins causes. Release answers a memory only after it is whole. A chosen verb stays in Mara's hands while she tries; right-click or Esc puts it down."),
         ("Finding Things",
          "Hold Tab to reveal what can still be examined.\nPress H for a hint — it will nudge, then name, then point.\nPress B (or click Bag) for Mara's inventory: the fragments she is carrying, what has been returned, and the Memory Verbs she has learned.\nPress J for your Memory Journal: fragments, everything that has been said, the clues you have noted — and a page for your own notes.\nEsc pauses. Dialogue advances with a click; End skips it.\nStuck at a lock? Press Q — or the Step Back button — to return to the room and check; from a room, it leads to the one before."),
         ("What You Are Doing Here",

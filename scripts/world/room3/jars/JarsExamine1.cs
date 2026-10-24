@@ -43,7 +43,9 @@ public partial class JarsExamine1 : ExamineHandler
             if (firstFragment)
             {
                 await Dialogue.ShowText(this, "At the bottom of the last jar is a folded square of name tape. IDA, in careful block letters. The one label Mara could never throw away.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 22);
-                await Dialogue.ShowText(this, "Something in the memory changes as you hold it: from here on, you can do more than look. You can listen for the order things were said. (Echo — press E in the hallway.)", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 22);
+                await Dialogue.ShowText(this, "Ida named the spiders so she could say them aloud without flinching. Mara used to repeat the names after her, in the order Ida gave them, until fear sounded smaller than the voice holding it.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 22);
+                await Dialogue.ShowText(this, "That is the first new way this memory gives back: Echo. From here, remembering has verbs. Choose the verb first — press E, or click Echo in the Memory bar — then touch the memory it belongs to. Right-click or Esc puts the verb down.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 22);
+                await Dialogue.ShowText(this, "In the hallway, Echo will not ask you to click the photographs. Drift across them and listen: each word taken in her mother's order answers a little higher. Mara has written the way of it in her Journal (J), if it slips.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 22);
             }
 
             await Dialogue.ShowText(this, "She kept everything. That's what love does when it doesn't know what else to do — it keeps everything exactly where it was and calls it waiting.", 6.0f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 20);
