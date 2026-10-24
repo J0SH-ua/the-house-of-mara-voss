@@ -1111,9 +1111,10 @@ public partial class GameUI : CanvasLayer
 
         if (_journalTab == 0)
         {
+            var journalOrder = gs?.FragmentDisplayOrder;
             for (int i = 0; i < GameState.MaxShards; i++)
             {
-                int index = i;
+                int index = journalOrder != null ? journalOrder[i] : i;
                 bool recovered = gs != null && (Globals.SHARDS_COLLECTED[index]
                                                 || System.Array.IndexOf(gs.PlacedShardBySlot, index) >= 0);
                 string title = GameState.ShardTitles[index];
@@ -1601,9 +1602,11 @@ public partial class GameUI : CanvasLayer
         foreach (var child in _bagGrid.GetChildren())
             child.QueueFree();
 
-        for (int i = 0; i < GameState.MaxShards; i++)
+        // The bag is a bag: the fragments lie in it jumbled, in no order
+        // that means anything. Only Mara knows the order they lived.
+        for (int pos = 0; pos < GameState.MaxShards; pos++)
         {
-            int index = i;
+            int index = gs.FragmentDisplayOrder[pos];
             bool carried = Globals.SHARDS_COLLECTED[index];
             int placedSlot = System.Array.IndexOf(gs.PlacedShardBySlot, index);
             bool recovered = carried || placedSlot >= 0;

@@ -128,7 +128,9 @@ the house is meant to be figured out.
    (bottom-right) bringing you back.
 8. Room 7: choose exact fragments from the bottom tray and place/reclaim
    freely — no numerals, no per-piece grading; the house answers only when
-   all six stand together. In lived order, arm **Release (R)** and click
+   all six stand together. The tray (like the Bag and the Journal list)
+   shows the fragments **jumbled** — a per-run shuffle saved with the run,
+   never the lived order — so the order has to come from remembering. In lived order, arm **Release (R)** and click
    the assembled memory: the **truth reveal** plays, then the choice.
    **Let Mara wake** → warm first-person Ida (listening/speaking/smiling),
    a fade through light, the Waking ending, and Mara last — seated on the steps, cheek on her hand, smiling into the distance.

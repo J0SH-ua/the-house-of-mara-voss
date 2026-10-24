@@ -320,6 +320,12 @@ public partial class Room7Final : Node2D
 
     private void BuildTrayButtons()
     {
+        // The tray is Mara's bag tipped out on the table: the pieces lie in
+        // the jumbled order she carried them in — the same jumble as the
+        // Bag and the Journal — never the order they were lived. Which
+        // piece belongs in which hollow has to come from remembering,
+        // not from reading the tray left to right.
+        var displayOrder = GameState.Instance?.FragmentDisplayOrder;
         for (int i = 0; i < GameState.MaxShards; i++)
         {
             int shard = i;
@@ -327,7 +333,10 @@ public partial class Room7Final : Node2D
             button.Name = $"FragmentTray{shard}";
             // Tray buttons keep their two-line names; the keepsake textures
             // themselves appear in the frames above and in Mara's bag.
-            button.Position = new Vector2(111 + shard * 155, 458);
+            int displayPos = displayOrder != null
+                ? System.Array.IndexOf(displayOrder, shard)
+                : shard;
+            button.Position = new Vector2(111 + displayPos * 155, 458);
             button.Size = new Vector2(150, 52);
             button.FocusMode = Control.FocusModeEnum.None;
             button.Pressed += () => OnTrayButtonPressed(shard);
