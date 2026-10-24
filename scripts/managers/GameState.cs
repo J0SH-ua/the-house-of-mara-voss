@@ -362,10 +362,10 @@ public partial class GameState : Node
         return true;
     }
 
-    /// <summary>Spend ALL Clarity: ring everything left in this room until it
+    /// <summary>Spend ALL Clarity: show everything left in its true form and ring it until it
     /// is faced. The next room's Clarity is set to (revealed + 1): one
     /// revealed, two; two revealed, three. Returns how many were revealed.</summary>
-    public int PerformRecollection()
+    public int PerformRecollection(bool announce = true)
     {
         if (Globals.Instance == null || !CanRecollect(out var remaining, out int carry))
             return 0;
@@ -378,10 +378,13 @@ public partial class GameState : Node
         ClarifiesUsed++;
         _pendingClarityCarry = carry;
         ClarityChanged?.Invoke(0);
-        AudioManager.Play(Sfx.ClarifyReveal, -3f);
-        Toast(remaining.Count == 1
-            ? "One last thing shows itself. All Clarity spent."
-            : $"The room gives up its remaining {remaining.Count} secrets. All Clarity spent.");
+        if (announce)
+        {
+            AudioManager.Play(Sfx.ClarifyReveal, -3f);
+            Toast(remaining.Count == 1
+                ? "One last thing shows itself. All Clarity spent."
+                : $"The room gives up its remaining {remaining.Count} secrets. All Clarity spent.");
+        }
         SaveGame("recollection");
         return remaining.Count;
     }

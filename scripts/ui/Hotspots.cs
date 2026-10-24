@@ -118,13 +118,68 @@ public static class Hotspots
     }
 
     /// <summary>One-shot ripple at an arbitrary position (examine click feedback).</summary>
-    public static void SpawnRipple(Vector2 globalPosition)
+    public static void SpawnRipple(Vector2 globalPosition, Color? color = null)
     {
         var scene = SceneManager.Instance?.CurrentScene;
         if (scene == null)
             return;
 
-        SpawnMarker(scene, globalPosition, oneShot: true, track: false);
+        var marker = SpawnMarker(scene, globalPosition, oneShot: true, track: false);
+        if (marker != null && color.HasValue)
+            marker.RingColor = color.Value;
+    }
+
+    public static Vector2 GetLayerCenter(TileMapLayer layer) => LayerCenter(layer);
+
+    /// <summary>Find the currently active layer for an object, falling back to
+    /// any sibling layer when every layer is presently hidden.</summary>
+    public static ExamineHandler FindLayerForObject(string objectName)
+    {
+        var scene = SceneManager.Instance?.CurrentScene;
+        if (scene == null || string.IsNullOrEmpty(objectName))
+            return null;
+
+        ExamineHandler fallback = null;
+        foreach (var layer in FindExamineLayers(scene))
+        {
+            if (layer.GetParent()?.Name.ToString() != objectName)
+                continue;
+            if (IsLayerActive(layer))
+                return layer;
+            fallback ??= layer;
+        }
+        return fallback;
+    }
+
+    /// <summary>
+    /// Recollection is not just a marker: objects it remembered keep the
+    /// same Clarify1 true-form visual a single Clarity use would have shown.
+    /// Apply that state whenever a room scene is (re)built. Objects already
+    /// examined normally before a save was upgraded are left alone.
+    /// </summary>
+    public static void ApplyRecollectionVisuals()
+    {
+        var scene = SceneManager.Instance?.CurrentScene;
+        string room = GameState.CurrentRoomName();
+        var gs = GameState.Instance;
+        if (scene == null || room == null || gs == null)
+            return;
+
+        var processed = new HashSet<string>();
+        foreach (var layer in FindExamineLayers(scene))
+        {
+            string obj = layer.GetParent()?.Name.ToString() ?? string.Empty;
+            if (string.IsNullOrEmpty(obj) || !processed.Add(obj))
+                continue;
+            if (!gs.IsRevealedPersistent(room, obj))
+                continue;
+
+            var clicked = RoomExamineTracker.GetClickedLayers(room, obj);
+            if (clicked != null && !clicked.Contains("Clarify1"))
+                continue;
+
+            ExamineHelper.ApplyClarifyVisual(layer);
+        }
     }
 
     public static void HideAll()

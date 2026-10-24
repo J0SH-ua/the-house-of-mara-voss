@@ -73,6 +73,14 @@ public partial class ExamineHandler : TileMapLayer
         if (clicked == null || clicked.Count == 0)
             return;
 
+        // A clicked Clarify1 means this object's true form is its resting
+        // visual now; RestoreLayers only understands numbered Examine layers.
+        if (clicked.Contains("Clarify1"))
+        {
+            ExamineHelper.ApplyClarifyVisual(this);
+            return;
+        }
+
         ExamineHelper.RestoreLayers(this, clicked);
     }
 
@@ -121,6 +129,15 @@ public partial class ExamineHandler : TileMapLayer
             "Bed" => (Sfx.Examine, 0.7f),                             // muffled cloth
             _ => (Sfx.Examine, 1f),
         };
+    }
+
+    /// <summary>Per-object cue used while Recollection changes the room one
+    /// object at a time: the object's own sound, with Clarity underneath.</summary>
+    public void PlayRecollectionCue()
+    {
+        var (sfxId, sfxPitch) = ResolveExamineSound();
+        AudioManager.PlayVaried(sfxId, -6f, sfxPitch, 0.03f);
+        AudioManager.Play(Sfx.ClarifyReveal, -12f, 1.04f);
     }
 
     /// <summary>Faint paper-brush tick on hover-enter, throttled so sweeping

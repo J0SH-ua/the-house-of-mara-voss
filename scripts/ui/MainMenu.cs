@@ -9,6 +9,9 @@ public partial class MainMenu : Control
 	public NodePath StartButtonPath { get; set; } = "Center/MarginContainer/VBox/StartButton";
 
 	[Export]
+	public NodePath ContinueButtonPath { get; set; } = "SubViewportContainer/SubViewport/Center/MarginContainer/VBox/ContinueButton";
+
+	[Export]
 	public NodePath FullStoryButtonPath { get; set; } = "Center/MarginContainer/VBox/FullStoryButton";
 
 	[Export]
@@ -56,6 +59,8 @@ public partial class MainMenu : Control
 		_startButton = ResolveButton(StartButtonPath, "StartButton",
 			"Center/MarginContainer/VBox/StartButton",
 			"Center/VBox/StartButton");
+		_continueButton = ResolveButton(ContinueButtonPath, "ContinueButton",
+			"SubViewportContainer/SubViewport/Center/MarginContainer/VBox/ContinueButton");
 		_fullStoryButton = ResolveButton(FullStoryButtonPath, "FullStoryButton",
 			"Center/MarginContainer/VBox/FullStoryButton",
 			"Center/VBox/FullStoryButton");
@@ -79,6 +84,15 @@ public partial class MainMenu : Control
 		else
 			_startButton.Pressed += OnStartPressed;
 
+		if (_continueButton == null)
+			Logger.Error("MainMenu could not find ContinueButton.");
+		else
+		{
+			_continueButton.Pressed += OnContinuePressed;
+			// Native scene TextureButton, hidden until a memory is preserved.
+			_continueButton.Visible = GameState.Instance?.HasSave ?? false;
+		}
+
 		if (_fullStoryButton == null)
 			Logger.Error("MainMenu could not find FullStoryButton at Center/VBox/FullStoryButton.");
 		else
@@ -94,12 +108,13 @@ public partial class MainMenu : Control
 		else
 			_quitButton.Pressed += OnQuitPressed;
 
-		foreach (var b in new[] { _startButton, _fullStoryButton, _aboutButton, _quitButton })
+		foreach (var b in new[] { _startButton, _continueButton, _fullStoryButton, _aboutButton, _quitButton })
 			HookButtonSounds(b);
 
-		BuildContinueButton();
+		if (_continueButton?.Visible == true && _startButton != null)
+			_startButton.TooltipText = "Begin again (lets go of the preserved memory)";
 
-		(_continueButton ?? _startButton)?.GrabFocus();
+		((_continueButton?.Visible == true ? _continueButton : _startButton))?.GrabFocus();
 
 		// Music is owned by AudioManager now (buses, volume settings, looping,
 		// crossfades) instead of a throwaway per-scene player.
@@ -115,54 +130,6 @@ public partial class MainMenu : Control
 		button.Pressed += () => AudioManager.Play(Sfx.UiClick, -4f);
 	}
 
-	/// <summary>
-	/// A "Continue" button exists only when a memory has been preserved.
-	/// The menu buttons are TextureButtons cut from game_menu.png, so a plain
-	/// text Button can never align or behave like them — instead we duplicate
-	/// Start (identical layout flags, sizing, stretch and feedback) and swap
-	/// in CONTINUE art composed from the sheet's own glyphs
-	/// (assets/images/core/continue_normal.png / continue_hover.png).
-	/// Duplicate(0) copies properties only — no signal wiring rides along.
-	/// </summary>
-	private void BuildContinueButton()
-	{
-		if (_startButton == null || GameState.Instance == null || !GameState.Instance.HasSave)
-			return;
-
-		var vbox = _startButton.GetParent();
-		if (vbox == null)
-			return;
-
-		if (_startButton.Duplicate(0) is not TextureButton button)
-		{
-			Logger.Warning("MainMenu: StartButton is not a TextureButton; Continue not built.");
-			return;
-		}
-
-		button.Name = "ContinueButton";
-		var normal = GD.Load<Texture2D>("res://assets/images/core/continue_normal.png");
-		var hover = GD.Load<Texture2D>("res://assets/images/core/continue_hover.png");
-		if (normal != null)
-			button.TextureNormal = normal;
-		if (hover != null)
-		{
-			// The sheet reuses the same key+tan art for hover and pressed.
-			button.TextureHover = hover;
-			button.TexturePressed = hover;
-			button.TextureFocused = hover;
-		}
-		if (normal == null && hover == null)
-			Logger.Warning("MainMenu: CONTINUE art failed to load; button keeps Start's textures.");
-
-		button.Pressed += OnContinuePressed;
-		HookButtonSounds(button);
-		vbox.AddChild(button);
-		vbox.MoveChild(button, _startButton.GetIndex());
-		_continueButton = button;
-
-		// "Start" now explicitly means beginning again.
-		_startButton.TooltipText = "Begin again (lets go of the preserved memory)";
-	}
 
 	private void OnFullStoryPressed()
 	{
