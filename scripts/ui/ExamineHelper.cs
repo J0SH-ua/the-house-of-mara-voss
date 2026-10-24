@@ -2,6 +2,11 @@ using Godot;
 using System.Collections.Generic;
 using System.Linq;
 
+/// <summary>
+/// Layer bookkeeping for the examine/clarify system.
+/// State changes (charge spend, cursors, sounds) are delegated to
+/// ClaritySystem/GameState so this class only moves TileMapLayers around.
+/// </summary>
 public static class ExamineHelper
 {
     // -------------------------------------------------------------------------
@@ -55,6 +60,17 @@ public static class ExamineHelper
     // There is exactly one Clarify1 layer per object.
     // When triggered: hide/free all sibling Examine layers, then show Clarify1.
     // -------------------------------------------------------------------------
+
+    /// <summary>True when the clicked object actually has something to reveal.</summary>
+    public static bool HasClarifyLayer(TileMapLayer clicked)
+    {
+        if (clicked == null)
+            return false;
+
+        var parent = clicked.GetParent();
+        return (parent != null && FindClarifyLayer(parent) != null) || FindClarifyLayer(clicked) != null;
+    }
+
     public static void TriggerClarify(TileMapLayer clicked)
     {
         if (clicked == null)
@@ -69,9 +85,9 @@ public static class ExamineHelper
 
         if (clarifyLayer == null)
         {
-            // No Clarify layer found — cancel clarify mode and bail.
-            Globals.Instance.IS_CLARIFYING = false;
-            Logger.Info("[ExamineHelper] No Clarify1 found; cancelling clarify mode.");
+            // No Clarify layer found — leave Clarity ARMED (ClaritySystem owns
+            // the mode now; a stray click must not silently eat the arm).
+            Logger.Info("[ExamineHelper] No Clarify1 found; clarity stays armed.");
             return;
         }
 
@@ -80,9 +96,9 @@ public static class ExamineHelper
         foreach (var layer in examineLayers)
             FreeExamineLayer(layer);
 
-        // Show the Clarify layer and update global state.
+        // Show the Clarify layer and spend the charge.
         ShowLayer(clarifyLayer);
-        ApplyClarifyGlobalState();
+        ClaritySystem.ConsumeCharge();
     }
 
     // -------------------------------------------------------------------------
@@ -144,25 +160,6 @@ public static class ExamineHelper
             return;
 
         SetAlpha(layer, 0.0f);
-    }
-
-    private static void ApplyClarifyGlobalState()
-    {
-        Globals.Instance.IS_CLARIFYING = false;
-        Globals.Instance.CLARITY_TOGGLE_COUNT--;
-        CursorHelper.ResetCursor();
-
-        int newCount = Globals.Instance.CLARITY_TOGGLE_COUNT;
-        int oldCount = newCount + 1;
-
-        var scene = SceneManager.Instance?.CurrentScene;
-        var oldToggle = scene?.GetNodeOrNull<TileMapLayer>($"UI/ClarityToggle/{oldCount}");
-        var newToggle = scene?.GetNodeOrNull<TileMapLayer>($"UI/ClarityToggle/{newCount}");
-
-        if (oldToggle != null) SetAlpha(oldToggle, 0.0f);
-        if (newToggle != null) SetAlpha(newToggle, 1.0f);
-
-        Logger.Info($"[ExamineHelper] Clarity used. Toggle count now: {newCount}");
     }
 
     private static void SetAlpha(CanvasItem item, float alpha)

@@ -1,6 +1,11 @@
 using System;
 using Godot;
 
+/// <summary>
+/// Room 2's four-letter lock. Wrong full attempts now rattle, clear and
+/// refocus instead of failing in total silence; typing and solving have
+/// matching audio.
+/// </summary>
 public partial class Room2Puzzle : Area2D
 {
 	private const string TargetWord = "HOME";
@@ -9,12 +14,17 @@ public partial class Room2Puzzle : Area2D
 	private Node2D _padlock;
 	private LineEdit[] _letterBoxes;
 	private bool _isSolved;
+	private bool _feedbackPlaying;
+	private Vector2 _padlockHome;
 
 	public override void _Ready()
 	{
 		_padlock = GetNodeOrNull<Node2D>("Padlock");
 		if (_padlock != null)
+		{
 			_padlock.Visible = true;
+			_padlockHome = _padlock.Position;
+		}
 
 		_letterBoxes = new LineEdit[4];
 		for (int i = 0; i < _letterBoxes.Length; i++)
@@ -73,7 +83,7 @@ public partial class Room2Puzzle : Area2D
 
 	private void OnLetterBoxTextChanged(int index, string newText)
 	{
-		if (_isSolved)
+		if (_isSolved || _feedbackPlaying)
 			return;
 
 		var box = GetBox(index);
@@ -84,8 +94,12 @@ public partial class Room2Puzzle : Area2D
 		if (box.Text != filtered)
 			box.Text = filtered;
 
-		if (filtered.Length == 1 && index < _letterBoxes.Length - 1)
-			GetBox(index + 1)?.GrabFocus();
+		if (filtered.Length == 1)
+		{
+			AudioManager.PlayVaried(Sfx.KeyType, -7f, 1f, 0.08f);
+			if (index < _letterBoxes.Length - 1)
+				GetBox(index + 1)?.GrabFocus();
+		}
 
 		CheckSolution();
 	}
@@ -114,17 +128,61 @@ public partial class Room2Puzzle : Area2D
 
 		string attempt = new string(chars);
 		if (!string.Equals(attempt, TargetWord, StringComparison.Ordinal))
+		{
+			WrongAttemptAsync();
 			return;
+		}
 
 		_isSolved = true;
 		SolveAsync();
 	}
 
+	private async void WrongAttemptAsync()
+	{
+		if (_feedbackPlaying)
+			return;
+		_feedbackPlaying = true;
+
+		AudioManager.Play(Sfx.LockRattle, -5f);
+		AudioManager.Play(Sfx.Denied, -11f);
+
+		if (_padlock != null && !Settings.ReduceMotionOrDefault())
+		{
+			var tween = CreateTween();
+			foreach (float offset in new[] { -7f, 6f, -4f, 3f, 0f })
+				tween.TweenProperty(_padlock, "position", _padlockHome + new Vector2(offset, 0), 0.05f);
+			await ToSignal(tween, Tween.SignalName.Finished);
+		}
+		else
+		{
+			await ToSignal(GetTree().CreateTimer(0.25f), SceneTreeTimer.SignalName.Timeout);
+		}
+
+		if (!GodotObject.IsInstanceValid(this) || _isSolved)
+		{
+			_feedbackPlaying = false;
+			return;
+		}
+
+		// Clearing triggers TextChanged; the _feedbackPlaying guard turns
+		// those callbacks into no-ops.
+		foreach (var box in _letterBoxes)
+		{
+			if (box != null)
+				box.Text = string.Empty;
+		}
+		GetBox(0)?.GrabFocus();
+		_feedbackPlaying = false;
+	}
+
 	private async void SolveAsync()
 	{
+		AudioManager.Play(Sfx.LockOpen, -4f);
 		await PlayDrawerAnimation();
 		RevealPhotoReward();
 		_padlock?.SetDeferred("visible", false);
+		AudioManager.Play(Sfx.PuzzleSolve, -6f);
+		GameState.Instance?.Toast("Inside: a photograph, face-down all these years.");
 	}
 
 	private void RevealPhotoReward()
@@ -140,6 +198,7 @@ public partial class Room2Puzzle : Area2D
 		if (drawer == null)
 			return;
 
+		AudioManager.Play(Sfx.DrawerOpen, -5f);
 		drawer.Play("DrawerOpen");
 		await ToSignal(GetTree().CreateTimer(0.35f), SceneTreeTimer.SignalName.Timeout);
 		drawer.Stop();

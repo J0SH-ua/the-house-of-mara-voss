@@ -19,9 +19,17 @@ public partial class JarsExamine1 : ExamineHandler
 
         if (!RoomExamineTracker.HasRoomBeenFullyExamined("Room3"))
         {
-            // Locked. Do nothing.
+            // Locked used to mean silence; explain the gate and progress.
+            RoomExamineTracker.GetRoomProgress("Room3", out int done, out int total, out _);
+            AudioManager.Play(Sfx.Denied, -8f);
+            await Dialogue.ShowText(this,
+                $"The jars can wait. Everything in this room was kept for a reason — look at all of it first. ({done}/{total})",
+                3.5f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 24);
             return;
         }
+
+        AudioManager.Play(Sfx.Examine, -6f);
+        GameState.Instance?.MarkRoomCompleted("Room3");
 
         GetTree().Root.SetInputAsHandled();
 

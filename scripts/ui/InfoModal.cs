@@ -72,6 +72,7 @@ public partial class InfoModal : Control
 
 	public void Open(string title, string body, Texture2D art)
 	{
+		AudioManager.Play(Sfx.PageTurn, -8f);
 		if (_title != null)
 			_title.Text = title ?? string.Empty;
 
@@ -91,6 +92,8 @@ public partial class InfoModal : Control
 
 	public void Close()
 	{
+		if (Visible)
+			AudioManager.Play(Sfx.UiBack, -8f);
 		Visible = false;
 	}
 }

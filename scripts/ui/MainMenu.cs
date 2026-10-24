@@ -1,5 +1,4 @@
 using Godot;
-using System.Threading.Tasks;
 
 public partial class MainMenu : Control
 {
@@ -45,12 +44,12 @@ public partial class MainMenu : Control
 	public Texture2D AboutArt { get; set; } = null;
 
 	private BaseButton _startButton;
+	private BaseButton _continueButton;
 	private BaseButton _fullStoryButton;
 	private BaseButton _aboutButton;
 	private BaseButton _quitButton;
 	private InfoModal _fullStoryModal;
 	private InfoModal _aboutModal;
-	private AudioStreamPlayer _musicPlayer;
 
 	public override void _Ready()
 	{
@@ -95,23 +94,62 @@ public partial class MainMenu : Control
 		else
 			_quitButton.Pressed += OnQuitPressed;
 
-		_startButton?.GrabFocus();
+		foreach (var b in new[] { _startButton, _fullStoryButton, _aboutButton, _quitButton })
+			HookButtonSounds(b);
 
-		// Initialize music player
-		_musicPlayer = GetNodeOrNull<AudioStreamPlayer>("MusicPlayer");
-		if (_musicPlayer == null)
-		{
-			_musicPlayer = new AudioStreamPlayer();
-			AddChild(_musicPlayer);
-		}
+		BuildContinueButton();
 
-		// Load and play the menu loop music
-		var menuMusic = GD.Load<AudioStream>("res://assets/Music/bg/Glance Out A Casement Window.mp3");
-		if (menuMusic != null)
-		{
-			_musicPlayer.Stream = menuMusic;
-			_musicPlayer.Play();
-		}
+		(_continueButton ?? _startButton)?.GrabFocus();
+
+		// Music is owned by AudioManager now (buses, volume settings, looping,
+		// crossfades) instead of a throwaway per-scene player.
+		AudioManager.Instance?.StopAmbience();
+		AudioManager.Instance?.PlayMusic(AudioManager.MusicMenu, -7f, 1.4f);
+	}
+
+	private static void HookButtonSounds(BaseButton button)
+	{
+		if (button == null)
+			return;
+		button.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -13f);
+		button.Pressed += () => AudioManager.Play(Sfx.UiClick, -6f);
+	}
+
+	/// <summary>
+	/// A "Continue" button exists only when a memory has been preserved.
+	/// Added at runtime above Start so the original scene layout is untouched.
+	/// </summary>
+	private void BuildContinueButton()
+	{
+		if (_startButton == null || GameState.Instance == null || !GameState.Instance.HasSave)
+			return;
+
+		var vbox = _startButton.GetParent();
+		if (vbox == null)
+			return;
+
+		var button = new Button { Text = "CONTINUE", Name = "ContinueButton" };
+		var font = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
+		if (font != null)
+			button.AddThemeFontOverride("font", font);
+		button.AddThemeFontSizeOverride("font_size", 34);
+		button.AddThemeColorOverride("font_color", new Color(0.35f, 0.28f, 0.2f));
+		button.AddThemeColorOverride("font_hover_color", new Color(0.12f, 0.09f, 0.06f));
+		var flat = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0) };
+		button.AddThemeStyleboxOverride("normal", flat);
+		button.AddThemeStyleboxOverride("hover", flat);
+		button.AddThemeStyleboxOverride("pressed", flat);
+		button.AddThemeStyleboxOverride("focus", flat);
+		button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+		button.Pressed += OnContinuePressed;
+		HookButtonSounds(button);
+		vbox.AddChild(button);
+		vbox.MoveChild(button, _startButton.GetIndex());
+		_continueButton = button;
+
+		// "Start" now explicitly means beginning again.
+		_startButton.TooltipText = "Begin again (lets go of the preserved memory)";
 	}
 
 	private void OnFullStoryPressed()
@@ -151,7 +189,7 @@ public partial class MainMenu : Control
 		return null;
 	}
 
-	private async void OnStartPressed()
+	private void OnStartPressed()
 	{
 		if (string.IsNullOrWhiteSpace(StartScenePath))
 		{
@@ -159,27 +197,44 @@ public partial class MainMenu : Control
 			return;
 		}
 
-		Logger.Info("Starting game; changing scene to: ", StartScenePath);
+		// Beginning again over a preserved memory is a choice, not an accident.
+		if (GameState.Instance != null && GameState.Instance.HasSave && GameUI.Instance != null)
+		{
+			GameUI.Instance.ShowConfirm(
+				"Begin again? The memory you preserved will be let go.",
+				StartNewGame);
+			return;
+		}
 
-		// Fade out music before transitioning
-		await FadeMusicAlpha(0.0f, 0.5f);
+		StartNewGame();
+	}
 
+	private void StartNewGame()
+	{
+		Logger.Info("Starting new game; changing scene to: ", StartScenePath);
+		GameState.Instance?.NewGame();
+		AudioManager.Instance?.StopMusic(0.5f);
+		GetTree().ChangeSceneToFile(StartScenePath);
+	}
+
+	private void OnContinuePressed()
+	{
+		if (GameState.Instance == null || !GameState.Instance.PrepareContinue())
+		{
+			Logger.Warning("Continue requested but the save could not be loaded; starting new game.");
+			StartNewGame();
+			return;
+		}
+
+		Logger.Info("Continuing preserved memory; changing scene to: ", StartScenePath);
+		AudioManager.Instance?.StopMusic(0.5f);
 		GetTree().ChangeSceneToFile(StartScenePath);
 	}
 
 	private void OnQuitPressed()
 	{
 		Logger.Info("Quitting game from main menu.");
+		Settings.Instance?.Save();
 		GetTree().Quit();
-	}
-
-	private async Task FadeMusicAlpha(float targetAlpha, float duration)
-	{
-		if (_musicPlayer == null)
-			return;
-
-		var tween = CreateTween();
-		tween.TweenProperty(_musicPlayer, "volume_db", Mathf.LinearToDb(targetAlpha), duration);
-		await ToSignal(tween, Tween.SignalName.Finished);
 	}
 }

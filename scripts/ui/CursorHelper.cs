@@ -1,40 +1,48 @@
 using Godot;
 using System.Collections.Generic;
 
+/// <summary>
+/// Custom mouse cursors with ref-counted hover owners.
+/// Resized cursor textures are cached — the previous version decoded,
+/// duplicated and resized the source image on *every* hover-enter.
+/// </summary>
 public static class CursorHelper
 {
     private static readonly HashSet<long> ActiveHoverOwners = new();
+    private static readonly Dictionary<string, Texture2D> TextureCache = new();
     private static string activeTexturePath = string.Empty;
     private static int activeWidth;
     private static int activeHeight;
 
     public static void ApplyCursor(string texturePath, int width = 0, int height = 0)
     {
-        if (string.IsNullOrWhiteSpace(texturePath) || Globals.Instance.IS_CLARIFYING)
+        if (string.IsNullOrWhiteSpace(texturePath) || (Globals.Instance?.IS_CLARIFYING ?? false))
             return;
 
-        var texture = ResourceLoader.Load<Texture2D>(texturePath);
-        if (texture == null)
-            return;
-
-        Texture2D texToUse = texture;
-
-        if (width > 0 && height > 0)
+        string key = $"{texturePath}|{width}x{height}";
+        if (!TextureCache.TryGetValue(key, out var texToUse))
         {
-            var imgRes = texture.GetImage();
-            var img = imgRes as Image;
-            if (img != null)
+            var texture = ResourceLoader.Load<Texture2D>(texturePath);
+            if (texture == null)
+                return;
+
+            texToUse = texture;
+            if (width > 0 && height > 0)
             {
-                var dupRes = img.Duplicate();
-                var dup = dupRes as Image;
-                if (dup != null)
+                var img = texture.GetImage();
+                if (img != null)
                 {
-                    dup.Resize(width, height);
-                    var resized = ImageTexture.CreateFromImage(dup);
-                    if (resized is Texture2D t)
-                        texToUse = t;
+                    var dup = img.Duplicate() as Image;
+                    if (dup != null)
+                    {
+                        dup.Resize(width, height);
+                        if (ImageTexture.CreateFromImage(dup) is Texture2D resized)
+                            texToUse = resized;
+                    }
                 }
             }
+
+            TextureCache[key] = texToUse;
         }
 
         Input.SetCustomMouseCursor(texToUse);
@@ -73,6 +81,14 @@ public static class CursorHelper
 
     public static void ResetCursor()
     {
+        // While Clarity is armed the eye cursor must survive hover churn;
+        // ClaritySystem is responsible for clearing it on disarm/consume.
+        if (Globals.Instance?.IS_CLARIFYING ?? false)
+        {
+            ActiveHoverOwners.Clear();
+            return;
+        }
+
         Input.SetCustomMouseCursor(null);
 
         ActiveHoverOwners.Clear();

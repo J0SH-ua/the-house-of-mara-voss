@@ -25,7 +25,7 @@ public partial class DrawerExamine1 : ExamineHandler
 	}
 
 
-	protected override void OnExamineClicked()
+	protected override async void OnExamineClicked()
 	{
 		if (Globals.Instance != null && Globals.SHARDS_COLLECTED[0])
 			return;
@@ -39,7 +39,16 @@ public partial class DrawerExamine1 : ExamineHandler
 		{
 			Logger.Debug("[Drawer Unlocked] Changing to puzzle scene!");
 			Logger.Info("Current Corruption Count: " + Globals.Instance.CORRUPTION_COUNT);
+			AudioManager.Play(Sfx.DoorUnlock, -5f);
 			SceneManager.ChangeScene("res://scenes/world/room_1_puzzle.tscn");
+			return;
 		}
+
+		// Locked used to mean *total silence*. Tell the player why, and how close they are.
+		RoomExamineTracker.GetRoomProgress(roomName, out int done, out int total, out _);
+		AudioManager.Play(Sfx.LockRattle, -7f);
+		await Dialogue.ShowText(this,
+			$"It won't move. Not the lock — the room. Something here hasn't been faced yet. ({done}/{total})",
+			3.5f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 26);
 	}
 }

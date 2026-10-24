@@ -21,7 +21,10 @@ public partial class GameManager : Node
 
         Logger.Info("Initializing Game Manager...");
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        SceneManager.ChangeScene(FirstRoomScenePath);
+
+        // Continue resumes the saved room; a fresh run starts at FirstRoomScenePath.
+        string startScene = GameState.Instance?.ConsumeStartScene(FirstRoomScenePath) ?? FirstRoomScenePath;
+        SceneManager.ChangeScene(startScene);
     }
 
     public static SubViewport GetGameViewport()

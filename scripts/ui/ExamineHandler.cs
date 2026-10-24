@@ -4,6 +4,13 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
 
+/// <summary>
+/// Base class for every clickable examine layer.
+/// Left-click cycles Examine1 → Examine2 → … and plays the layer's dialogue;
+/// while Clarity is armed, left-click reveals instead; right-click releases
+/// Clarity for free. Examining past the first layer corrupts the memory —
+/// routed through GameState so tiers, audio and HUD react.
+/// </summary>
 public partial class ExamineHandler : TileMapLayer
 {
     [Export(PropertyHint.MultilineText)] public string ExamineText = "";
@@ -16,14 +23,25 @@ public partial class ExamineHandler : TileMapLayer
     [Export] public int CursorWidth = 30;
     [Export] public int CursorHeight = 30;
     [Export] public bool HoverEnabled = true;
+    [ExportCategory("Audio")]
+    [Export] public string ExamineSfxId = Sfx.Examine;
 
     private bool _isHovering = false;
     private string _currentHoverCursorTexturePath = string.Empty;
+    private Rect2I _usedRect;
+    private bool _hasUsedRect;
+    private int _cachedTrackerVersion = -1;
+    private bool _cachedRoomReady;
 
     public override void _Ready()
     {
         SetProcess(true);
         SetProcessInput(true);
+
+        // Cache the tile bounds once: the per-frame hover test then only pays
+        // for a rect check on the ~one layer actually under the mouse.
+        _usedRect = GetUsedRect();
+        _hasUsedRect = _usedRect.Size.X > 0 && _usedRect.Size.Y > 0;
     }
 
     public override void _ExitTree()
@@ -37,33 +55,52 @@ public partial class ExamineHandler : TileMapLayer
         }
     }
 
+    private bool MouseOnTile(out Vector2I cell)
+    {
+        Vector2 localMouse = ToLocal(GetGlobalMousePosition());
+        cell = LocalToMap(localMouse);
+        if (_hasUsedRect && !_usedRect.HasPoint(cell))
+            return false;
+        return GetCellSourceId(cell) != -1;
+    }
+
     public override void _Input(InputEvent @event)
     {
-        if (Dialogue.IsInputBlocked)
-            return;
-
-        if (!(@event is InputEventMouseButton mouseEvent) || !mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
-            return;
-
-        Vector2 globalMouse = GetGlobalMousePosition();
-        Vector2 localMouse = ToLocal(globalMouse);
-        Vector2I cell = LocalToMap(localMouse);
-
-        if (GetCellSourceId(cell) == -1)
-            return;
-
-        // If clarifying, delegate entirely to clarify logic and return.
-        if (Globals.Instance.IS_CLARIFYING)
+        // Right-click anywhere on an examine layer releases Clarity for free.
+        if (@event is InputEventMouseButton rightClick && rightClick.Pressed &&
+            rightClick.ButtonIndex == MouseButton.Right && ClaritySystem.IsArmed)
         {
-            ExamineHelper.TriggerClarify(this);
+            ClaritySystem.Disarm();
             GetTree().Root.SetInputAsHandled();
             return;
         }
+
+        if (Dialogue.IsInputBlocked)
+            return;
+
+        if (@event is not InputEventMouseButton mouseEvent || !mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
+            return;
+
+        if (!MouseOnTile(out _))
+            return;
+
+        // If clarifying, delegate entirely to clarify logic and return.
+        // ClaritySystem keeps the mode armed when there's nothing to reveal.
+        if (ClaritySystem.IsArmed)
+        {
+            ClaritySystem.TryReveal(this);
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
+        AudioManager.PlayVaried(string.IsNullOrWhiteSpace(ExamineSfxId) ? Sfx.Examine : ExamineSfxId, -7f, 1f, 0.05f);
+        Hotspots.SpawnRipple(GetGlobalMousePosition());
 
         ExamineHelper.CycleExamine(this);
         RoomExamineTracker.OnExamineClicked(this);
         OnExamineClicked();
         OnAnyExamineClicked();
+        CheckRoomCompletion();
 
         var dialogueSegments = GetDialogueSegments();
         var dialogueDurations = GetDialogueDurations();
@@ -159,10 +196,21 @@ public partial class ExamineHandler : TileMapLayer
 
     private void OnAnyExamineClicked()
     {
-        // Only increment corruption when clicking something other than Examine1
-        // (the first/default examine layer).
+        // Only looking *deeper* than the first layer destabilises the memory.
         if (ExamineHelper.ExtractExamineNumber(Name.ToString()) != 1)
-            Globals.Instance.CORRUPTION_COUNT++;
+        {
+            if (GameState.Instance != null)
+                GameState.Instance.AddCorruption(1);
+            else if (Globals.Instance != null)
+                Globals.Instance.CORRUPTION_COUNT++;
+        }
+    }
+
+    private void CheckRoomCompletion()
+    {
+        string roomName = RoomExamineTracker.ResolveRoomName(this);
+        if (RoomExamineTracker.HasRoomBeenFullyExamined(roomName))
+            GameState.Instance?.MarkRoomCompleted(roomName);
     }
 
     protected virtual void OnExamineClicked()
@@ -173,7 +221,7 @@ public partial class ExamineHandler : TileMapLayer
     {
         // While input is blocked (dialogue playing), forcibly end any hover so
         // the cursor doesn't stay stuck as a magnifying glass during dialogue.
-        if (Dialogue.IsInputBlocked)
+        if (Dialogue.IsInputBlocked || !HoverEnabled)
         {
             if (_isHovering)
             {
@@ -184,21 +232,7 @@ public partial class ExamineHandler : TileMapLayer
             return;
         }
 
-        if (!HoverEnabled)
-        {
-            if (_isHovering)
-            {
-                CursorHelper.EndHover(this);
-                _isHovering = false;
-                _currentHoverCursorTexturePath = string.Empty;
-            }
-            return;
-        }
-
-        Vector2 globalMouse = GetGlobalMousePosition();
-        Vector2 localMouse = ToLocal(globalMouse);
-        Vector2I cell = LocalToMap(localMouse);
-        bool hasTile = GetCellSourceId(cell) != -1;
+        bool hasTile = MouseOnTile(out _);
 
         if (hasTile)
         {
@@ -209,9 +243,14 @@ public partial class ExamineHandler : TileMapLayer
             bool isFinal = parent != null && parent.Name.ToString().EndsWith("Final");
             if (isFinal)
             {
-                string roomName = GetRoomNameFromNode(this);
-                bool roomReady = RoomExamineTracker.HasRoomBeenFullyExamined(roomName);
-                desiredCursor = roomReady ? UnlockedCursorTexturePath : LockedCursorTexturePath;
+                // Recompute the expensive room check only when progress changed.
+                if (_cachedTrackerVersion != RoomExamineTracker.Version)
+                {
+                    _cachedTrackerVersion = RoomExamineTracker.Version;
+                    _cachedRoomReady = RoomExamineTracker.HasRoomBeenFullyExamined(
+                        RoomExamineTracker.ResolveRoomName(this));
+                }
+                desiredCursor = _cachedRoomReady ? UnlockedCursorTexturePath : LockedCursorTexturePath;
             }
 
             // Only call BeginHover when we first enter or when the cursor type changes.
@@ -231,31 +270,5 @@ public partial class ExamineHandler : TileMapLayer
                 _currentHoverCursorTexturePath = string.Empty;
             }
         }
-    }
-
-    private static string GetRoomNameFromNode(Node node)
-    {
-        var current = node;
-        bool passedObjects = false;
-
-        while (current != null)
-        {
-            current = current.GetParent();
-            if (current == null)
-                break;
-
-            string currentName = current.Name.ToString();
-
-            if (currentName == "Objects")
-            {
-                passedObjects = true;
-                continue;
-            }
-
-            if (passedObjects && (current is Node2D || current is CanvasLayer || current is TileMapLayer))
-                return currentName;
-        }
-
-        return "Room1";
     }
 }

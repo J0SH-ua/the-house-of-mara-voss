@@ -35,7 +35,7 @@ public partial class TileMapSceneTrigger : TileMapLayer
 
     public void TriggerSceneChange()
     {
-        if (!TriggerEnabled)
+        if (!TriggerEnabled || SceneManager.IsChanging)
             return;
 
         if (string.IsNullOrWhiteSpace(TargetScenePath))
@@ -44,6 +44,7 @@ public partial class TileMapSceneTrigger : TileMapLayer
             return;
         }
 
+        AudioManager.Play(Sfx.PageTurn, -9f);
         SceneManager.ChangeScene(TargetScenePath);
     }
 

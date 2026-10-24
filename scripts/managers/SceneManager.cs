@@ -8,6 +8,13 @@ public partial class SceneManager : Node
 	public static bool IsChanging { get; private set; }
 	private static string _pendingScenePath;
 
+	/// <summary>Fired after a scene has been swapped in (before fade-in completes).
+	/// GameState uses it for music, objectives and autosave.</summary>
+	public static event System.Action<string> SceneChanged;
+
+	/// <summary>Path of the currently loaded sub-scene ("" before the first load).</summary>
+	public static string CurrentScenePath { get; private set; } = string.Empty;
+
 	[ExportCategory("Scene Manager Variables")]
 	[Export] public NodePath SceneRootPath = "../Control/SubViewportContainer/SubViewport";
 	[Export] public NodePath FadeRectPath = "../Control/FadeRect";
@@ -117,6 +124,8 @@ public partial class SceneManager : Node
 
 		CurrentScene = packedScene.Instantiate<Node>();
 		_sceneRoot.AddChild(CurrentScene);
+		CurrentScenePath = scenePath;
+		SceneChanged?.Invoke(scenePath);
 	}
 
 	private async Task FadeOut()

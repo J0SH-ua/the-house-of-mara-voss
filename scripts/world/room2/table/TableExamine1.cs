@@ -25,7 +25,7 @@ public partial class TableExamine1 : ExamineHandler
     }
 
 
-    protected override void OnExamineClicked()
+    protected override async void OnExamineClicked()
     {
         if (Globals.Instance != null && Globals.SHARDS_COLLECTED[1])
             return;
@@ -39,7 +39,15 @@ public partial class TableExamine1 : ExamineHandler
         {
             Logger.Debug("[Table Unlocked] Changing to puzzle scene!");
             Logger.Info("Current Corruption Count: " + Globals.Instance.CORRUPTION_COUNT);
+            AudioManager.Play(Sfx.DoorUnlock, -5f);
             SceneManager.ChangeScene("res://scenes/world/room_2_puzzle.tscn");
+            return;
         }
+
+        RoomExamineTracker.GetRoomProgress(roomName, out int done, out int total, out _);
+        AudioManager.Play(Sfx.LockRattle, -7f);
+        await Dialogue.ShowText(this,
+            $"The table keeps its secret. The room hasn't finished being looked at. ({done}/{total})",
+            3.5f, GetGlobalPosition().X, GetGlobalPosition().Y, fontSize: 26);
     }
 }

@@ -1,15 +1,20 @@
 using Godot;
 using System;
 
+/// <summary>
+/// Room 1's five-dial padlock. Solved exactly once (the drawer-open sequence
+/// used to re-fire on every later dial change), with dial/lock/drawer audio.
+/// The brass key inside is collected by BrassKey1.cs — this class previously
+/// handled that click too, so the reward dialogue fired twice.
+/// </summary>
 public partial class Room1Puzzle : Area2D
 {
 	private const string PuzzleCursorPath = "res://assets/images/core/cursor_magnifying_glass.png";
 	private const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
 
-	private string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
-
 	private int[] expectedCombination = { 7, 1, 4, 8, 3 };
 	private string _currentHoverCursorPath = string.Empty;
+	private bool _isSolved;
 
 	public override void _Ready()
 	{
@@ -23,8 +28,33 @@ public partial class Room1Puzzle : Area2D
 				spinbox.MinValue = 0;
 				spinbox.MaxValue = 9;
 				spinbox.Step = 1;
-				spinbox.ValueChanged += (_) => CheckPadlockSolution();
+				spinbox.ValueChanged += (double value) =>
+				{
+					if (_isSolved)
+						return;
+					AudioManager.Play(Sfx.DialTick, -8f, 0.88f + (float)value * 0.035f);
+					CheckPadlockSolution();
+				};
 			}
+		}
+	}
+
+	public override void _UnhandledKeyInput(InputEvent @event)
+	{
+		// Esc steps away from the padlock (handled before GameUI's pause,
+		// which listens on _UnhandledInput — a later stage).
+		if (_isSolved)
+			return;
+
+		var padlock = GetNodeOrNull<Node2D>("Padlock");
+		if (padlock == null || !padlock.Visible)
+			return;
+
+		if (@event.IsActionPressed(InputSetup.PauseGame))
+		{
+			padlock.Visible = false;
+			AudioManager.Play(Sfx.UiBack, -8f);
+			GetViewport().SetInputAsHandled();
 		}
 	}
 
@@ -59,37 +89,16 @@ public partial class Room1Puzzle : Area2D
 		}
 	}
 
-	public override async void _UnhandledInput(InputEvent @event)
+	public override void _UnhandledInput(InputEvent @event)
 	{
+		if (Dialogue.IsInputBlocked)
+			return;
+
 		if (@event is not InputEventMouseButton mouseEvent)
 			return;
 
 		if (!mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
 			return;
-
-
-		var brassKey = GetNodeOrNull<Area2D>("BrassKey1");
-		if (brassKey != null && brassKey.Visible)
-		{
-			var cs = brassKey.GetNodeOrNull<CollisionShape2D>("CollisionShape2D");
-			if (cs?.Shape is RectangleShape2D rect)
-			{
-				var localMouse = cs.GetGlobalTransform().AffineInverse() * mouseEvent.Position;
-				var half = rect.Size / 2f;
-				if (localMouse.X >= -half.X && localMouse.X <= half.X && localMouse.Y >= -half.Y && localMouse.Y <= half.Y)
-				{
-					Globals.SHARDS_COLLECTED[0] = true;
-
-					await Dialogue.ShowText(this, "\"Every morning started here. Every morning she was already waiting, already loud, already herself.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
-					await Dialogue.ShowText(this, "\"You could set your clock by her. You always knew, in that kitchen, that someone else was in the world with you.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 20);
-					await Dialogue.ShowText(this, "\"That's not something you notice until it's gone.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
-
-					SceneManager.ChangeScene("res://scenes/world/room_2.tscn");
-					GetViewport().SetInputAsHandled();
-					return;
-				}
-			}
-		}
 
 		if (IsClickInsidePuzzle(mouseEvent.Position))
 		{
@@ -115,8 +124,10 @@ public partial class Room1Puzzle : Area2D
 
 	private void OnPuzzleClicked()
 	{
-		GetNode<Node2D>("Padlock").Visible = true;
-
+		var padlock = GetNode<Node2D>("Padlock");
+		if (!padlock.Visible)
+			AudioManager.Play(Sfx.Examine, -7f);
+		padlock.Visible = true;
 	}
 
 	private string GetHoverCursorPath()
@@ -167,6 +178,8 @@ public partial class Room1Puzzle : Area2D
 
 	private void CheckPadlockSolution()
 	{
+		if (_isSolved)
+			return;
 
 		int[] currentValues = new int[5];
 		bool allFound = true;
@@ -199,7 +212,11 @@ public partial class Room1Puzzle : Area2D
 		}
 
 		if (isCorrect)
+		{
+			_isSolved = true;
+			AudioManager.Play(Sfx.LockOpen, -4f);
 			PlayDrawerAnimation();
+		}
 
 	}
 
@@ -213,6 +230,7 @@ public partial class Room1Puzzle : Area2D
 
 		await ToSignal(GetTree().CreateTimer(0.1f), "timeout");
 
+		AudioManager.Play(Sfx.DrawerOpen, -5f);
 		drawer.Play("DrawerOpen");
 
 
@@ -231,5 +249,8 @@ public partial class Room1Puzzle : Area2D
 		var brassKey1 = GetNode<Area2D>("BrassKey1");
 		if (brassKey1 != null)
 			brassKey1.Visible = true;
+
+		AudioManager.Play(Sfx.PuzzleSolve, -6f);
+		GameState.Instance?.Toast("Something small and brass, kept all this time.");
 	}
 }

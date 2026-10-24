@@ -150,6 +150,7 @@ public partial class Room4 : Node2D
 
 	private async void OnMirrorCollisionPressed()
 	{
+		AudioManager.Play(Sfx.ClarifyReveal, -12f, 0.8f);
 		var globalPosition = _mirrorCollisionArea.GlobalPosition;
 		await Dialogue.ShowText(this, "The hallway stretches back in the mirror. All those photographs, reversed. Ida at fourteen, mirrored, looking in the other direction.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
 		await Dialogue.ShowText(this, "The mirror is showing something different. A different version of this hallway. One where more has been taken down.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
@@ -159,6 +160,7 @@ public partial class Room4 : Node2D
 
 	private async void OnDrawerCollisionPressed()
 	{
+		AudioManager.Play(Sfx.DrawerOpen, -7f);
 		var globalPosition = _drawerCollisionArea.GlobalPosition;
 		await Dialogue.ShowText(this, "A hall table drawer. Old wood, slightly sticky.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
 		await Dialogue.ShowText(this, "These were here. In the truth of the house, these tools were always here. Someone who lived here was a locksmith, or careful, or both.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
@@ -294,6 +296,9 @@ public partial class Room4 : Node2D
 		await Dialogue.ShowText(this, "\"She made Mara count. Mara counted. Eleven seconds. She still knows the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		await Dialogue.ShowText(this, "Part 1 of \"The House of Mara Voss\" End.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 32);
 
+		GameState.Instance?.MarkRoomCompleted("Room4");
+		GameState.Instance?.SaveGame("part 1 complete");
+		AudioManager.Play(Sfx.DoorCreak, -7f);
 		SceneManager.ChangeScene(DoorTargetScenePath);
 		GetTree().Root.SetInputAsHandled();
 	}
@@ -340,8 +345,16 @@ public partial class Room4 : Node2D
 			.SetTrans(Tween.TransitionType.Sine)
 			.SetEase(Tween.EaseType.Out);
 
-		if (HoverWords[index] == HoverWords[_currentSequenceIndex])
+		// Compare by index, not word text, so repeated words can't satisfy
+		// the sequence out of order.
+		if (index == _currentSequenceIndex)
 		{
+			// Each correct word chimes one step higher — the sentence becomes a scale.
+			float[] steps = [1f, 1.122f, 1.26f, 1.335f, 1.498f, 1.682f, 1.888f, 2f, 2.245f, 2.52f];
+			float pitch = _currentSequenceIndex < steps.Length ? steps[_currentSequenceIndex] : 1f;
+			AudioManager.Play(Sfx.WordChime, -7f, pitch);
+			GameState.Instance?.Toast($"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
+
 			if (_sentenceLabel != null)
 			{
 				if (_currentSequenceIndex == 0)
@@ -418,6 +431,8 @@ public partial class Room4 : Node2D
 		if (_doorAnimation == null)
 			return;
 
+		AudioManager.Play(Sfx.DoorCreak, -6f);
+		AudioManager.Play(Sfx.PuzzleSolve, -9f);
 		_doorAnimation.Visible = true;
 		_doorAnimationStarted = true;
 
@@ -439,6 +454,8 @@ public partial class Room4 : Node2D
 
 			_doorAnimation.Frame = Mathf.Max(0, frameCount - 1);
 			_doorUnlocked = true;
+			AudioManager.Play(Sfx.DoorUnlock, -6f);
+			GameState.Instance?.Toast("Somewhere down the hall, a door decides to be a door again.");
 		})).SetDelay(5.0 / animSpeed);
 	}
 }

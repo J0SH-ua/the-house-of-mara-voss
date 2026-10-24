@@ -1,4 +1,11 @@
 using Godot;
+
+/// <summary>
+/// The in-room Clarity eye. Clicking it arms Clarity; clicking again (or
+/// right-clicking anywhere, or pressing the toggle_clarity key) releases it
+/// for free. All rules live in ClaritySystem — this class only translates
+/// clicks on its tiles.
+/// </summary>
 public partial class ClarityToggle : TileMapHoverCursor
 {
 	public override void _Input(InputEvent @event)
@@ -15,14 +22,8 @@ public partial class ClarityToggle : TileMapHoverCursor
 		if (!HasPointedTile(mouseButton.Position))
 			return;
 
-		if (Globals.Instance.CLARITY_TOGGLE_COUNT <= 1)
-		{
-			Logger.Info("No clarity toggles left!");
-			return;
-		}
-
-		CursorHelper.ApplyCursor("res://assets/images/core/cursor_eye.png", 35, 35);
-		Globals.Instance.IS_CLARIFYING = true;
+		ClaritySystem.Toggle();
+		GetTree().Root.SetInputAsHandled();
 	}
 
 	public override void _Process(double delta)
@@ -30,7 +31,7 @@ public partial class ClarityToggle : TileMapHoverCursor
 		if (Dialogue.IsInputBlocked)
 			return;
 
-		if (Globals.Instance.IS_CLARIFYING)
+		if (ClaritySystem.IsArmed)
 			return;
 
 		base._Process(delta);
