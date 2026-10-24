@@ -525,8 +525,14 @@ public partial class Room5Final : MemoryRoomBase
 
         if (hotspot.Id is "RotaryPhone" or "AlarmClock")
         {
-            DrawTextureRectRegion(texture, rect, src,
-                new Color(1f, 1f, 1f, 0.16f + 0.12f * t), false, true, false);
+            // Mirror-flipped ghost. This Godot version's C# binding for
+            // DrawTextureRectRegion takes no flip flags, so mirror the draw
+            // transform around the rect's centre instead, then restore it.
+            Vector2 centre = rect.GetCenter();
+            DrawSetTransform(centre, 0f, new Vector2(-1f, 1f));
+            DrawTextureRectRegion(texture, new Rect2(-rect.Size / 2f, rect.Size), src,
+                new Color(1f, 1f, 1f, 0.16f + 0.12f * t));
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
         }
 
         DrawRect(rect, new Color(0.75f, 0.85f, 1f, 0.1f + 0.1f * t), false, 1.5f);
