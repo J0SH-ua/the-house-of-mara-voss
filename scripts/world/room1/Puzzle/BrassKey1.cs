@@ -31,15 +31,30 @@ public partial class BrassKey1 : Area2D
 			return;
 
 		_collecting = true;
-		GameState.Instance?.CollectShard(0, FragmentText);
-		if (GameState.Instance == null)
+		bool firstTime;
+		if (GameState.Instance != null)
+		{
+			firstTime = GameState.Instance.CollectShard(0, FragmentText);
+		}
+		else
+		{
+			firstTime = !Globals.SHARDS_COLLECTED[0];
 			Globals.SHARDS_COLLECTED[0] = true;
+		}
 
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-		await Dialogue.ShowText(this, "Every morning started here. Every morning she was already waiting, already loud, already herself.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
-		await Dialogue.ShowText(this, "You could set your clock by her. You always knew, in that kitchen, that someone else was in the world with you.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		await Dialogue.ShowText(this, "That's not something you notice until it's gone.", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
+		if (firstTime)
+		{
+			await Dialogue.ShowText(this, "Every morning started here. Every morning she was already waiting, already loud, already herself.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
+			await Dialogue.ShowText(this, "You could set your clock by her. You always knew, in that kitchen, that someone else was in the world with you.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+			await Dialogue.ShowText(this, "That's not something you notice until it's gone.", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
+		}
+		else
+		{
+			// Passing through again on a later visit — keep it brief.
+			await Dialogue.ShowText(this, "\"That's not something you notice until it's gone.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
+		}
 
 		SceneManager.ChangeScene("res://scenes/world/room_2.tscn");
 	}

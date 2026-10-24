@@ -40,6 +40,15 @@ public partial class GameUI : CanvasLayer
     private string _backTargetPath = string.Empty;
     private string _navSceneCachePath = string.Empty;
 
+    // Post-Play memory cutscene
+    private Control _cutsceneRoot;
+    private TextureRect _cutsceneImage;
+    private Label _cutsceneCaption;
+    private Tween _cutsceneTween;
+    private bool _cutscenePlaying;
+    private bool _cutsceneAdvanceRequested;
+    private bool _cutsceneSkipRequested;
+
     // Overlay
     private ColorRect _corruptionRect;
     private ShaderMaterial _corruptionMaterial;
@@ -83,6 +92,7 @@ public partial class GameUI : CanvasLayer
         BuildJournalPanel();
         BuildMenuButton();
         BuildTutorialPanel();
+        BuildCutscene();
 
         _confirmDialog = new ConfirmationDialog
         {
@@ -109,7 +119,7 @@ public partial class GameUI : CanvasLayer
             Hotspots.HideAll();
             ClaritySystem.RefreshToggleTiles();
             RefreshHud();
-            MaybeAutoShowTutorial(scenePath);
+            MaybePlayCutsceneThenTutorial(scenePath);
         };
         if (Settings.Instance != null)
             Settings.Instance.Changed += RefreshCorruptionShader;
@@ -201,6 +211,21 @@ public partial class GameUI : CanvasLayer
         if (_context != UiContext.Game)
             return;
 
+        if (_cutscenePlaying)
+        {
+            if (@event.IsActionPressed(InputSetup.AdvanceDialogue))
+            {
+                _cutsceneAdvanceRequested = true;
+                GetViewport().SetInputAsHandled();
+            }
+            else if (@event.IsActionPressed(InputSetup.PauseGame) || @event.IsActionPressed(InputSetup.SkipDialogue))
+            {
+                _cutsceneSkipRequested = true;
+                GetViewport().SetInputAsHandled();
+            }
+            return;
+        }
+
         if (@event.IsActionPressed(InputSetup.PauseGame))
         {
             HandleEscape();
@@ -291,7 +316,8 @@ public partial class GameUI : CanvasLayer
     private bool AnyPanelOpen()
     {
         return (_pausePanel?.Visible ?? false) || (_settingsPanel?.Visible ?? false)
-               || (_journalPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false);
+               || (_journalPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
+               || (_cutsceneRoot?.Visible ?? false);
     }
 
     private void RequestHint()
@@ -430,6 +456,8 @@ public partial class GameUI : CanvasLayer
                 ResumeGame();
             _pausePanel.Visible = false;
             _journalPanel.Visible = false;
+            if (_cutscenePlaying)
+                _cutsceneSkipRequested = true;
             if (next == UiContext.Intro)
                 _tutorialPanel.Visible = false;
             if (next != UiContext.Menu)
@@ -1276,6 +1304,199 @@ public partial class GameUI : CanvasLayer
 
     /// <summary>First ever entry into Room 1: teach, once. Replayable any time
     /// from the pause menu / main menu ("How to Play").</summary>
+    // ======================================================= memory cutscene
+
+    /// <summary>One still + caption. ImagePath "" = black screen, text only.
+    /// The morning Mara wakes into, told with the game's own room art; the
+    /// last card states the mission plainly so the objective is never in doubt.</summary>
+    private static readonly (string ImagePath, string Caption, float HoldSeconds)[] CutsceneShots =
+    [
+        ("",
+         "Four months ago, Mara Voss stopped opening her front door.", 4.5f),
+        ("res://assets/images/bgs/Room_1_BG.png",
+         "She doesn't know that. She wakes believing she is home — in Eldfen, in the kitchen light she grew up in.", 6.5f),
+        ("res://assets/images/bgs/Room2_no_objects.png",
+         "So her mind rebuilt the house around her. Warm. Kept. Almost right — except that it is empty.", 6f),
+        ("res://assets/images/bgs/Room_3_BG.png",
+         "A memory cannot keep everything. Some of it was sealed away, labelled, and left where she would not have to look.", 6f),
+        ("res://assets/images/bgs/BgRoom4.png",
+         "Seven rooms. In each one, a version of something that happened. Not all of them true.", 5.5f),
+        ("res://assets/images/bgs/DoorCloseup.png",
+         "You are the part of her that still knows. Walk the rooms. Face what each one is holding. Recover the six fragments of the truth — and let Mara wake up.", 7.5f),
+    ];
+
+    private void BuildCutscene()
+    {
+        _cutsceneRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop };
+        _cutsceneRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        AddChild(_cutsceneRoot);
+
+        var black = new ColorRect { Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Ignore };
+        black.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _cutsceneRoot.AddChild(black);
+
+        _cutsceneImage = new TextureRect
+        {
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _cutsceneImage.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _cutsceneRoot.AddChild(_cutsceneImage);
+
+        var band = new ColorRect
+        {
+            Color = new Color(0, 0, 0, 0.5f),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            AnchorLeft = 0,
+            AnchorRight = 1,
+            AnchorTop = 1,
+            AnchorBottom = 1,
+            OffsetLeft = 0,
+            OffsetRight = 0,
+            OffsetTop = -196,
+            OffsetBottom = 0,
+        };
+        _cutsceneRoot.AddChild(band);
+
+        _cutsceneCaption = MakeLabel("", 30, new Color(0.96f, 0.92f, 0.84f));
+        _cutsceneCaption.AutowrapMode = TextServer.AutowrapMode.Word;
+        _cutsceneCaption.HorizontalAlignment = HorizontalAlignment.Center;
+        _cutsceneCaption.VerticalAlignment = VerticalAlignment.Center;
+        _cutsceneCaption.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _cutsceneCaption.AnchorTop = 1;
+        _cutsceneCaption.AnchorBottom = 1;
+        _cutsceneCaption.OffsetLeft = 90;
+        _cutsceneCaption.OffsetRight = -90;
+        _cutsceneCaption.OffsetTop = -182;
+        _cutsceneCaption.OffsetBottom = -44;
+        _cutsceneRoot.AddChild(_cutsceneCaption);
+
+        var hint = MakeLabel("Click — continue      Esc — skip", 16, new Color(0.9f, 0.86f, 0.78f, 0.55f));
+        hint.HorizontalAlignment = HorizontalAlignment.Right;
+        hint.MouseFilter = Control.MouseFilterEnum.Ignore;
+        hint.AnchorLeft = 1;
+        hint.AnchorRight = 1;
+        hint.AnchorTop = 1;
+        hint.AnchorBottom = 1;
+        hint.OffsetLeft = -430;
+        hint.OffsetRight = -26;
+        hint.OffsetTop = -38;
+        hint.OffsetBottom = -12;
+        _cutsceneRoot.AddChild(hint);
+
+        var skip = MakeButton("Skip", 20);
+        skip.AnchorLeft = 1;
+        skip.AnchorRight = 1;
+        skip.OffsetLeft = -168;
+        skip.OffsetRight = -24;
+        skip.OffsetTop = 16;
+        skip.OffsetBottom = 58;
+        skip.FocusMode = Control.FocusModeEnum.None;
+        skip.Pressed += () => _cutsceneSkipRequested = true;
+        _cutsceneRoot.AddChild(skip);
+
+        _cutsceneRoot.GuiInput += @event =>
+        {
+            if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                _cutsceneAdvanceRequested = true;
+        };
+    }
+
+    /// <summary>New Game → the memory cutscene plays over Room 1's first open;
+    /// the how-to-play cards follow it. Continue / later visits skip both.</summary>
+    private void MaybePlayCutsceneThenTutorial(string scenePath)
+    {
+        var gs = GameState.Instance;
+        if (gs != null && gs.CutscenePending && scenePath != null && scenePath.EndsWith("/room_1.tscn"))
+        {
+            gs.ConsumeCutscenePending();
+            PlayCutsceneAsync();
+            return;
+        }
+
+        MaybeAutoShowTutorial(scenePath);
+    }
+
+    private async void PlayCutsceneAsync()
+    {
+        if (_cutscenePlaying || _cutsceneRoot == null)
+            return;
+
+        _cutscenePlaying = true;
+        _cutsceneSkipRequested = false;
+        _cutsceneRoot.Visible = true;
+        GetTree().Paused = true;
+
+        try
+        {
+            // One frame so the full-rect controls have real sizes (zoom pivot).
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+            foreach (var shot in CutsceneShots)
+            {
+                if (_cutsceneSkipRequested)
+                    break;
+
+                _cutsceneAdvanceRequested = false;
+                _cutsceneImage.Texture = string.IsNullOrEmpty(shot.ImagePath)
+                    ? null
+                    : GD.Load<Texture2D>(shot.ImagePath);
+                _cutsceneCaption.Text = shot.Caption;
+
+                _cutsceneTween?.Kill();
+                _cutsceneImage.PivotOffset = _cutsceneImage.Size / 2f;
+                _cutsceneImage.Scale = Vector2.One;
+                _cutsceneImage.Modulate = new Color(1, 1, 1, 0);
+                _cutsceneCaption.Modulate = new Color(1, 1, 1, 0);
+
+                _cutsceneTween = CreateTween();
+                _cutsceneTween.SetPauseMode(Tween.TweenPauseMode.Process);
+                _cutsceneTween.TweenProperty(_cutsceneImage, "modulate:a", 1f, 0.9);
+                _cutsceneTween.Parallel().TweenProperty(_cutsceneCaption, "modulate:a", 1f, 0.9);
+                _cutsceneTween.Parallel().TweenProperty(_cutsceneImage, "scale", Vector2.One * 1.07f, shot.HoldSeconds + 1.5f);
+                AudioManager.Play(Sfx.PageTurn, -16f, 0.65f);
+
+                ulong deadline = Time.GetTicksMsec() + (ulong)(shot.HoldSeconds * 1000f);
+                while (Time.GetTicksMsec() < deadline && !_cutsceneAdvanceRequested && !_cutsceneSkipRequested)
+                    await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+                if (_cutsceneSkipRequested)
+                    break;
+
+                _cutsceneTween?.Kill();
+                _cutsceneTween = CreateTween();
+                _cutsceneTween.SetPauseMode(Tween.TweenPauseMode.Process);
+                _cutsceneTween.TweenProperty(_cutsceneImage, "modulate:a", 0f, 0.55);
+                _cutsceneTween.Parallel().TweenProperty(_cutsceneCaption, "modulate:a", 0f, 0.55);
+                await ToSignal(_cutsceneTween, Tween.SignalName.Finished);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning($"Cutscene interrupted: {ex.Message}");
+        }
+        finally
+        {
+            EndCutscene();
+        }
+    }
+
+    private void EndCutscene()
+    {
+        _cutsceneTween?.Kill();
+        _cutsceneTween = null;
+        _cutscenePlaying = false;
+        if (_cutsceneRoot != null)
+            _cutsceneRoot.Visible = false;
+
+        if (GetTree().Paused)
+            GetTree().Paused = false;
+
+        // First visit ever: how-to-play follows the memory.
+        MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
+    }
+
     private void MaybeAutoShowTutorial(string scenePath)
     {
         if (_tutorialAutoShown || Settings.Instance == null || Settings.Instance.TutorialSeen)

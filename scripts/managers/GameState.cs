@@ -179,13 +179,13 @@ public partial class GameState : Node
         switch (file)
         {
             case "room_1_puzzle.tscn":
-                return "A five-number memory. The kitchen already told you.";
+                return "Open the five-dial padlock. The combination is hidden in the kitchen — Step Back (Q) to go and look.";
             case "room_2_puzzle.tscn":
-                return "Four letters. What this place was supposed to be.";
+                return "Spell the four-letter word to open the lock. The sitting room has been saying it all along — Step Back (Q) to check.";
             case "room_4.tscn":
-                return "Walk the hallway. Let her sentence finish.";
+                return "Cross the hallway. Face what it shows you, then take the door.";
             case "room_7.tscn":
-                return $"Return the fragments ({CountPlaced()}/{MaxShards})";
+                return $"Place the fragments in their slots ({CountPlaced()}/{MaxShards})";
         }
 
         if (room != null && RoomExamineTracker.RoomHasRequirements(room))
@@ -195,19 +195,21 @@ public partial class GameState : Node
             {
                 string lead = room switch
                 {
-                    "Room1" => "Examine what the morning left behind",
-                    "Room2" => "Let the sitting room finish its sentence",
-                    "Room3" => "Look at what was kept",
-                    _ => "Keep looking",
+                    "Room1" => "Examine everything in the kitchen",
+                    "Room2" => "Examine everything in the sitting room",
+                    "Room3" => "Examine everything kept in this room",
+                    _ => "Examine everything here",
                 };
                 return $"{lead} ({done}/{total})";
             }
 
             return room switch
             {
-                "Room1" when !ShardCollected(0) => "The drawer will open now.",
-                "Room2" when !ShardCollected(1) => "The table will open now.",
-                "Room3" => "The jars. Then the hallway.",
+                "Room1" when !ShardCollected(0) => "Everything faced — the drawer will open now. Click it.",
+                "Room2" when !ShardCollected(1) => "Everything faced — the table drawer will open now. Click the table.",
+                "Room3" => "Everything faced — open the jars, then take the hallway.",
+                "Room1" => "Fragment recovered. Onward: take the arrow to the sitting room.",
+                "Room2" => "Fragment recovered. Onward: through the table drawer.",
                 _ => string.Empty,
             };
         }
@@ -487,6 +489,18 @@ public partial class GameState : Node
 
     public bool HasSave => FileAccess.FileExists(SavePath);
 
+    /// <summary>Set by NewGame only; GameUI plays the post-Play memory cutscene
+    /// when Room 1 first opens, then consumes it. Never set by Continue/loads,
+    /// and deliberately not part of the save file.</summary>
+    public bool CutscenePending { get; private set; }
+
+    public bool ConsumeCutscenePending()
+    {
+        bool pending = CutscenePending;
+        CutscenePending = false;
+        return pending;
+    }
+
     public void NewGame()
     {
         Globals.Instance?.ResetRunState();
@@ -513,6 +527,7 @@ public partial class GameState : Node
         ClarityChanged?.Invoke(ClarityCount);
         ShardsChanged?.Invoke();
         DeleteSave();
+        CutscenePending = true;
         Logger.Info("GameState: new game.");
     }
 

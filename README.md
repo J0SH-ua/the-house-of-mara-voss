@@ -19,6 +19,7 @@ while watching the memory **corrupt** the deeper you insist on looking.
 | H | Hint (progressive: nudge → names the object → rings it) |
 | J / M | Memory Journal (fragments + recent dialogue, stats) |
 | Q / Backspace | Step back — leave a puzzle for its room, or return to the previous room (also the on-screen Step Back button, bottom-left) |
+| Click / Esc (cutscene) | Advance / skip the post-Play memory cutscene (New Game only; Continue skips it) |
 | Esc / P | Pause menu (Esc first releases Clarity if armed) |
 
 ## Systems (what lives where)

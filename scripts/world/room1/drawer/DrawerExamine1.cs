@@ -27,8 +27,9 @@ public partial class DrawerExamine1 : ExamineHandler
 
 	protected override async void OnExamineClicked()
 	{
-		if (Globals.Instance != null && Globals.SHARDS_COLLECTED[0])
-			return;
+		// Re-entering after the shard is taken stays allowed: with step-back
+		// navigation the drawer remains a way through, and collecting the
+		// brass key again is idempotent (short line, onward to Room 2).
 
 		string roomName = "Room1";
 		var parent = GetParent();

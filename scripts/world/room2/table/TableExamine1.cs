@@ -27,8 +27,9 @@ public partial class TableExamine1 : ExamineHandler
 
     protected override async void OnExamineClicked()
     {
-        if (Globals.Instance != null && Globals.SHARDS_COLLECTED[1])
-            return;
+        // Re-entering after the shard is taken stays allowed: Room 2's
+        // arrows are decorative, so with step-back navigation this table
+        // (via the photograph) is the only way onward to Room 3.
 
         string roomName = "Room2";
         var parent = GetParent();

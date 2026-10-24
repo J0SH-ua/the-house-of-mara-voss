@@ -113,15 +113,30 @@ public partial class Photo1Reward : Area2D
 
 		AudioManager.Play(Sfx.PhotoPickup, -5f);
 		AudioManager.Play(Sfx.CameraShutter, -10f);
-		GameState.Instance?.CollectShard(1, FragmentText);
-		if (GameState.Instance == null)
+		bool firstTime;
+		if (GameState.Instance != null)
+		{
+			firstTime = GameState.Instance.CollectShard(1, FragmentText);
+		}
+		else
+		{
+			firstTime = !Globals.SHARDS_COLLECTED[1];
 			Globals.SHARDS_COLLECTED[1] = true;
+		}
 
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-		await Dialogue.ShowText(this, "\"She used to fall asleep in that chair and think it was the best thing in the world — to fall asleep to the sound of someone else in the room.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 18);
-		await Dialogue.ShowText(this, "\"Not silence. Not the sound of herself.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
-		await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
+		if (firstTime)
+		{
+			await Dialogue.ShowText(this, "\"She used to fall asleep in that chair and think it was the best thing in the world — to fall asleep to the sound of someone else in the room.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 18);
+			await Dialogue.ShowText(this, "\"Not silence. Not the sound of herself.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
+			await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
+		}
+		else
+		{
+			// Passing through again on a later visit — keep it brief.
+			await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
+		}
 
 
 		SceneManager.ChangeScene(NextScenePath);

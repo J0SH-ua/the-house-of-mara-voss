@@ -71,6 +71,15 @@ public partial class Room2Puzzle : Area2D
 			}
 		}
 		focusBox?.GrabFocus();
+
+		// Stepped away after solving but before taking the photograph (or
+		// passing through again later)? Re-open the drawer so the reward —
+		// and the way onward — is waiting instead of reset.
+		if (new string(_savedLetters) == TargetWord)
+		{
+			_isSolved = true;
+			SolveAsync();
+		}
 	}
 
 	private void OnLetterBoxGuiInput(int index, InputEvent @event)
