@@ -200,13 +200,13 @@ public partial class Room7Final : Node2D
             if (placed)
             {
                 Vector2 c = rect.GetCenter() + new Vector2(0, -8);
-                var diamond = new PackedVector2Array(new[]
-                {
+                Vector2[] diamond =
+                [
                     c + new Vector2(0, -27),
                     c + new Vector2(20, 0),
                     c + new Vector2(0, 27),
                     c + new Vector2(-20, 0),
-                });
+                ];
                 DrawColoredPolygon(diamond,
                     correct ? new Color(1f, 0.82f, 0.42f, 0.88f)
                             : new Color(0.58f, 0.72f, 0.9f, 0.82f));
