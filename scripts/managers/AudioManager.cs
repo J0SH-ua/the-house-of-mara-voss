@@ -427,16 +427,16 @@ public partial class AudioManager : Node
             case AudioStreamMP3 mp3:
                 mp3.Loop = true;
                 break;
-            case AudioStreamWAV wav when wav.LoopMode == AudioStreamWAV.LoopModeEnum.Disabled:
+            case AudioStreamWav wav when wav.LoopMode == AudioStreamWav.LoopModeEnum.Disabled:
             {
                 // The .import files already request looping for our loop assets;
                 // this is a runtime safety net using the raw sample data.
-                int frameBytes = (wav.Format == AudioStreamWAV.FormatEnum.Format8Bits ? 1 : 2) * (wav.Stereo ? 2 : 1);
+                int frameBytes = (wav.Format == AudioStreamWav.FormatEnum.Format8Bits ? 1 : 2) * (wav.Stereo ? 2 : 1);
                 if (frameBytes > 0 && wav.Data.Length > 0)
                 {
                     wav.LoopBegin = 0;
                     wav.LoopEnd = wav.Data.Length / frameBytes;
-                    wav.LoopMode = AudioStreamWAV.LoopModeEnum.Forward;
+                    wav.LoopMode = AudioStreamWav.LoopModeEnum.Forward;
                 }
                 break;
             }
@@ -481,7 +481,7 @@ public partial class AudioManager : Node
     }
 
     /// <summary>Minimal RIFF/WAVE reader for our generated 16-bit PCM files.</summary>
-    private static AudioStreamWAV ParseWav(byte[] bytes)
+    private static AudioStreamWav ParseWav(byte[] bytes)
     {
         if (bytes == null || bytes.Length < 44)
             return null;
@@ -517,9 +517,9 @@ public partial class AudioManager : Node
         byte[] data = new byte[dataLength];
         Array.Copy(bytes, dataOffset, data, 0, dataLength);
 
-        return new AudioStreamWAV
+        return new AudioStreamWav
         {
-            Format = bits == 8 ? AudioStreamWAV.FormatEnum.Format8Bits : AudioStreamWAV.FormatEnum.Format16Bits,
+            Format = bits == 8 ? AudioStreamWav.FormatEnum.Format8Bits : AudioStreamWav.FormatEnum.Format16Bits,
             MixRate = sampleRate,
             Stereo = channels > 1,
             Data = data,
