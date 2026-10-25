@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmaratruthwal1"
-path="res://.godot/imported/Truth_Ida_Walks.png-c78b5cbd11ddb45681f175a1e11452b2.ctex"
+uid="uid://cylu1nhr6urgq"
+path="res://.godot/imported/Truth_Ida_Walks.png-d2b8600389568312aa2d5c4b3fa337d0.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/bgs/Truth_Ida_Walks.png"
-dest_files=["res://.godot/imported/Truth_Ida_Walks.png-c78b5cbd11ddb45681f175a1e11452b2.ctex"]
+dest_files=["res://.godot/imported/Truth_Ida_Walks.png-d2b8600389568312aa2d5c4b3fa337d0.ctex"]
 
 [params]
 

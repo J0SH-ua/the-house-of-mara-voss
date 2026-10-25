@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmaratruthbrg1"
-path="res://.godot/imported/Truth_Bridge.png-c9b3dd27add082b65c7c82b114fa33eb.ctex"
+uid="uid://cylu1nhr6aabq"
+path="res://.godot/imported/Truth_Bridge.png-6c3feaed8c8f90665c6e595e22876a59.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/bgs/Truth_Bridge.png"
-dest_files=["res://.godot/imported/Truth_Bridge.png-c9b3dd27add082b65c7c82b114fa33eb.ctex"]
+dest_files=["res://.godot/imported/Truth_Bridge.png-6c3feaed8c8f90665c6e595e22876a59.ctex"]
 
 [params]
 
