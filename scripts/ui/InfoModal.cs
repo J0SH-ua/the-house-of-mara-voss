@@ -3,8 +3,9 @@ using Godot;
 
 /// <summary>
 /// The main menu's two books — Full Story and About — presented as an old
-/// journal: a worn leather cover, a parchment page with ink-dark words, the
-/// pictured scene pasted in on a parchment mat, one page at a time, turned
+/// journal lying open: a worn leather cover around two facing parchment
+/// pages, the pictured scene pasted in on the left with its caption, the
+/// ink-dark words on the right, a spine down the middle — turned
 /// with Earlier/Later buttons or the arrow keys — never scrolled through
 /// like a settings form. The scene supplies the furniture (backdrop, panel,
 /// title, art, body, close); this class dresses and paginates it, so both
@@ -229,6 +230,17 @@ public partial class InfoModal : Control
                 _flipTween.Parallel().TweenProperty(_body, "modulate:a", 1f, 0.3f);
             if (_pageHeading != null)
                 _flipTween.Parallel().TweenProperty(_pageHeading, "modulate:a", 1f, 0.3f);
+
+            // Whatever happens, a turned page must never be left faded.
+            _flipTween.TweenCallback(Callable.From(() =>
+            {
+                if (_art != null)
+                    _art.Modulate = Colors.White;
+                if (_body != null)
+                    _body.Modulate = Colors.White;
+                if (_pageHeading != null)
+                    _pageHeading.Modulate = Colors.White;
+            }));
         }
         else
         {
@@ -247,11 +259,22 @@ public partial class InfoModal : Control
         if (content == null)
             return;
 
-        // The pictured scene is pasted into the journal on a parchment
-        // mat, the way a kept photograph would be.
+        // The caption sits under the pasted picture, in ink on the mat.
+        _pageHeading = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.Word,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _pageHeading.AddThemeFontSizeOverride("font_size", 20);
+        _pageHeading.AddThemeColorOverride("font_color", new Color(0.17f, 0.12f, 0.08f));
+
+        // Left-hand page: the pictured scene pasted on a parchment mat,
+        // the way a kept photograph would be, its caption beneath it.
+        bool pasted = false;
         if (_art != null && _art.GetParent() == content)
         {
-            int artIndex = _art.GetIndex();
             var mat = new StyleBoxFlat
             {
                 BgColor = new Color(0.84f, 0.77f, 0.6f, 1f),
@@ -263,23 +286,60 @@ public partial class InfoModal : Control
             mat.ContentMarginRight = 10;
             mat.ContentMarginTop = 10;
             mat.ContentMarginBottom = 10;
+
             _artMat = new PanelContainer();
             _artMat.AddThemeStyleboxOverride("panel", mat);
-            content.AddChild(_artMat);
-            content.MoveChild(_artMat, artIndex);
+
+            var leftPage = new VBoxContainer();
+            leftPage.AddThemeConstantOverride("separation", 8);
+            _artMat.AddChild(leftPage);
+
             content.RemoveChild(_art);
-            _artMat.AddChild(_art);
+            leftPage.AddChild(_art);
+            leftPage.AddChild(_pageHeading);
+            _art.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+            pasted = true;
         }
 
-        _pageHeading = new Label
+        if (!pasted)
         {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        _pageHeading.AddThemeFontSizeOverride("font_size", 24);
-        _pageHeading.AddThemeColorOverride("font_color", new Color(0.95f, 0.85f, 0.62f));
-        content.AddChild(_pageHeading);
-        content.MoveChild(_pageHeading, 1); // under the book's title
+            // No picture furniture in this scene: the heading simply stands
+            // under the book's title, in gold on the cover.
+            _pageHeading.AddThemeColorOverride("font_color", new Color(0.95f, 0.85f, 0.62f));
+            content.AddChild(_pageHeading);
+            content.MoveChild(_pageHeading, 1);
+        }
+
+        // The open spread: pictured page | spine | written page. Laying the
+        // journal open gives the words the full height of the book — when
+        // everything was stacked in one column, title + picture + buttons
+        // outgrew the panel and the text page was squeezed to a sliver.
+        if (_artMat != null && _scroll != null && _scroll.GetParent() == content)
+        {
+            var spread = new HBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+            spread.AddThemeConstantOverride("separation", 10);
+
+            int insertAt = _scroll.GetIndex();
+            content.AddChild(spread);
+            content.MoveChild(spread, insertAt);
+            content.RemoveChild(_scroll);
+
+            var spine = new ColorRect
+            {
+                CustomMinimumSize = new Vector2(4, 0),
+                Color = new Color(0.2f, 0.13f, 0.07f, 0.55f),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+
+            spread.AddChild(_artMat);
+            spread.AddChild(spine);
+            spread.AddChild(_scroll);
+
+            _artMat.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            _artMat.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+            _scroll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            _scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        }
 
         var nav = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
         nav.AddThemeConstantOverride("separation", 18);
@@ -357,10 +417,16 @@ public partial class InfoModal : Control
         }
 
         if (_art != null)
-            _art.CustomMinimumSize = new Vector2(0, 240);
+            _art.CustomMinimumSize = new Vector2(0, 120);
+
+        if (_scroll != null)
+            _scroll.CustomMinimumSize = new Vector2(0, 170);
 
         if (_closeButton is Button close)
+        {
             ApplyBookButtonStyle(close);
+            close.Text = "Close the journal";
+        }
     }
 
     private static Button MakeBookButton(string text)
