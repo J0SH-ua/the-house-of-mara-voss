@@ -949,11 +949,11 @@ public partial class GameState : Node
                     ? $"The porch, at 4:47 ({pDone}/{pTotal})."
                     : "The front door. The last room is through it.";
             case "journey_to_room_2.tscn":
-                return "Walk to the next door. Open it when you're ready.";
+                return "Straight on to the next door. Open it when you're ready.";
             case "journey_to_room_3.tscn":
-                return "Walk to the next door. Open it when you're ready.";
+                return "Left at the bent runner, to the next door. Open it when you're ready.";
             case "journey_to_room_4.tscn":
-                return "Walk to the next door. Open it when you're ready.";
+                return "Right at the photographs, to the next door. Open it when you're ready.";
             case "journey_to_porch.tscn":
                 return "Walk the empty road to the lit porch.";
             case "Room_4_puzzle.tscn":
@@ -1091,9 +1091,17 @@ public partial class GameState : Node
         }
 
         if (file.StartsWith("journey_"))
-            return (file == "journey_to_porch.tscn"
-                ? "Let Mara walk until the porch light is close, then click the light to arrive."
-                : "Let Mara reach the door, then click the door itself to open it.", null);
+        {
+            string journeyHint = file switch
+            {
+                "journey_to_room_2.tscn" => "Let Mara walk straight to the door, settle herself, then click the door itself to open it.",
+                "journey_to_room_3.tscn" => "Let Mara turn left where the runner bends and settle herself, then click the door itself to open it.",
+                "journey_to_room_4.tscn" => "Let Mara turn right at the photographs and settle herself, then click the door itself to open it.",
+                "journey_to_porch.tscn" => "Let Mara walk until the porch light is close and settle herself, then click the light to arrive.",
+                _ => "Let Mara reach the door, then click the door itself to open it.",
+            };
+            return (journeyHint, null);
+        }
 
         if (file == "flashback_landing.tscn")
             return ("Nothing here can be changed — only finally seen. The photograph, the light, the runner. The end of the hall leads back when you are ready.", null);

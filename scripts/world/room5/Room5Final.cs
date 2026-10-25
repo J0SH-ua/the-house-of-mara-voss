@@ -53,6 +53,21 @@ public partial class Room5Final : MemoryRoomBase
         "Not yet. I don't know why I know that. I just do. The sliding things first. All of them.",
     ];
 
+    /// <summary>The individual face-down photographs painted on the floor
+    /// in front of the desk, in 1152×648 screen space. They are one logical
+    /// examinable, but each painted photograph gets its own rect so hover,
+    /// Tab rings and the double-exposed shift land on photographs rather
+    /// than on one broad patch of empty floor.</summary>
+    private static readonly Rect2[] FloorPhotographRects =
+    [
+        new Rect2(708, 520, 100, 36),
+        new Rect2(522, 554, 106, 40),
+        new Rect2(788, 555, 100, 40),
+        new Rect2(612, 579, 96, 40),
+        new Rect2(697, 579, 100, 42),
+        new Rect2(722, 618, 118, 30),
+    ];
+
     private int _lampRefusalCount;
 
     /// <summary>Every thing in this room that slides has been faced at
@@ -95,8 +110,11 @@ public partial class Room5Final : MemoryRoomBase
             Sfx.Examine, 0.82f, PointerCursorPath);
         yield return new Hotspot("AlarmClock", "Alarm Clock",
             new Rect2(582, 350, 62, 78), new Vector2(613, 389), Sfx.ClockTick, 1f);
-        yield return new Hotspot("FloorPhotographs", "Photographs on the Floor",
-            new Rect2(938, 542, 112, 72), new Vector2(994, 578), Sfx.PhotoPickup, 1f);
+        foreach (var photoRect in FloorPhotographRects)
+        {
+            yield return new Hotspot("FloorPhotographs", "Photographs on the Floor",
+                photoRect, photoRect.GetCenter(), Sfx.PhotoPickup, 1f);
+        }
     }
 
     protected override void OnRoomReady()
@@ -526,7 +544,13 @@ public partial class Room5Final : MemoryRoomBase
         if (hotspot.Id != "Lamp" && gs != null && !gs.HasFlag(AnchoredFlag))
         {
             AudioManager.Play(Sfx.CorruptionGlitch, -9f, 0.85f);
-            Hotspots.SpawnRipple(hotspot.Center, new Color(0.65f, 0.8f, 1f));
+            // The photographs are one memory scattered across several
+            // painted pieces; when they begin to slide, every piece answers.
+            var shiftingHotspots = GetHotspots(hotspot.Id);
+            if (shiftingHotspots.Count == 0)
+                shiftingHotspots.Add(hotspot);
+            foreach (var shiftingHotspot in shiftingHotspots)
+                Hotspots.SpawnRipple(shiftingHotspot.Center, new Color(0.65f, 0.8f, 1f));
             QueueRedraw();
         }
 
@@ -698,8 +722,14 @@ public partial class Room5Final : MemoryRoomBase
         {
             for (int i = 0; i < ShiftingIds.Length; i++)
             {
-                if (WasExamined(ShiftingIds[i]))
-                    DrawShifted(GetHotspot(ShiftingIds[i]), i * 1.37f);
+                if (!WasExamined(ShiftingIds[i]))
+                    continue;
+
+                // Usually one rect per object; all six floor photographs
+                // share an ID and each painted piece shifts in place.
+                var hotspots = GetHotspots(ShiftingIds[i]);
+                for (int j = 0; j < hotspots.Count; j++)
+                    DrawShifted(hotspots[j], i * 1.37f + j * 0.43f);
             }
         }
 

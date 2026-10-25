@@ -105,13 +105,25 @@ public abstract partial class MemoryRoomBase : Node2D
             if (hotspot == null || string.IsNullOrWhiteSpace(hotspot.Id))
                 continue;
             _hotspots.Add(hotspot);
-            _hotspotsById[hotspot.Id] = hotspot;
+            // A logical object may be painted in several separate places
+            // (Room 5's scattered photographs). Keep the first rect as the
+            // canonical GetHotspot result, while every rect remains in
+            // _hotspots for hover/click and gets its own reveal target.
+            if (!_hotspotsById.ContainsKey(hotspot.Id))
+                _hotspotsById[hotspot.Id] = hotspot;
 
             // Hotspots.RevealAll/RevealObject understand these tagged targets,
             // so Tab and third-level hints work exactly as in TileMap rooms.
+            string targetName = $"{hotspot.Id}Target";
+            int targetSuffix = 2;
+            while (GetNodeOrNull<Node>(targetName) != null)
+            {
+                targetName = $"{hotspot.Id}Target{targetSuffix}";
+                targetSuffix++;
+            }
             var target = new Node2D
             {
-                Name = $"{hotspot.Id}Target",
+                Name = targetName,
                 Position = hotspot.Center,
             };
             target.SetMeta("memory_object", hotspot.Id);
@@ -236,6 +248,21 @@ public abstract partial class MemoryRoomBase : Node2D
     protected Hotspot GetHotspot(string id)
     {
         return id != null && _hotspotsById.TryGetValue(id, out var hotspot) ? hotspot : null;
+    }
+
+    /// <summary>Every painted rect belonging to one logical object. Most
+    /// objects have exactly one; a scattered set can share one ID.</summary>
+    protected List<Hotspot> GetHotspots(string id)
+    {
+        var result = new List<Hotspot>();
+        if (id == null)
+            return result;
+        foreach (var hotspot in _hotspots)
+        {
+            if (hotspot.Id == id)
+                result.Add(hotspot);
+        }
+        return result;
     }
 
     protected Hotspot FindHotspot(Vector2 position)
