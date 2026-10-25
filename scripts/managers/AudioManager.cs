@@ -318,7 +318,11 @@ public partial class AudioManager : Node
         bool puzzle = scene.Contains("puzzle");
         float volume = puzzle ? -15f : -11f;
 
-        if (scene.Contains("flashback"))
+        if (scene.Contains("journey_to_porch"))
+            PlayMusic(MusicRoom6, -15f);
+        else if (scene.Contains("journey_to_room"))
+            PlayMusic(MusicRoom, -15f);
+        else if (scene.Contains("flashback"))
             PlayMusic(MusicRoom4, -16f);
         else if (scene.Contains("apartment"))
             PlayMusic(MusicRoom5, -16f);
@@ -373,7 +377,9 @@ public partial class AudioManager : Node
         string scene = (scenePath ?? string.Empty).ToLowerInvariant();
         bool puzzle = scene.Contains("puzzle");
         (string path, float volume) ambience =
-            scene.Contains("porch") ? (AmbiencePorchPath, -24f)
+            scene.Contains("journey_to_porch") ? (AmbienceGardenPath, -24f)
+            : scene.Contains("journey_to_room") ? (AmbiencePath, -24f)
+            : scene.Contains("porch") ? (AmbiencePorchPath, -24f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -23f)
             : scene.Contains("room_5") ? (AmbienceRainPath, -23f)
             : scene.Contains("room_2") ? (AmbienceFirePath, puzzle ? -28f : -25f)

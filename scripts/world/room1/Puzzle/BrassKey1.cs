@@ -11,6 +11,8 @@ public partial class BrassKey1 : Area2D
 		"Every morning started here. Every morning she was already waiting, already loud, " +
 		"already herself. You could set your clock by her. That's not something you notice until it's gone.";
 
+	private const string NextScenePath = "res://scenes/world/room_2.tscn";
+	private const string JourneyScenePath = "res://scenes/world/journey_to_room_2.tscn";
 	private string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
 	private bool _collecting;
 
@@ -62,6 +64,6 @@ public partial class BrassKey1 : Area2D
 			await Dialogue.ShowText(this, "\"That's not something you notice until it's gone.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
 		}
 
-		SceneManager.ChangeScene("res://scenes/world/room_2.tscn");
+		SceneManager.ChangeScene(firstTime ? JourneyScenePath : NextScenePath);
 	}
 }

@@ -1,0 +1,8 @@
+[gd_scene format=4 uid="uid://cmarajourn3sc"]
+
+[ext_resource type="Script" uid="uid://cmarajourn001" path="res://scripts/world/transitions/RoomJourney.cs" id="1_journey"]
+
+[node name="JourneyToRoom3" type="Node2D" unique_id=1502000003]
+script = ExtResource("1_journey")
+DestinationScenePath = "res://scenes/world/room_3.tscn"
+JourneyId = "Room2ToRoom3"

@@ -2,6 +2,9 @@ using Godot;
 
 public partial class JarsExamine1 : ExamineHandler
 {
+    private const string NextScenePath = "res://scenes/world/room_4.tscn";
+    private const string JourneyScenePath = "res://scenes/world/journey_to_room_4.tscn";
+
     public override async void _Input(InputEvent @event)
     {
         if (Dialogue.IsInputBlocked)
@@ -62,6 +65,6 @@ public partial class JarsExamine1 : ExamineHandler
         }
 
 
-        SceneManager.ChangeScene("res://scenes/world/room_4.tscn");
+        SceneManager.ChangeScene(firstFragment ? JourneyScenePath : NextScenePath);
     }
 }

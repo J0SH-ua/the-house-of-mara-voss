@@ -1111,6 +1111,10 @@ public partial class GameUI : CanvasLayer
         return file switch
         {
             "bedroom_prologue.tscn" => "the bedroom",
+            "journey_to_room_2.tscn" => "the way to the sitting room",
+            "journey_to_room_3.tscn" => "the way to the kept room",
+            "journey_to_room_4.tscn" => "the way to the hallway",
+            "journey_to_porch.tscn" => "the empty road",
             "room_1.tscn" => "the kitchen",
             "room_1_puzzle.tscn" => "the kitchen drawer",
             "room_2.tscn" => "the sitting room",
@@ -4727,8 +4731,9 @@ public partial class GameUI : CanvasLayer
         };
     }
 
-    /// <summary>New Game → the memory cutscene plays over Room 1's first open;
-    /// the how-to-play cards follow it. Continue / later visits skip both.</summary>
+    /// <summary>New Game → the original memory cutscene plays first, over the
+    /// bedroom's first open; Mara's first-person waking follows it. The
+    /// how-to-play cards are offered later in Room 1. Continue skips this.</summary>
     private void MaybePlayCutsceneThenTutorial(string scenePath)
     {
         var gs = GameState.Instance;
@@ -4743,7 +4748,8 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        if (gs != null && gs.CutscenePending && scenePath != null && scenePath.EndsWith("/room_1.tscn"))
+        if (gs != null && gs.CutscenePending && scenePath != null
+            && (scenePath.EndsWith("/bedroom_prologue.tscn") || scenePath.EndsWith("/room_1.tscn")))
         {
             gs.ConsumeCutscenePending();
             PlayCutsceneAsync();
