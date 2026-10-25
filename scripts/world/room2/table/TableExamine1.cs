@@ -16,7 +16,10 @@ public partial class TableExamine1 : ExamineHandler
 
         bool hasTile = GetCellSourceId(cell) != -1;
 
-        if (hasTile && GameState.Instance?.IsRoomSealed("Room2") == true)
+        // A sealed sitting room turns Mara away — unless the little
+        // door key still sleeps behind the photograph in this drawer.
+        if (hasTile && GameState.Instance?.IsRoomSealed("Room2") == true &&
+            GameState.Instance?.RoomHasUnclaimedPracticalItem("Room2") != true)
         {
             GameState.Instance.NotifySealedInteraction();
             GetTree().Root.SetInputAsHandled();

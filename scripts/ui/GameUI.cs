@@ -351,6 +351,8 @@ public partial class GameUI : CanvasLayer
 
     private const int AmbientPoolSize = 6;
     private CanvasLayer _ambientLayer;
+    private CanvasLayer _blackoutLayer;
+    private BlackoutOverlay _blackoutOverlay;
     private TextureRect[] _ambientRects;
     private AmbientSpec[] _ambientActive = System.Array.Empty<AmbientSpec>();
     private string _ambientSceneFile = string.Empty;
@@ -434,7 +436,7 @@ public partial class GameUI : CanvasLayer
             "FOR Mara HANDS. ... He made a place for mine before I knew I'd need it."),
         new("item_flashlight", "Flashlight",
             "res://assets/images/core/items/flashlight.png",
-            "heavy. Dented. Real in a way this house resents. Good."),
+            "Dad's. heavy as a hammer, and charged like he just set it down. Of course it is. Of course you are."),
         new("basement_battery_taken", "Strong battery",
             "res://assets/images/core/items/flashlight.png",
             "A stronger battery. Even the dark gets less room to negotiate."),
@@ -565,6 +567,7 @@ public partial class GameUI : CanvasLayer
         _font = GD.Load<FontFile>(FontPath);
 
         BuildAmbientLife();
+        BuildBlackoutOverlay();
         BuildCorruptionOverlay();
         BuildCollapseOverlay();
         BuildHud();
@@ -1944,6 +1947,37 @@ public partial class GameUI : CanvasLayer
             _confirmPanel.Visible = false;
         _confirmAction = null;
         _confirmCancelAction = null;
+    }
+
+    /// <summary>
+    /// SceneManager asks this before honouring forward travel out of a
+    /// room whose fragment Mara holds while a practical thing still lies
+    /// where it was kept. She may always leave — the fragment is enough
+    /// — but she is asked out loud, once, whether she would rather take
+    /// a look around a little more. Returns true only when the question
+    /// was actually put on screen.
+    /// </summary>
+    public bool BeginLeavePrompt(string roomName)
+    {
+        if (_confirmPanel == null || _confirmPanel.Visible ||
+            _cutscenePlaying || _endingPlaying || _shatterPlaying)
+            return false;
+
+        string text = roomName switch
+        {
+            "Room1" => "The morning's faced, and the brass key is heavy in Mara's hand. But kitchens keep small, useful things where a mother's hands left them — and an opened drawer can hold more than the one thing she came for.\n\nLeave the kitchen anyway?",
+            "Room2" => "Mara has the photograph. But something about its backing still nags at her — a father's pencil, and a room the house keeps quietly editing behind the glass.\n\nLeave the sitting room anyway?",
+            "Room3" => "The name tape is Mara's. But jars keep things in layers, and something small and cold may still be sleeping underneath what she came for.\n\nLeave the jars anyway?",
+            "Room4" => "The hallway has said its sentence. But this was a locksmith's house, and a locksmith's house keeps his tools somewhere ordinary — a drawer she may have walked past.\n\nLeave the hallway anyway?",
+            _ => "Mara has what this room was holding in its heart. It may still be keeping something practical in its pockets.\n\nLeave anyway?",
+        };
+
+        ShowConfirm(text,
+            () => SceneManager.ConfirmDeferredLeave(),
+            "Leave anyway",
+            "Look around a little more",
+            () => SceneManager.CancelDeferredLeave());
+        return _confirmPanel.Visible;
     }
 
     // ================================================================= bag UI
@@ -4670,6 +4704,19 @@ public partial class GameUI : CanvasLayer
 
     // ---------------------------------------------------------- Mara's voice
 
+    /// <summary>The blackout's own canvas: layer 1, built after the
+    /// ambient life so the dark also covers the weather, but still under
+    /// the speech bubble (2) and the HUD proper (90). All of its
+    /// behaviour lives in <see cref="BlackoutOverlay"/>; this only
+    /// mounts it.</summary>
+    private void BuildBlackoutOverlay()
+    {
+        _blackoutLayer = new CanvasLayer { Name = "Blackout", Layer = 1 };
+        AddChild(_blackoutLayer);
+        _blackoutOverlay = new BlackoutOverlay();
+        _blackoutLayer.AddChild(_blackoutOverlay);
+    }
+
     private void BuildAmbientLife()
     {
         // Canvas layer 1: over the room (0), under the speech bubble (2)
@@ -6073,17 +6120,23 @@ public partial class GameUI : CanvasLayer
         _cutsceneOnComplete = onComplete;
         _truthCutsceneActive = true;
 
-        // No score is allowed to explain this day while Mara is watching
-        // it happen. Places first: garden air, rooms, gathering rain.
-        AudioManager.Instance?.StopMusic(0.25f);
+        // A quiet score sits under the telling now — the felt-piano
+        // warmth of the house as it was that morning, kept well beneath
+        // the places themselves: garden air, rooms, gathering rain. It
+        // holds that warmth right up to the bridge. What it becomes
+        // there is PlayTruthShotAudio's business (shot 12).
+        AudioManager.Instance?.PlayMusic(AudioManager.MusicRoom2, -27f, 2.5f);
         AudioManager.Instance?.StopAmbience(0.25f);
         PlayCutsceneAsync();
     }
 
-    /// <summary>Diegetic sound for the replay, keyed to TruthShots. The
-    /// score stays cut while Ida waits, Mara is late, and Ida crosses the
-    /// stone bridge in the rain. It opens again only on shot 12 — the old
-    /// wooden railing giving, the fall, and the canal taking her.</summary>
+    /// <summary>Diegetic sound for the replay, keyed to TruthShots. A
+    /// gentle score carries the telling — the morning, the waiting,
+    /// Mara's own lateness, the walk in gathering rain — and on shot 12
+    /// it turns: the old wooden railing gives, the canal takes her, and
+    /// the music stops remembering a morning and starts carrying a loss.
+    /// The finale's grief holds from there to the final frame, where
+    /// EndCutscene hands the last room its own score back.</summary>
     private void PlayTruthShotAudio(int shotIndex)
     {
         var audio = AudioManager.Instance;

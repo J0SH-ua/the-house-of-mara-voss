@@ -1,12 +1,21 @@
 using Godot;
 
 /// <summary>
-/// The photograph in the sitting-room drawer — shard 1.
-/// Before Mara may take it for the first time, the house makes her earn
-/// what lies behind it honestly: a five-second look at the sitting
-/// room, followed by a search for what memory moved. That investigation
-/// yields the little door key for Room 4. Collection itself remains
-/// idempotent via GameState (journal fragment, sting, autosave).
+/// The photograph in the sitting-room drawer — shard 1, and behind it,
+/// a second thing entirely.
+///
+/// The photograph itself can simply be faced and taken: the fragment
+/// asks nothing practical of Mara. But on its backing, in her father's
+/// pencil, is FOR WHEN YOU REMEMBER IT RIGHT — he taped a little door
+/// key behind the sitting room in this picture, the way he hid anything
+/// he wanted only an honest memory to find. The house has been gently
+/// editing the room the photograph shows ever since. Looking at the
+/// photograph again after taking it sends Mara into that room as it was
+/// kept: five seconds to hold it, then a search for what memory moved.
+/// Only a room remembered right gives up what was taped behind it.
+///
+/// She may walk away with just the fragment. The key stays behind the
+/// picture — findable later, the same way, whenever she comes back.
 /// </summary>
 public partial class Photo1Reward : Area2D
 {
@@ -59,16 +68,20 @@ public partial class Photo1Reward : Area2D
 		if (rect.HasPoint(localMousePos))
 		{
 			GetTree().Root.SetInputAsHandled();
-			if (GameState.Instance?.IsRoomSealed("Room2") == true)
+			var gs = GameState.Instance;
+			// A sealed sitting room goes quiet — unless the little door
+			// key still sleeps behind this photograph. Untaken things
+			// stay takeable, however finished the memory around them.
+			if (gs?.IsRoomSealed("Room2") == true &&
+				gs?.RoomHasUnclaimedPracticalItem("Room2") != true)
 			{
-				GameState.Instance.NotifySealedInteraction();
+				gs.NotifySealedInteraction();
 				return;
 			}
-			var gs = GameState.Instance;
-			bool needsDifference = gs != null &&
-				!gs.HasFlag("difference_room2_solved") &&
-				!gs.IsShardRecovered(1);
-			if (needsDifference)
+
+			if (gs == null || !gs.IsShardRecovered(1))
+				CollectAndChangeScene();
+			else if (!gs.HasFlag("difference_room2_solved"))
 				EnterDifferenceInvestigation();
 			else
 				CollectAndChangeScene();
@@ -126,10 +139,13 @@ public partial class Photo1Reward : Area2D
 	{
 		_collecting = true;
 		AudioManager.Play(Sfx.PhotoPickup, -7f, 0.94f);
-		await Dialogue.ShowText(this, "It isn't fixed down. But something small has slid behind it, out of reach — and under my fingers the photograph does what this house always does. It asks whether I actually remember the room I claim to remember.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
+		await Dialogue.ShowText(this, "I turn it over. On the backing, in pencil gone soft at the edges — Dad's handwriting. FOR WHEN YOU REMEMBER IT RIGHT. Under that, one corner of the backing lifts. Something flat and metal is taped behind this photograph.", 6.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
 		if (!GodotObject.IsInstanceValid(this))
 			return;
-		await Dialogue.ShowText(this, "Five seconds, then. I can hold a room for five seconds. I have held worse for twelve years.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+		await Dialogue.ShowText(this, "Of course it won't just peel. This house has been editing the room in this picture for twelve years — gentler, tidier, later than it was. He knew. That's why the condition. Remember it right, and what he hid stays findable. Remember it kind, and it rots behind the glass with everything else.", 6.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+		await Dialogue.ShowText(this, "Five seconds, then, Dad. I can hold a room for five seconds. I have held worse for twelve years.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		if (!GodotObject.IsInstanceValid(this))
 			return;
 		SceneManager.ChangeScene(DifferenceScenePath);

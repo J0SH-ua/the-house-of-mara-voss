@@ -12,8 +12,11 @@ using Godot;
 /// interrupting — unopened mail, a silent phone, a chair in the corner.
 /// Facing all three writes "The life that continued" into the Journal.
 /// The entry door returns to Room 5 at any time. One practical thing
-/// also waits here: the heavy flashlight in the far-left cupboard,
-/// bought for power cuts and needed under the childhood house.
+/// also waits here — or seemed to: the heavy flashlight in the
+/// far-left cupboard, bought for power cuts. It has been dead in
+/// that cupboard for years, like most of this apartment's claim on
+/// her. The light the old house wants is an older light, kept
+/// where a father's hands left it.
 /// </summary>
 public partial class ApartmentNow : MemoryRoomBase
 {
@@ -110,23 +113,27 @@ public partial class ApartmentNow : MemoryRoomBase
 
             if (gs != null && gs.HasFlag("item_flashlight"))
             {
-                await Say("Batteries, a plunger, one brave little toolkit. The flashlight is already in my bag, doing more good there than it ever did in here.", 4.5f, 24);
+                await Say("Batteries, a plunger, one brave little toolkit — and my own dead torch, exactly where I left it. Dad's is the one in my bag. It's doing more good there than mine ever did in here.", 4.5f, 24);
                 return;
             }
 
-            await SaySequence(
-                "The cupboard I never open. Cleaning stuff, a plunger — and the big flashlight I bought the winter the power kept going out. It still has weight. It still works.",
-                "Click. A good, stupid, practical light. The kind for cellars and other places nobody puts in photographs.");
-            if (!GodotObject.IsInstanceValid(this) || gs == null)
+            // The present tense cannot lend her this. Her own torch
+            // died years ago like everything else she stopped feeding;
+            // the working light belongs to the house, in a father's
+            // keeping. (Older saves already carrying a flashlight keep
+            // it — nothing is taken from a player, only found sooner.)
+            AudioManager.Play(Sfx.FlashlightClick, -7f, 0.8f);
+            await WaitSeconds(0.25f);
+            if (!GodotObject.IsInstanceValid(this))
                 return;
-
-            AudioManager.Play(Sfx.FlashlightClick, -6f);
-            await WaitSeconds(0.2f);
-            AudioManager.Play(Sfx.FlashlightClick, -8f, 0.9f);
-            gs.SetFlag("item_flashlight", save: false);
-            gs.UnlockClue("apartment_flashlight");
-            Hotspots.SpawnRipple(cupboard.Center, new Color(1f, 0.9f, 0.6f));
-            gs.Toast("Flashlight — kept in Mara's bag (B). Somewhere under the house, the dark just got smaller.");
+            AudioManager.Play(Sfx.FlashlightClick, -9f, 0.7f);
+            bool remembersCabinet = gs?.HasFlag("blackout_remembered_cabinet") ?? false;
+            await SaySequence(
+                "The cupboard I never open. Cleaning stuff, a plunger — and the big flashlight I bought the winter the power kept going out. It has weight. It does not have anything else.",
+                "Dead for years. The batteries have gone the way of everything in this apartment I stopped feeding. Click. Click. Nothing — not even the shame to flicker.",
+                remembersCabinet
+                    ? "Not this light, then. Dad's. The kitchen cabinet, under the counter, with the candles. His batteries were never, ever dead."
+                    : "If I ever needed real light in the dark, this isn't where I'd find it. Dad kept a torch that always worked. Old houses keep their lights where the old hands left them.");
         }
         finally
         {

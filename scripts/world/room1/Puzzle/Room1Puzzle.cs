@@ -145,7 +145,11 @@ public partial class Room1Puzzle : Area2D
 		if (Dialogue.IsInputBlocked)
 			return;
 
-		if (GameState.Instance?.IsRoomSealed("Room1") == true)
+		// A finished kitchen goes quiet — unless the drawer still keeps
+		// something practical Mara walked past. Then this close-up stays
+		// honest work, and she can come back for it.
+		if (GameState.Instance?.IsRoomSealed("Room1") == true &&
+			GameState.Instance?.RoomHasUnclaimedPracticalItem("Room1") != true)
 		{
 			if (@event is InputEventMouseButton sealedClick && sealedClick.Pressed
 				&& sealedClick.ButtonIndex == MouseButton.Left)
@@ -198,6 +202,12 @@ public partial class Room1Puzzle : Area2D
 
 		var brassKey = GetNodeOrNull<Area2D>("BrassKey1");
 		if (brassKey != null && brassKey.Visible && IsInsideArea2D(brassKey, mousePosition))
+			return PointerCursorPath;
+
+		// The open drawer keeps two smaller takeables beside the brass
+		// key; BrassKey1 knows their shapes.
+		var drawerItems = GetNodeOrNull<BrassKey1>("BrassKey1");
+		if (drawerItems != null && drawerItems.Visible && drawerItems.IsOverTakeableItem(mousePosition))
 			return PointerCursorPath;
 
 		var padlock = GetNodeOrNull<Node2D>("Padlock");
@@ -311,7 +321,8 @@ public partial class Room1Puzzle : Area2D
 
 	private void OnUnlockPressed()
 	{
-		if (GameState.Instance?.IsRoomSealed("Room1") == true)
+		if (GameState.Instance?.IsRoomSealed("Room1") == true &&
+			GameState.Instance?.RoomHasUnclaimedPracticalItem("Room1") != true)
 		{
 			GameState.Instance.NotifySealedInteraction();
 			return;
@@ -333,22 +344,10 @@ public partial class Room1Puzzle : Area2D
 			return;
 		}
 
-		// The combination is only half of this lock now. Its shackle is
-		// bent: even dialled right, it lifts and drops unless something
-		// thin holds it. That something is the hairpin Mara took from
-		// behind her childhood alarm clock, so this kitchen cannot be
-		// finished by a Mara who never faced the bedroom nightstand.
-		var gs = GameState.Instance;
-		if (gs != null && !gs.HasFlag("item_hairpin"))
-		{
-			AudioManager.Play(Sfx.LockRattle, -5f, 0.86f);
-			AudioManager.Play(Sfx.Denied, -11f, 0.92f);
-			gs.Toast("The dials are right — and the bent shackle still springs home. Something thin has to hold it. Press H; the bedroom nightstand kept such a thing.");
-			return;
-		}
-
-		AudioManager.Play(Sfx.LockpickTick, -11f, 1.18f);
-		gs?.Toast("Mum's hairpin holds the bent shackle while the lock turns.");
+		// The combination is the whole of this lock: the drawer was only
+		// ever waiting to be remembered correctly. What the drawer keeps
+		// beyond the brass key — a copper key, a bent hairpin — is for
+		// later rooms to ask about, not for this one to demand.
 		_isSolved = true;
 		IsUnlocked = true;
 		_readyToUnlock = false;
@@ -433,6 +432,6 @@ public partial class Room1Puzzle : Area2D
 			brassKey1.Visible = true;
 
 		AudioManager.Play(Sfx.PuzzleSolve, -6f);
-		GameState.Instance?.Toast("Something small and brass, kept all this time.");
+		GameState.Instance?.Toast("Something small and brass, kept all this time — and the drawer was never only keeping one thing.");
 	}
 }

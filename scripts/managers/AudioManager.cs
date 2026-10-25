@@ -360,11 +360,15 @@ public partial class AudioManager : Node
 
         if (scene.Contains("difference_investigation"))
             PlayMusic(MusicRoom2, -28f);
+        else if (scene.Contains("jar_closeup"))
+            PlayMusic(MusicRoom3, -28f);
+        else if (scene.Contains("kitchen_cabinet"))
+            PlayMusic(MusicRoom1, -28f);
         else if (scene.Contains("flashback"))
             PlayMusic(MusicRoom4, -28f);
         else if (scene.Contains("apartment"))
             PlayMusic(MusicRoom5, -28f);
-        else if (scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("lockpick"))
+        else if (scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("lockpick") || scene.Contains("breaker_box"))
             PlayMusic(MusicRoom5, -29f);
         else if (scene.Contains("porch"))
             PlayMusic(MusicRoom6, -26f);
@@ -421,9 +425,21 @@ public partial class AudioManager : Node
         _ambienceWanted = true;
         EnsureHeartbeat();
 
+        // A house with no power has only one sound left: itself,
+        // holding its breath. Whatever room Mara is feeling her way
+        // through, the blackout hushes it to bare room tone.
+        if (GameState.Instance?.HasFlag("blackout_active") == true &&
+            (scene.Contains("room_1") || scene.Contains("room_2") ||
+             scene.Contains("room_3") || scene.Contains("room_4") ||
+             scene.Contains("room_5") || scene.Contains("kitchen_cabinet")))
+        {
+            CrossfadeAmbience(AmbiencePath, -22f);
+            return;
+        }
+
         bool puzzle = scene.Contains("puzzle");
         (string path, float volume) ambience =
-            scene.Contains("basement") || scene.Contains("vent_crawl") ? (AmbienceBasementPath, -14f)
+            scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("breaker_box") ? (AmbienceBasementPath, -14f)
             : scene.Contains("lockpick") ? (AmbiencePath, -20f)
             : scene.Contains("porch") ? (AmbiencePorchPath, -16f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -15f)

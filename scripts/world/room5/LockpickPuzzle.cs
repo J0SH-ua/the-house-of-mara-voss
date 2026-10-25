@@ -3,21 +3,23 @@ using System.Threading.Tasks;
 using Godot;
 
 /// <summary>
-/// Her father's trade, remembered with Mara hands.
+/// Her father's trade, remembered with Mara hands — played the way
+/// Dying Light taught a generation to feel a lock.
 ///
-/// A / D rocks the pick quickly across the pins (Shift slows it for a
-/// fine final nudge). The tension wrench simply follows horizontal
-/// mouse movement — no mouse button is pressed or held. Moving right
-/// applies pressure, moving left eases it, and holding the mouse still
-/// lets the unset part of the plug spring back to the last set layer.
-/// Each lock is a sequence of pin layers. A layer has its own hidden
-/// sweet spot; once its gate is reached with the pick in the right
-/// place, that layer stays set and the next one sits deeper, with a
-/// narrower tolerance and less patience for force. Away from a layer's
-/// sweet spot the plug binds early, the pick complains, and forcing it
-/// can snap a pick. Four picks (the one in the lock and three spares)
-/// are allowed per sitting — running out only sends Mara back to
-/// breathe and begin again; the set itself is never lost.
+/// The pick is locked to the mouse: it follows it around the top of
+/// the lock exactly, no sliding, no drift, no mouse button involved.
+/// Holding A (or D) turns the cylinder. How far the cylinder turns
+/// before the pick starts to shake is the whole secret — barely
+/// turning means the pick is far from the pins' truth; turning most
+/// of the way means it is close. Let go and the unset part springs
+/// back; reseat the pick a breath sideways and turn again.
+///
+/// Each lock is a sequence of pin layers with its own hidden sweet
+/// spot. A layer turned all the way home sets with the unlocked
+/// click of a little lock inside the lock, and stays set; deeper
+/// layers sit narrower. And the picks do not break — Mara never once
+/// saw her father break one, so in her memory of his hands they
+/// simply don't. Force only makes the pick tremble and complain.
 ///
 /// The scene serves both locks in the under-house chain. Choice of
 /// target arrives through saved transient flags (with a progress-based
@@ -35,15 +37,13 @@ public partial class LockpickPuzzle : Node2D
     private const string BasementScenePath = "res://scenes/world/basement.tscn";
     private const float MaxPickDegrees = 78f;
     private const float PlugOpenDegrees = 90f;
-    private const float PickSpeedDegreesPerSecond = 245f;
-    private const float FinePickSpeedDegreesPerSecond = 95f;
-    private const int PicksPerSitting = 4;
+    private const float TurnSpeedDegreesPerSecond = 62f;
+    private const float SpringBackDegreesPerSecond = 110f;
 
     private enum PickState
     {
         Intro,
         Picking,
-        Broken,
         Success,
         Leaving,
     }
@@ -73,13 +73,10 @@ public partial class LockpickPuzzle : Node2D
     private float _pickDegrees;
     private float _plugDegrees;
     private float _stress;
-    private int _picksLeft = PicksPerSitting;
+    private bool _binding;
     private int _lastPickTickBand;
     private int _lastPlugTickStep;
     private int _nearLineLayer = -1;
-    private Vector2 _lastMousePosition;
-    private bool _mouseSampleReady;
-    private ulong _lastTorqueMsec;
     private ulong _lastBindSoundMsec;
     private bool _leaveCursorOwned;
     private PickState _state = PickState.Intro;
@@ -178,7 +175,7 @@ public partial class LockpickPuzzle : Node2D
             new Vector2(326, 18), new Vector2(500, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(
-            "A / D — move the pick (Shift = fine)      Move mouse — turn the wrench\nNo click to hold. Set one layer at a time; force breaks picks.",
+            "Mouse — seat the pick (it follows you)      Hold A — turn the lock\nHow far it turns before it shakes says how close you are. His picks don't break.",
             new Vector2(276, 58), new Vector2(600, 62), 20,
             new Color(0.9f, 0.86f, 0.76f, 0.94f));
         _statusLabel = MakeLabel(string.Empty,
@@ -241,9 +238,9 @@ public partial class LockpickPuzzle : Node2D
             }
             if (!StillHere())
                 return;
-            _lastMousePosition = GetGlobalMousePosition();
-            _mouseSampleReady = true;
-            _lastTorqueMsec = Time.GetTicksMsec();
+            await Say("And don't fret for the picks. I held the lamp for him half my childhood and never once saw one break. In here, they remember that.");
+            if (!StillHere())
+                return;
             _state = PickState.Picking;
             UpdateStatus();
         }
@@ -265,8 +262,8 @@ public partial class LockpickPuzzle : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        // The wrench itself needs no button at all: _Process samples the
-        // mouse position every frame and follows its horizontal movement.
+        // Picking itself needs no mouse button at all: _Process reads the
+        // mouse position (the pick) and the A/D keys (the turn) directly.
         // This handler exists only for the drawn "put the tools away"
         // control. Waiting for unhandled input keeps Bag, Journal, Pause
         // and navigation ordinary buttons over the lock close-up.
@@ -287,38 +284,24 @@ public partial class LockpickPuzzle : Node2D
         float dt = (float)delta;
         UpdateCursor();
 
-        // Sample in every state so returning from dialogue, pause, a panel
-        // or a snapped pick never turns one accumulated mouse jump into
-        // a sudden wrench movement.
-        Vector2 mouse = GetGlobalMousePosition();
-        float mouseDeltaX = 0f;
-        if (_mouseSampleReady)
-            mouseDeltaX = mouse.X - _lastMousePosition.X;
-        _lastMousePosition = mouse;
-        _mouseSampleReady = true;
-
         bool blocked = GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
         if (_state != PickState.Picking || blocked)
         {
+            _binding = false;
             QueueRedraw();
             return;
         }
 
-        float direction = 0f;
-        if (Input.IsPhysicalKeyPressed(Key.A))
-            direction -= 1f;
-        if (Input.IsPhysicalKeyPressed(Key.D))
-            direction += 1f;
-
-        if (direction != 0f)
+        // The pick IS the mouse: it sits wherever around the top of the
+        // lock the hand is pointing, every frame, exactly. Nothing is
+        // accumulated, so nothing can feel slippery.
+        Vector2 mouse = GetGlobalMousePosition();
+        Vector2 fromLock = mouse - LockCenter;
+        if (fromLock.LengthSquared() > 4f)
         {
-            float speed = Input.IsPhysicalKeyPressed(Key.Shift)
-                ? FinePickSpeedDegreesPerSecond
-                : PickSpeedDegreesPerSecond;
-            _pickDegrees = Mathf.Clamp(
-                _pickDegrees + direction * speed * dt,
-                -MaxPickDegrees, MaxPickDegrees);
+            float pointing = Mathf.RadToDeg(Mathf.Atan2(fromLock.X, -fromLock.Y));
+            _pickDegrees = Mathf.Clamp(pointing, -MaxPickDegrees, MaxPickDegrees);
             int band = Mathf.RoundToInt(_pickDegrees / 4f);
             if (band != _lastPickTickBand)
             {
@@ -327,104 +310,79 @@ public partial class LockpickPuzzle : Node2D
             }
         }
 
-        // No button state is consulted: ordinary horizontal mouse motion
-        // is the wrench. Moving towards the drawn leave control does not
-        // keep twisting the lock underneath the player's hand.
-        if (!LeaveRect.HasPoint(mouse) && Mathf.Abs(mouseDeltaX) > 0.05f)
-            TurnWrench(mouseDeltaX);
+        // Holding A (or D) turns the cylinder, Dying-Light fashion: it
+        // travels until the wrong pins catch it, and how far it got is
+        // the information. In the sweet spot it runs all the way home
+        // to this layer's gate. Let go and the unset layer springs back.
+        bool turning = Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.D);
+        float error = PickError();
+        float tolerance = CurrentToleranceDegrees;
 
-        if (_state != PickState.Picking)
+        if (turning && _layerIndex < LayerCount)
         {
-            QueueRedraw();
-            return;
-        }
+            float limit = error <= tolerance ? CurrentLayerEnd : BindLimitFor(error, tolerance);
+            _plugDegrees = Mathf.MoveToward(_plugDegrees, limit, TurnSpeedDegreesPerSecond * dt);
+            _binding = error > tolerance && _plugDegrees >= limit - 0.05f;
 
-        ulong now = Time.GetTicksMsec();
-        if (now - _lastTorqueMsec > 100)
-        {
-            // A still mouse applies no new pressure. The unset part of
-            // the current layer springs back, but set layers stay set.
-            _plugDegrees = Mathf.MoveToward(_plugDegrees, CurrentLayerStart, 65f * dt);
-            _stress = Mathf.MoveToward(_stress, 0f, 0.5f * dt);
-        }
-        else if (PickError() <= CurrentToleranceDegrees)
-        {
-            _stress = Mathf.MoveToward(_stress, 0f, 0.16f * dt);
-            float layerSpan = Mathf.Max(1f, CurrentLayerEnd - CurrentLayerStart);
-            float layerProgress = (_plugDegrees - CurrentLayerStart) / layerSpan;
-            if (_nearLineLayer != _layerIndex && layerProgress > 0.45f)
+            if (_binding)
             {
-                _nearLineLayer = _layerIndex;
-                GameState.Instance?.Toast(NearLines[_targetTrunk ? 1 : 0]);
+                _stress = Mathf.MoveToward(_stress, 1f, 1.5f * CurrentStressScale * dt);
+                ulong nowBind = Time.GetTicksMsec();
+                if (nowBind - _lastBindSoundMsec > 120)
+                {
+                    _lastBindSoundMsec = nowBind;
+                    AudioManager.Play(Sfx.LockpickTick, -13f, 0.6f);
+                }
             }
+            else
+            {
+                _stress = Mathf.MoveToward(_stress, 0f, 1.8f * dt);
+            }
+
+            if (error <= tolerance)
+            {
+                float layerSpan = Mathf.Max(1f, CurrentLayerEnd - CurrentLayerStart);
+                float layerProgress = (_plugDegrees - CurrentLayerStart) / layerSpan;
+                if (_nearLineLayer != _layerIndex && layerProgress > 0.45f)
+                {
+                    _nearLineLayer = _layerIndex;
+                    GameState.Instance?.Toast(NearLines[_targetTrunk ? 1 : 0]);
+                }
+                if (_plugDegrees >= CurrentLayerEnd - 0.05f)
+                    SetCurrentLayer();
+            }
+        }
+        else
+        {
+            _binding = false;
+            _plugDegrees = Mathf.MoveToward(_plugDegrees, CurrentLayerStart, SpringBackDegreesPerSecond * dt);
+            _stress = Mathf.MoveToward(_stress, 0f, 2.6f * dt);
         }
 
         int plugStep = Mathf.FloorToInt(_plugDegrees / 6f);
         if (plugStep != _lastPlugTickStep)
         {
             _lastPlugTickStep = plugStep;
-            if (now - _lastTorqueMsec <= 100)
+            if (turning)
                 AudioManager.Play(Sfx.LockpickTick, -15f, 0.82f + plugStep * 0.025f);
         }
-
-        if (_stress >= 1f)
-            _ = BreakPickAsync();
 
         UpdateStatus();
         QueueRedraw();
     }
 
-    private void TurnWrench(float mouseDeltaX)
+    /// <summary>How far this layer lets the cylinder turn with the pick
+    /// where it is: nearly-right almost reaches the gate, far-wrong
+    /// knocks almost at once. A bind never crosses an unset gate.</summary>
+    private float BindLimitFor(float error, float tolerance)
     {
-        if (_state != PickState.Picking || mouseDeltaX == 0f || _layerIndex >= LayerCount)
-            return;
-
-        _lastTorqueMsec = Time.GetTicksMsec();
-        float requested = Mathf.Clamp(mouseDeltaX * 0.18f, -3.4f, 3.4f);
         float layerStart = CurrentLayerStart;
-        float layerEnd = CurrentLayerEnd;
-
-        if (requested < 0f)
-        {
-            _plugDegrees = Mathf.Max(layerStart, _plugDegrees + requested);
-            _stress = Mathf.MoveToward(_stress, 0f, 0.05f);
-            return;
-        }
-
-        float error = PickError();
-        float tolerance = CurrentToleranceDegrees;
-        if (error <= tolerance)
-        {
-            _plugDegrees = Mathf.Min(layerEnd, _plugDegrees + requested);
-            _stress = Mathf.MoveToward(_stress, 0f, 0.035f);
-        }
-        else
-        {
-            // The closer the pick, the farther this layer can travel
-            // before its wrong pins catch it. That travel is the clue:
-            // nearly-right almost reaches the gate, far-wrong knocks
-            // almost at once. A bind never crosses an unset gate.
-            float layerSpan = layerEnd - layerStart;
-            float travelFraction = 1f - Mathf.Clamp((error - tolerance) / 62f, 0f, 1f);
-            float bindLimit = layerStart + Mathf.Clamp(
-                layerSpan * travelFraction, 4f, Mathf.Max(4f, layerSpan - 3f));
-            float before = _plugDegrees;
-            _plugDegrees = Mathf.Min(bindLimit, _plugDegrees + requested);
-            float travelled = Mathf.Max(0f, _plugDegrees - before);
-            float forced = Mathf.Max(0f, requested - travelled);
-            _stress += (travelled * 0.004f + forced * 0.05f) * CurrentStressScale;
-
-            ulong now = Time.GetTicksMsec();
-            if (forced > 0.2f && now - _lastBindSoundMsec > 110)
-            {
-                _lastBindSoundMsec = now;
-                AudioManager.Play(Sfx.LockpickTick, -13f, 0.62f);
-            }
-        }
-
-        if (_plugDegrees >= layerEnd - 0.25f && PickError() <= CurrentToleranceDegrees)
-            SetCurrentLayer();
+        float layerSpan = CurrentLayerEnd - layerStart;
+        float travelFraction = 1f - Mathf.Clamp((error - tolerance) / 62f, 0f, 1f);
+        return layerStart + Mathf.Clamp(
+            layerSpan * travelFraction, 4f, Mathf.Max(4f, layerSpan - 3f));
     }
+
 
     private void SetCurrentLayer()
     {
@@ -435,8 +393,10 @@ public partial class LockpickPuzzle : Node2D
         _plugDegrees = CurrentLayerEnd;
         _stress = 0f;
         _lastPlugTickStep = Mathf.FloorToInt(_plugDegrees / 6f);
-        AudioManager.Play(Sfx.LockpickTick, -9f, 0.96f + completed * 0.08f);
-        AudioManager.Play(Sfx.WordChime, -14f, 0.9f + completed * 0.06f);
+        // Every set layer clicks like the little lock it is — the
+        // unlocked sound of one more depth giving way.
+        AudioManager.Play(Sfx.LockOpen, -8f, 0.95f + completed * 0.07f);
+        AudioManager.Play(Sfx.LockpickTick, -12f, 1.3f);
 
         if (completed >= LayerCount)
         {
@@ -470,48 +430,6 @@ public partial class LockpickPuzzle : Node2D
             Sfx.LockpickTick,
             -18f + closeness * 5f,
             0.76f + closeness * 0.42f);
-    }
-
-    private async Task BreakPickAsync()
-    {
-        if (_state != PickState.Picking)
-            return;
-
-        _state = PickState.Broken;
-        _picksLeft = Mathf.Max(0, _picksLeft - 1);
-        // Set layers belong to the lock now; only the layer being forced
-        // gives up its unset travel when a pick snaps.
-        _plugDegrees = CurrentLayerStart;
-        _stress = 0f;
-        AudioManager.Play(Sfx.LockpickSnap, -5f);
-        Dialogue.BeginInputBlock();
-        try
-        {
-            await WaitSeconds(0.45f);
-            if (!StillHere())
-                return;
-
-            if (_picksLeft > 0)
-            {
-                await Say(_picksLeft == 1
-                    ? "Snap. One pick left in the roll. Dad is doing the face. I can feel the face from here."
-                    : "Snap. Sorry, Dad. The roll has spares because daughters have wrists.");
-                if (!StillHere())
-                    return;
-                _state = PickState.Picking;
-                UpdateStatus();
-            }
-            else
-            {
-                await Say("That's the last pick in the roll willing to be looked at. The lock can keep its secret while my hands stop shaking.");
-                if (StillHere())
-                    ReturnFromLock();
-            }
-        }
-        finally
-        {
-            Dialogue.EndInputBlock();
-        }
     }
 
     private async Task SucceedAsync()
@@ -607,14 +525,12 @@ public partial class LockpickPuzzle : Node2D
     {
         if (_statusLabel == null)
             return;
-        string pickWord = _picksLeft == 1 ? "pick" : "picks";
         string toolNote = _hasFineWrench ? " · fine wrench" : string.Empty;
         _statusLabel.Text = _state switch
         {
             PickState.Success => "It turns.",
-            PickState.Broken when _picksLeft > 0 => $"A pick snapped — {_picksLeft} {pickWord} left.",
-            PickState.Broken => "No picks left for this sitting.",
-            _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set · {_picksLeft} {pickWord}{toolNote}",
+            _ when _binding => "It binds there. Let go, breathe, try a hair to one side.",
+            _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set{toolNote} · the pick will hold",
         };
     }
 
@@ -745,10 +661,10 @@ public partial class LockpickPuzzle : Node2D
         Vector2 direction = DirectionFromDegrees(_pickDegrees);
         Vector2 side = new(-direction.Y, direction.X);
         Vector2 jitter = Vector2.Zero;
-        if (_stress > 0.42f && _state == PickState.Picking &&
+        if (_stress > 0.25f && _state == PickState.Picking &&
             !Settings.ReduceMotionOrDefault())
         {
-            float shake = (_stress - 0.42f) * 7f;
+            float shake = (_stress - 0.25f) * 8f;
             jitter = side * (float)Math.Sin(Time.GetTicksMsec() / 28.0) * shake;
         }
 
@@ -758,14 +674,7 @@ public partial class LockpickPuzzle : Node2D
         Vector2 shaftEnd = LockCenter + direction * 176f + jitter;
         Vector2 handleEnd = LockCenter + direction * 258f + jitter;
 
-        if (_state == PickState.Broken)
-        {
-            Vector2 fallen = tip + new Vector2(18, 38);
-            DrawLine(tip, fallen, steel, 4f, true);
-            DrawLine(shaftEnd + new Vector2(-10, 16), handleEnd, darkSteel, 13f, true);
-            DrawLine(shaftEnd + new Vector2(-42, 10), shaftEnd + new Vector2(-10, 16), steel, 4f, true);
-            return;
-        }
+
 
         DrawLine(tip, shaftEnd, darkSteel, 6f, true);
         DrawLine(tip, shaftEnd, steel, 3.5f, true);

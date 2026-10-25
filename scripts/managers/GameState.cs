@@ -114,10 +114,12 @@ public partial class GameState : Node
         ["journey_to_porch.tscn"] = "Room6",
         ["room_1.tscn"] = "Room1",
         ["room_1_puzzle.tscn"] = "Room1",
+        ["kitchen_cabinet.tscn"] = "Room1",
         ["room_2.tscn"] = "Room2",
         ["room_2_puzzle.tscn"] = "Room2",
         ["difference_investigation.tscn"] = "Room2",
         ["room_3.tscn"] = "Room3",
+        ["jar_closeup.tscn"] = "Room3",
         ["room_4.tscn"] = "Room4",
         ["flashback_landing.tscn"] = "Room4",
         ["Room_4_puzzle.tscn"] = "Room4",
@@ -126,6 +128,7 @@ public partial class GameState : Node
         ["lockpick_puzzle.tscn"] = "Room5",
         ["vent_crawl.tscn"] = "Room5",
         ["basement.tscn"] = "Room5",
+        ["breaker_box.tscn"] = "Room5",
         ["room_6.tscn"] = "Room6",
         ["porch_447.tscn"] = "Room6",
         ["room_7.tscn"] = "Room7",
@@ -134,6 +137,7 @@ public partial class GameState : Node
     /// <summary>Tracker object name → player-facing phrase for hints/journal.</summary>
     private static readonly System.Collections.Generic.Dictionary<string, string> PrettyObjectNames = new()
     {
+        ["BreakerBox"] = "the backup-power box",
         ["Window"] = "the window",
         ["Cup2"] = "the second cup",
         ["Toast"] = "the toast",
@@ -368,8 +372,8 @@ public partial class GameState : Node
             "Outside the house there is an apartment with mail unopened behind the door, a phone no one calls, and a chair worn into the shape of waiting. Mara did not stop living at twenty-two. She only stopped letting the life be witnessed.\n\n" +
             "The house is not where she lives. It is where she goes instead."),
         ["bedroom_hairpin"] = ("Mum's bent hairpin",
-            "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for. Mara took it from behind the bedroom alarm clock without deciding to.\n\n" +
-            "It is thin enough to hold a bent padlock shackle and to worry the seal of a preserve jar. Small practical things travel farther in this house than grand gestures do."),
+            "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for. It lay in the kitchen drawer beside the keys, where a hand that opened preserve jars with it had left it without thinking.\n\n" +
+            "Thin enough to worry the seal of a jar the way she did — worked patiently round the rubber until the lid sighs instead of breaking. Small practical things travel farther in this house than grand gestures do."),
         ["hall_key_bridge"] = ("The copper bridge key",
             "Found beside the brass key in the kitchen drawer: a smaller copper key gone green at the edges, its bow cut like a little bridge — two posts, one arch.\n\n" +
             "It is not a fragment. It has actual weight and actual teeth, and somewhere ahead there is a keyhole under a bridge waiting for exactly this shape."),
@@ -384,16 +388,22 @@ public partial class GameState : Node
             "Remembering it herself — changes and all — is what loosened the key taped behind the photograph."),
         ["fine_tension_wrench"] = ("For Mara's hands",
             "Wrapped in tissue under the apology letters: one flat strip of spring steel, thinner than anything in her father's roll, with his pencil on the tissue — FOR MARA HANDS.\n\n" +
-            "Fitted to the lockpick set, deep pins read about a degree sooner and binds bite a little less. It does not pick a lock for her. It only listens more kindly."),
+            "Fitted to the lockpick set, deep pins read about a degree sooner and the pick trembles a little less under a wrong turn. It does not pick a lock for her. It only listens more kindly."),
+        ["blackout_games"] = ("What the dark was for",
+            "When the power went out in Eldfen, the girls were not frightened — officially. Officially it was a game: a torch under the chin, a sheet, the worst ghost voice a person could do, and Ida always braver in the telling than under the stairs. Their father never hurried. Cabinet, flashlight, basement box, light. A small liturgy a child could set her heart by.\n\n" +
+            "The house went dark the moment the garden opened, and the wardrobe forgot October. To have the light back, Mara has to do what he did — in his order, with his things, down where the house keeps what it needs to stay alive."),
         ["under_house_vent"] = ("Under the house",
             "Low in the wall of the room that will not stay one room, a ventilation grille is held by a latch rather than honest screws. Cold air moves behind it, smelling of stone and old apples.\n\n" +
-            "A latch like that wants two slender tools and patience — the kind of patience a locksmith's daughter watched at a workbench. The dark beyond it wants a light of its own."),
+            "A latch like that wants two slender tools and patience — the kind of patience a locksmith's daughter watched at a workbench. The dark beyond it wants a light of its own. And somewhere below, at the end of the duct, sits the box her father always went down to when the house went dark."),
+        ["vent_route"] = ("The way the house breathes",
+            "Mara cannot picture the basement door. She has tried, torch in hand, in the middle of a blackout, and what answered was a pain behind one eye — the memory's own way of keeping that one door shut.\n\n" +
+            "But the house breathes, and everything that breathes has more than one mouth. The low vent under the writing desk runs down with every other duct to the cold heart below: furnace, shelves, the kept things, and the breaker box her father always threw by his pencilled rule. Pick the grille's latch with his tools, crawl with his light, and set the little heart beating the way his card says — three thumps, for the rooms that get up in the morning."),
         ["father_lockpicks"] = ("Father's lockpicks",
-            "An oilcloth roll of slender picks and one flat tension wrench, kept clean long after the hands that used them were gone.\n\n" +
-            "A / D moves the pick quickly across the pins (Shift slows it for a fine nudge). The wrench simply follows horizontal mouse movement — no mouse button is held. Move right to apply pressure, left to ease it, and hold still to let an unset layer spring back. Each layer has its own sweet spot; set layers stay set, deeper layers are narrower and less forgiving, and forcing a bind can snap a pick."),
+            "An oilcloth roll of slender picks and one flat tension wrench, kept clean long after the hands that used them were gone. Mara never once saw him break one; in her memory, they simply do not break.\n\n" +
+            "The pick follows the mouse around the top of the lock, locked to it — no sliding, no drift. Hold A (or D) to turn the cylinder. How far it turns before it starts to shake is the whole secret: barely turning means the pick is far from the pins' truth; turning most of the way means you are close. Let go and the unset layer springs back; a layer turned all the way home clicks set like a little lock inside the lock, and stays set. Deeper layers sit narrower. Force only makes the pick tremble and complain — ease off, reseat it, listen again."),
         ["apartment_flashlight"] = ("A light for under the house",
-            "From the present-day apartment: a heavy flashlight with a dented rim, bought for power cuts and then forgotten in a cupboard.\n\n" +
-            "In the duct and below the house its beam follows the mouse on its own — no button to hold. Hold W to crawl forward through the vent; release it and Mara stops where she is. Sweep the beam slowly in the basement; clicking at darkness she has not actually seen still strains the memory."),
+            "Her father's flashlight, heavy as a small hammer, from the top shelf of the kitchen cabinet — the one he could find one-handed in any blackout while two girls pretended not to be frightened downstairs. The memory kept it charged the way it keeps all his things: ready.\n\n" +
+            "In the dark rooms, the duct and below the house its beam follows the mouse on its own — no button to hold. Hold W to crawl forward through the vent; release it and Mara stops where she is. Sweep the beam slowly in the basement; clicking at darkness she has not actually seen still strains the memory."),
         ["iron_cellar_key"] = ("The iron cellar key",
             "Their father kept a spare below-stairs key where a child was trusted not to look: beneath the loose stone by the garden gate.\n\n" +
             "It fits the little tool cabinet under the house — not the trunk. Some locks in that family were meant for keys. Others were only ever opened by knowing how they felt inside."),
@@ -697,6 +707,8 @@ public partial class GameState : Node
             _unlockedClues.Add("difference_room");
         if (HasFlag("item_lockpick_set") && !_unlockedClues.Contains("father_lockpicks"))
             _unlockedClues.Add("father_lockpicks");
+        if (HasFlag("blackout_began") && !_unlockedClues.Contains("blackout_games"))
+            _unlockedClues.Add("blackout_games");
         if (HasFlag("item_fine_tension_wrench") && !_unlockedClues.Contains("fine_tension_wrench"))
             _unlockedClues.Add("fine_tension_wrench");
         if (HasFlag("item_flashlight") && !_unlockedClues.Contains("apartment_flashlight"))
@@ -870,6 +882,97 @@ public partial class GameState : Node
         return SceneToRoom.TryGetValue(file, out var room) ? room : null;
     }
 
+    /// <summary>The tracker room a scene belongs to (same fold as
+    /// <see cref="CurrentRoomName"/>, for any path).</summary>
+    public static string RoomNameForScene(string scenePath)
+    {
+        if (string.IsNullOrWhiteSpace(scenePath))
+            return null;
+        string file = FileNameOf(scenePath);
+        return SceneToRoom.TryGetValue(file, out var room) ? room : null;
+    }
+
+    /// <summary>
+    /// The practical things kept in each early room beside its fragment.
+    /// A fragment alone is enough to leave by — Mara may walk out with
+    /// the memory and without the metal — but what was left behind stays
+    /// where it was kept, and the puzzles ahead will ask for it by name.
+    /// This one table drives three honest systems: the "look around a
+    /// little more?" prompt when leaving a finished room light, the
+    /// sealed-room exception that lets her come back for what she
+    /// missed, and nothing else. Items are never granted from it.
+    /// </summary>
+    private static readonly System.Collections.Generic.Dictionary<string, string[]> RoomPracticalItems = new()
+    {
+        ["Room1"] = ["item_hairpin", "item_hall_key_bridge"],
+        ["Room2"] = ["item_hall_key_door"],
+        ["Room3"] = ["item_hall_key_circle"],
+        ["Room4"] = ["item_lockpick_set"],
+    };
+
+    /// <summary>Fragment index earned in each practical-item room.</summary>
+    private static int ShardIndexForRoom(string room) => room switch
+    {
+        "Room1" => 0,
+        "Room2" => 1,
+        "Room3" => 2,
+        "Room4" => 3,
+        "Room5" => 4,
+        "Room6" => 5,
+        _ => -1,
+    };
+
+    /// <summary>True while a room still keeps a practical thing Mara has
+    /// not picked up. Sealed rooms consult this before refusing her:
+    /// a finished memory goes quiet, but an untaken key stays takeable.</summary>
+    public bool RoomHasUnclaimedPracticalItem(string room)
+    {
+        if (room == null || !RoomPracticalItems.TryGetValue(room, out var flags))
+            return false;
+        foreach (var flag in flags)
+        {
+            if (!HasFlag(flag))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Asked by SceneManager before it honours forward travel: is Mara
+    /// about to walk out of a room whose fragment she has, leaving a
+    /// practical thing behind? She is always allowed to — this only
+    /// gives her the chance to say "maybe I should look around a little
+    /// more" first. Never fires stepping back, within a room's own
+    /// close-ups, before the fragment, or during the blackout trek
+    /// (when crossing the whole dark house is the point).
+    /// </summary>
+    public bool TryGetLeavePrompt(string fromScene, string toScene, out string roomName)
+    {
+        roomName = RoomNameForScene(fromScene);
+        if (roomName == null || !RoomPracticalItems.ContainsKey(roomName))
+            return false;
+        if (HasFlag("blackout_active"))
+            return false;
+
+        int shard = ShardIndexForRoom(roomName);
+        if (shard < 0 || !IsShardRecovered(shard))
+            return false;
+        if (!RoomHasUnclaimedPracticalItem(roomName))
+            return false;
+
+        // Forward only, and not into one of this room's own close-ups.
+        // Journey thresholds borrow the room behind them in SceneToRoom,
+        // so they must count as leaving, not as staying.
+        if (SceneProgressIndex(toScene) <= SceneProgressIndex(fromScene))
+            return false;
+        string toFile = FileNameOf(toScene ?? string.Empty);
+        bool isJourney = toFile.StartsWith("journey_", System.StringComparison.Ordinal);
+        if (!isJourney && RoomNameForScene(toScene) == roomName)
+            return false;
+
+        return true;
+    }
+
     public static string PrettyObjectName(string objectName)
     {
         if (objectName != null && PrettyObjectNames.TryGetValue(objectName, out var pretty))
@@ -906,11 +1009,14 @@ public partial class GameState : Node
         file = file switch
         {
             "difference_investigation.tscn" => "room_2_puzzle.tscn",
+            "jar_closeup.tscn" => "room_3.tscn",
+            "kitchen_cabinet.tscn" => "room_1.tscn",
             "flashback_landing.tscn" => "room_4.tscn",
             "apartment_now.tscn" => "room_5.tscn",
             "lockpick_puzzle.tscn" => "room_5.tscn",
             "vent_crawl.tscn" => "room_5.tscn",
             "basement.tscn" => "room_5.tscn",
+            "breaker_box.tscn" => "room_5.tscn",
             _ => file,
         };
         return System.Array.IndexOf(MainPathSceneFiles, file);
@@ -943,6 +1049,11 @@ public partial class GameState : Node
             // The investigation grades its own clicks; it is a memory
             // test, not a room of examinables to loose-click through.
             "difference_investigation.tscn" => null,
+            // Item close-ups own their clicks the same way: a jar, a
+            // cabinet and a breaker box are puzzles, not examinables.
+            "jar_closeup.tscn" => null,
+            "kitchen_cabinet.tscn" => null,
+            "breaker_box.tscn" => null,
             "porch_447.tscn" => "Porch447",
             // Journeys borrow the completed room for Clarity/progress, but
             // they are thresholds, not rooms that can rest/seal.
@@ -1008,20 +1119,43 @@ public partial class GameState : Node
         string file = FileNameOf(path);
         string room = CurrentRoomName();
 
+        // While the house is out of power, every room has the same small
+        // liturgy to finish: cabinet, flashlight, basement box, light.
+        if (HasFlag("blackout_active") && !HasFlag("backup_power_on"))
+        {
+            if (file == "kitchen_cabinet.tscn")
+                return "Top shelf. By touch, the way he always found it.";
+            if (file == "breaker_box.tscn")
+                return "Set the breakers like Father's picture. Then the big handle.";
+            if (!HasFlag("item_flashlight"))
+                return "Dark. Father kept a flashlight in the kitchen cabinet — the one Mara swears was never there. Step Back through the dark rooms to the kitchen, and try anyway.";
+            if (!HasFlag("blackout_vent_noticed"))
+                return "Light in hand. Get back to the room that will not stay one room — the way down is somewhere in it.";
+            if (!HasFlag("room5_vent_open"))
+                return "The low vent is the way down. Father's latch, Father's tools.";
+            return "Under the house: find the backup-power box and bring the light back. Then the wardrobe can remember the garden.";
+        }
+
         switch (file)
         {
             case "room_1_puzzle.tscn":
-                return HasFlag("item_hairpin")
-                    ? "Open the five-dial padlock. The kitchen remembers the combination; Mum's hairpin can hold its bent shackle."
-                    : "The padlock's bent shackle needs something thin to hold it. The bedroom nightstand kept such a thing.";
+                return Room1Puzzle.IsUnlocked
+                    ? "The drawer is open. Take what the morning kept — all of it, or only what you need to go on."
+                    : "Open the five-dial padlock. The kitchen remembers the combination.";
             case "room_2_puzzle.tscn":
-                if (HasFlag("difference_room2_solved") && !IsShardRecovered(1))
-                    return "The little door key is Mara's. The photograph can be faced now.";
+                if (IsShardRecovered(1) && !HasFlag("difference_room2_solved"))
+                    return "The photograph is Mara's. But its backing still nags at her — something small is taped behind what the house edited.";
                 if (Room2Puzzle.IsUnlocked && !IsShardRecovered(1))
-                    return "A face-down photograph waits in the drawer. Something small shifts behind it.";
+                    return "A face-down photograph waits in the drawer.";
                 return "Spell the four-letter word. The sitting room has been saying it all along.";
             case "difference_investigation.tscn":
                 return "Remember the sitting room for five seconds. Then find what memory moved.";
+            case "jar_closeup.tscn":
+                return HasFlag("item_hairpin")
+                    ? "Work Mum's hairpin round the seal, the patient way. Glass remembers being forced."
+                    : "The last seal will not give to fingernails. It wants something thin.";
+            case "breaker_box.tscn":
+                return "Set the breakers like Father's picture. Then the big handle.";
             case "room_4.tscn":
                 if (HasFlag("room4_door_opened"))
                     return "All three hallway keys have turned. The door beyond the sentence stands open.";
@@ -1044,6 +1178,8 @@ public partial class GameState : Node
                     ? $"The life that continued, unopened ({apDone}/{apTotal})."
                     : "Nothing here is a puzzle. The door remembers the way back.";
             case "basement.tscn":
+                if (HasFlag("blackout_active") && !HasFlag("backup_power_on"))
+                    return "Somewhere on these walls: the backup-power box Father always came down to. The rest can wait for light.";
                 RoomExamineTracker.GetRoomProgress("Basement", out int baDone, out int baTotal, out var baLeft);
                 if (baLeft.Count > 0)
                 {
@@ -1060,7 +1196,7 @@ public partial class GameState : Node
                         : "A little cabinet below wants an iron key from somewhere in the garden.";
                 return "Nothing below the house is still hiding. Climb back when you are ready.";
             case "lockpick_puzzle.tscn":
-                return "A / D moves the pick; the wrench follows mouse movement. Set the layers one at a time — no click to hold.";
+                return "The pick follows the mouse around the lock. Hold A to turn; how far it turns before it shakes says how close you are. Set each layer home.";
             case "vent_crawl.tscn":
                 return "Hold W to crawl toward the light. The flashlight follows the mouse; release W to stop.";
             case "bedroom_prologue.tscn":
@@ -1093,7 +1229,7 @@ public partial class GameState : Node
                 if (keysIn >= 3 && !(HasFlag("room4_sentence_complete") || IsShardRecovered(3)))
                     return "Three keys are in. The hallway sentence still has to be made whole.";
                 return keysHeld >= 3
-                    ? $"Put Mara's three carried keys into their matching keyholes ({keysIn}/3 in)."
+                    ? $"Drag each of Mara's keys from the tray into its matching keyhole ({keysIn}/3 in)."
                     : $"Three physical keys open this door. Mara carries {keysHeld}/3; the first three fragment rooms keep them.";
             case "room_7.tscn":
                 if (!string.IsNullOrEmpty(CompletedEnding))
@@ -1133,6 +1269,7 @@ public partial class GameState : Node
                 "Room2" => "Fragment recovered. Onward: through the table drawer.",
                 "Room5" when !IsShardRecovered(4) && !HasFlag("room5_anchored_lamp") => "Everything faced — and still the room will not stay one room.",
                 "Room5" when !IsShardRecovered(4) => "The room is holding still, in the present tense.",
+                "Room5" when HasFlag("blackout_active") => "Fragment recovered — and the house has gone dark around it.",
                 "Room5" => "Fragment recovered. The wardrobe has remembered the garden.",
                 "Room6" when !IsShardRecovered(5) => "Everything faced — four separate truths, and one afternoon.",
                 "Room6" => "Fragment recovered. The road beyond the broken gate.",
@@ -1153,10 +1290,37 @@ public partial class GameState : Node
         string room = CurrentRoomName();
         string file = FileNameOf(SceneManager.CurrentScenePath ?? string.Empty);
 
+        // The blackout has one answer in every room: her father's order.
+        if (HasFlag("blackout_active") && !HasFlag("backup_power_on") &&
+            file is not ("lockpick_puzzle.tscn" or "vent_crawl.tscn" or "breaker_box.tscn"))
+        {
+            if (!HasFlag("item_flashlight"))
+                return ("He never hurried. Kitchen cabinet, top shelf, one hand, in the dark. The cabinet Mara is sure was never in that kitchen — Step Back (Q) through the dark rooms until the kitchen, then try the drawer counter anyway. Memory is keeping it where it always was.", null);
+            if (!HasFlag("blackout_vent_noticed"))
+                return ("Back to the room that will not stay one room (Step Forward). Feel for cold air where the wall meets the floor. He went down to the basement box — and something in that room breathes basement air.", null);
+            if (!HasFlag("room5_vent_open"))
+                return ("The low vent, under the writing desk. His latch, his tools: the pick follows the mouse; hold A to turn.", "LowVent");
+            return ("Below the house, on the wall above the preserves: a grey box with his writing inside the door. Set the breakers like his picture, then pull the big handle.", file == "basement.tscn" ? "BreakerBox" : null);
+        }
+
+        if (file == "jar_closeup.tscn")
+        {
+            return NextHintLevel("JarCloseup") switch
+            {
+                1 => ("Fingernails only worry a seal like this — and glass keeps the score. It wants something thin worried under the rubber.", null),
+                2 => ("Her mother opened these with a hairpin, worked patiently round the rim. One of those hairpins lay in the kitchen drawer, beside the keys — if Mara left it there, it is still there. Step Back and fetch it.", null),
+                _ => ("With the hairpin in Mara's bag (B): press and drag it slowly all the way around the lid's seal. Each stretch of rim gives with a small tick. Under the name tape at the bottom sleeps a key with no beginning and no end.", null),
+            };
+        }
+        if (file == "breaker_box.tscn")
+            return ("His picture is the whole instruction: copy the taped diagram's up-and-down pattern onto the six breakers exactly, then pull the big handle on the right. A wrong set only trips them all off again — look, copy, pull.", null);
+        if (file == "kitchen_cabinet.tscn")
+            return ("Top shelf, too high for two girls who were not supposed to reach it. She is not too small any more. Click what her hand finds there.", null);
+
         if (file == "room_1_puzzle.tscn")
         {
-            if (!HasFlag("item_hairpin"))
-                return ("Even the right combination will not stay open: the shackle is bent and springs back. Something thin has to hold it — the bedroom nightstand, behind the stopped alarm clock, kept one of her mother's hairpins.", null);
+            if (Room1Puzzle.IsUnlocked)
+                return ("The drawer kept more than the brass key. A smaller copper key lies beside it in the open drawer, and in its back corner — thin, bent, borrowed for a hundred little jobs — one of her mother's hairpins. Take them or leave them; the house will remember which.", null);
             return NextHintLevel("Room1") switch
             {
                 1 => ("Numbers stay. A clock, a calendar, a drawing, a cup — the morning kept count. Your journal (J) keeps what you found.", null),
@@ -1166,8 +1330,8 @@ public partial class GameState : Node
         }
         if (file == "room_2_puzzle.tscn")
         {
-            if (Room2Puzzle.IsUnlocked && !HasFlag("difference_room2_solved") && !IsShardRecovered(1))
-                return ("The word lock is open, but the photograph will not simply be taken. Click it: Mara first has to remember the sitting room for five seconds and notice what the house changed. The little door key is behind that remembering.", null);
+            if (IsShardRecovered(1) && !HasFlag("difference_room2_solved"))
+                return ("The photograph is Mara's — but look at it again. On its backing, in her father's pencil: FOR WHEN YOU REMEMBER IT RIGHT. He taped a key behind the sitting room in that picture, and the house has been editing the room it shows. Click the photograph and remember the room honestly — five seconds, then find what changed.", null);
             if (HasFlag("difference_room2_solved") && !IsShardRecovered(1))
                 return ("The room has been remembered honestly and the little door key is in Mara's bag (B). Click the photograph itself now.", null);
             return NextHintLevel("Room2") switch
@@ -1208,7 +1372,7 @@ public partial class GameState : Node
             {
                 1 => ("The brass pictures are labels now, not a knock to copy. Each one names the keyhole directly beneath it, and each keyhole wants the carried key with that shape.", null),
                 2 => ("The keys travelled with the first three fragments: copper from the kitchen drawer, the little door from behind the sitting-room photograph, and the circle from the last preserve jar. Mara's Bag (B) shows which she carries.", null),
-                _ => ("Put each key in by hand: copper bridge key → left keyhole; little door key → centre; circle key → right. Click the matching keyhole. When all three are in, click the door — though it will still refuse her until the hallway sentence is whole.", firstOpenKeyhole),
+                _ => ("Drag each key in by hand: copper bridge key → left keyhole; little door key → centre; circle key → right. A wrong hole will only rattle — teeth know their own lock. When all three are in, click the door — though it will still refuse her until the hallway sentence is whole.", firstOpenKeyhole),
             };
         }
         if (file == "room_5.tscn" && RoomExamineTracker.HasRoomBeenFullyExamined("Room5"))
@@ -1262,15 +1426,15 @@ public partial class GameState : Node
             return ("Nothing here can be changed — only finally seen. The photograph, the light, the runner. The end of the hall leads back when you are ready.", null);
 
         if (file == "apartment_now.tscn")
-            return ("This is not a puzzle room. It is the life that continued while she was in the house. The mail, the phone, the chair — and one practical thing in a cupboard for somewhere dark. The door leads back.", null);
+            return ("This is not a puzzle room. It is the life that continued while she was in the house. The mail, the phone, the chair. Her own flashlight here is dead — the living one is her father's, in a kitchen on the other side of memory. The door leads back.", null);
 
         if (file == "lockpick_puzzle.tscn")
         {
             return NextHintLevel("Lockpick") switch
             {
-                1 => ("A and D move the pick quickly; Shift makes it fine. Do not hold any mouse button — simply move the mouse right to turn the wrench, left to ease it, or hold still to let an unset layer spring back.", null),
-                2 => ("Work one layer at a time. Sweep A/D, listen for the cleaner, higher ticks, then make small rightward mouse movements. How far the plug travels before it binds tells you how close that layer's sweet spot is.", null),
-                _ => ("When a layer binds, stop moving right at once: force is what snaps picks. Set layers stay set, so a snapped pick only loses the current layer's travel. Deeper layers have narrower sweet spots; the fine tension wrench from Room 5's desk reads them about a degree sooner.", null),
+                1 => ("The pick is locked to the mouse: move the mouse around the top of the lock to seat it, then hold A (or D) to turn the cylinder. No clicking, no dragging. His picks do not break — not in her memory of them — so take your time.", null),
+                2 => ("Read the turn, layer by layer. If holding A barely moves the cylinder before the pick starts shaking, you are far away — reseat the pick somewhere new. If it turns most of the way first, you are close: nudge the mouse a hair and try again.", null),
+                _ => ("When the pick trembles, let go of A at once — forcing only complains, it never helps. Let the layer spring back, move the pick the width of a breath toward wherever it turned farthest, and turn again. A layer turned all the way home clicks set and stays set. Deeper layers sit narrower; the fine tension wrench from Room 5's desk reads them about a degree sooner.", null),
             };
         }
 
@@ -1660,12 +1824,15 @@ public partial class GameState : Node
     };
 
     /// <summary>
-    /// Cross-room practical items, derived from durable progress for saves
-    /// written before those items existed. New players meet every one of
-    /// these in Mara's hands at its proper source; this only guarantees
-    /// that an older Mara who already earned the adjoining fragment or
-    /// examine is never stranded behind a gate invented after she passed
-    /// the place that now holds its key/tool.
+    /// Cross-room practical items are deliberately skippable now: a
+    /// fragment is enough to leave a room by, and what Mara did not pick
+    /// up stays where it was kept until she comes back for it. So this
+    /// backfill no longer derives keys or tools from fragments or
+    /// examines — saves from the version where items rode along with the
+    /// fragments already carry their flags, and everyone else can step
+    /// back and fetch what they missed (sealed rooms keep untaken things
+    /// takeable). What remains is pure consistency: proofs that can only
+    /// exist if the item was already in her hands.
     /// </summary>
     private void BackfillCrossRoomItemsFromProgress()
     {
@@ -1680,41 +1847,17 @@ public partial class GameState : Node
             }
         }
 
-        // The hairpin's proper source is the bedroom nightstand, which a
-        // new Mara must examine before the bedroom door will open. Saves
-        // that already reached/faced the kitchen plainly passed it too.
-        if (RoomExamineTracker.GetClickedLayers("Bedroom", "Nightstand") != null ||
-            HasFlag("prologue_from_bedroom") ||
-            RoomExamineTracker.HasRoomBeenFullyExamined("Room1") || IsShardRecovered(0))
-            AddItem("item_hairpin", "bedroom_hairpin");
-
-        // The three hallway keys now ride beside fragments 0-2. Only an
-        // already-recovered fragment proves a legacy Mara reached the
-        // adjoining key: MarkRoomCompleted fires when a room's examine
-        // set is finished, which for Rooms 1-2 happens before their
-        // locks and fragments, so it must not hand these out early (that
-        // would quietly skip the Room 2 difference investigation too).
-        if (IsShardRecovered(0))
-            AddItem("item_hall_key_bridge", "hall_key_bridge");
-        if (IsShardRecovered(1))
-        {
-            AddItem("difference_room2_solved", "difference_room");
+        // The little door key is the difference investigation's reward;
+        // either fact proves the other.
+        if (HasFlag("difference_room2_solved"))
             AddItem("item_hall_key_door", "hall_key_door");
-        }
         if (HasFlag("item_hall_key_door"))
             AddItem("difference_room2_solved", "difference_room");
-        if (IsShardRecovered(2))
-            AddItem("item_hall_key_circle", "hall_key_circle");
 
-        // Father's roll now properly lives in the hall drawer. Its first
-        // shipped home was under Room 5's letters, so either durable sign
-        // is enough for a returning save. Recovering fragment 4 alone is
-        // not: a Mara who somehow skipped both drawers can still step
-        // back to either one, and the set should be picked up, not granted.
-        if (RoomExamineTracker.GetClickedLayers("Room4", "HallDrawer") != null ||
-            HasFlag("room5_drawer_opened") || HasFlag("room5_vent_open"))
-            AddItem("item_lockpick_set", "father_lockpicks");
-        if (HasFlag("item_fine_tension_wrench"))
+        // The fine wrench only exists fitted to the set, and the vent
+        // latch could only have been picked with it.
+        if (HasFlag("item_fine_tension_wrench") || HasFlag("room5_vent_open") ||
+            HasFlag("basement_trunk_open"))
             AddItem("item_lockpick_set", "father_lockpicks");
 
         if (HasFlag("room4_door_opened"))
@@ -1723,6 +1866,23 @@ public partial class GameState : Node
             AddItem("room4_key_door_inserted", null);
             AddItem("room4_key_circle_inserted", null);
         }
+
+        // The blackout belongs to the moment Room 5's letters become
+        // Mara's. A save already in the garden or beyond lived it before
+        // it had flags: mark the power long restored so the wardrobe
+        // never goes dark behind them retroactively.
+        if (IsShardRecovered(5) || HasFlag("porch_passed") ||
+            !string.IsNullOrEmpty(CompletedEnding))
+        {
+            AddItem("blackout_began", null);
+            AddItem("backup_power_on", null);
+            if (HasFlag("blackout_active"))
+                ClearFlag("blackout_active", save: false);
+        }
+        // Power restored is the one fact that ends the dark, however the
+        // flags arrived.
+        if (HasFlag("backup_power_on") && HasFlag("blackout_active"))
+            ClearFlag("blackout_active", save: false);
     }
 
     /// <summary>

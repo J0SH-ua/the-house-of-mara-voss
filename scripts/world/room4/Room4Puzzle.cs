@@ -41,7 +41,31 @@ public partial class Room4Puzzle : MemoryRoomBase
     private Texture2D _doorKeyTexture;
     private Texture2D _circleKeyTexture;
     private Label _statusLabel;
+    private Label _trayLabel;
     private bool _opened;
+
+    /// <summary>One carried key resting on the ledge, waiting for a hand.
+    /// The door is worked the way doors are: pick the key up, carry it
+    /// to its hole, turn it. A wrong hole only rattles — teeth know
+    /// their own lock.</summary>
+    private sealed class TrayKey
+    {
+        public string KeyholeId;
+        public string KeyFlag;
+        public string InsertedFlag;
+        public string ShortName;
+        public Texture2D Texture;
+        public Rect2 TrayRect;
+    }
+
+    private static readonly Rect2 TrayRect = new(78, 196, 144, 320);
+    private readonly List<TrayKey> _trayKeys = new();
+    private TrayKey _dragKey;
+    private Vector2 _dragPosition;
+    private TrayKey _turningKey;
+    private float _turnProgress;
+    private bool _turnSoundPlayed;
+    private int _wrongHoleCount;
 
     protected override string RoomName => "Room4";
     protected override string BackgroundPath => "res://assets/images/bgs/DoorCloseup.png";
@@ -93,12 +117,208 @@ public partial class Room4Puzzle : MemoryRoomBase
         _statusLabel = CreateLabel(string.Empty,
             new Vector2(276, 38), 21,
             new Color(1f, 0.9f, 0.62f, 0.92f), new Vector2(600, 36));
+        _trayLabel = CreateLabel("Mara's keys",
+            new Vector2(78, 164), 18,
+            new Color(1f, 0.9f, 0.62f, 0.85f), new Vector2(144, 28));
+        RefreshTray();
         UpdateStatusLabel();
 
         if (!_opened)
         {
             _ = PlayStoryLessonOnceAsync("story_lesson_room4_door_keys",
                 "Up close, it isn't a pattern at all. Three keyholes. Three ordinary keys, if this house has ever given me anything ordinary to carry.");
+        }
+    }
+
+    /// <summary>Rebuild the ledge: every carried key whose hole is still
+    /// empty, in bridge–door–circle order, on its own peg.</summary>
+    private void RefreshTray()
+    {
+        _trayKeys.Clear();
+        var gs = GameState.Instance;
+        if (gs == null || _opened)
+        {
+            if (_trayLabel != null)
+                _trayLabel.Visible = false;
+            return;
+        }
+
+        void AddIfCarried(string keyholeId, string keyFlag, string insertedFlag,
+            string shortName, Texture2D texture)
+        {
+            if (!gs.HasFlag(keyFlag) || gs.HasFlag(insertedFlag))
+                return;
+            float cy = 258f + _trayKeys.Count * 96f;
+            _trayKeys.Add(new TrayKey
+            {
+                KeyholeId = keyholeId,
+                KeyFlag = keyFlag,
+                InsertedFlag = insertedFlag,
+                ShortName = shortName,
+                Texture = texture,
+                TrayRect = new Rect2(150f - 42f, cy - 42f, 84f, 84f),
+            });
+        }
+
+        AddIfCarried("LeftKeyhole", BridgeKeyFlag, BridgeInsertedFlag, "copper bridge key", _bridgeKeyTexture);
+        AddIfCarried("CenterKeyhole", DoorKeyFlag, DoorInsertedFlag, "little door key", _doorKeyTexture);
+        AddIfCarried("RightKeyhole", CircleKeyFlag, CircleInsertedFlag, "circle key", _circleKeyTexture);
+
+        if (_trayLabel != null)
+            _trayLabel.Visible = _trayKeys.Count > 0;
+    }
+
+    private TrayKey TrayKeyAt(Vector2 position)
+    {
+        foreach (var key in _trayKeys)
+        {
+            if (key.TrayRect.HasPoint(position))
+                return key;
+        }
+        return null;
+    }
+
+    private bool HandsFree() =>
+        !Busy && !_opened && _turningKey == null &&
+        !Dialogue.IsShowing && !Dialogue.IsInputBlocked &&
+        !GetTree().Paused && !SceneManager.IsChanging;
+
+    public override void _Input(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mouse && mouse.ButtonIndex == MouseButton.Left)
+        {
+            Vector2 pos = GetGlobalMousePosition();
+            if (mouse.Pressed && _dragKey == null && HandsFree() &&
+                !(GameUI.Instance != null && GameUI.Instance.IsPointOverInteractiveHud(pos)))
+            {
+                var key = TrayKeyAt(pos);
+                if (key != null)
+                {
+                    _dragKey = key;
+                    _dragPosition = pos;
+                    AudioManager.Play(Sfx.KeyType, -12f, 1.12f);
+                    GetTree().Root.SetInputAsHandled();
+                    QueueRedraw();
+                    return;
+                }
+            }
+            else if (!mouse.Pressed && _dragKey != null)
+            {
+                FinishDrag(pos);
+                GetTree().Root.SetInputAsHandled();
+                return;
+            }
+        }
+
+        base._Input(@event);
+    }
+
+    public override void _Process(double delta)
+    {
+        base._Process(delta);
+
+        if (_dragKey != null)
+        {
+            _dragPosition = GetGlobalMousePosition();
+            QueueRedraw();
+        }
+
+        if (_turningKey != null)
+        {
+            _turnProgress = Mathf.MoveToward(_turnProgress, 1f, (float)delta / 0.8f);
+            if (!_turnSoundPlayed && _turnProgress > 0.5f)
+            {
+                _turnSoundPlayed = true;
+                var hotspot = GetHotspot(_turningKey.KeyholeId);
+                AudioManager.Play(Sfx.LockOpen, -7f, hotspot?.SfxPitch ?? 1f);
+            }
+            QueueRedraw();
+            if (_turnProgress >= 1f)
+            {
+                var done = _turningKey;
+                _turningKey = null;
+                _ = FinishInsertAsync(done);
+            }
+        }
+    }
+
+    private void FinishDrag(Vector2 pos)
+    {
+        var key = _dragKey;
+        _dragKey = null;
+        if (key == null)
+            return;
+
+        string[] keyholeIds = ["LeftKeyhole", "CenterKeyhole", "RightKeyhole"];
+        foreach (var id in keyholeIds)
+        {
+            var hotspot = GetHotspot(id);
+            if (hotspot == null || !hotspot.Rect.Grow(12f).HasPoint(pos))
+                continue;
+
+            if (IsInserted(InsertedFlagFor(id)))
+            {
+                AudioManager.Play(Sfx.LockRattle, -11f, 0.9f);
+                GameState.Instance?.Toast("That hole already has its key, turned and staying.");
+                QueueRedraw();
+                return;
+            }
+
+            if (id == key.KeyholeId)
+            {
+                BeginInsert(key, hotspot);
+                return;
+            }
+
+            _ = WrongHoleAsync(key, hotspot);
+            QueueRedraw();
+            return;
+        }
+
+        // Let go anywhere else and the key simply goes back on its peg.
+        AudioManager.Play(Sfx.KeyType, -13f, 0.9f);
+        QueueRedraw();
+    }
+
+    private void BeginInsert(TrayKey key, Hotspot hotspot)
+    {
+        Busy = true;
+        _turningKey = key;
+        _turnProgress = 0f;
+        _turnSoundPlayed = false;
+        AudioManager.Play(Sfx.KeyType, -8f, hotspot.SfxPitch);
+        QueueRedraw();
+    }
+
+    private async Task WrongHoleAsync(TrayKey key, Hotspot hotspot)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            AudioManager.Play(Sfx.LockRattle, -7f, 0.85f);
+            AudioManager.Play(Sfx.Denied, -12f, 0.92f);
+            string[] lines =
+            [
+                "No. It goes in a thumb's depth and stops, wrong all through. Teeth know their own lock.",
+                "It rattles, nothing more. This key was cut for a different patience.",
+                "Not this hole. Not with that shape. Even I can hear that, and I'm the one holding it wrong.",
+            ];
+            string line = lines[_wrongHoleCount % lines.Length];
+            _wrongHoleCount++;
+            await Say(line, 3.8f, 23);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            GameState.Instance?.Toast($"The {key.ShortName} goes back on its peg. Match its shape to the plate above the hole.");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
         }
     }
 
@@ -116,6 +336,77 @@ public partial class Room4Puzzle : MemoryRoomBase
         DrawInsertedKey("LeftKeyhole", BridgeInsertedFlag, _bridgeKeyTexture);
         DrawInsertedKey("CenterKeyhole", DoorInsertedFlag, _doorKeyTexture);
         DrawInsertedKey("RightKeyhole", CircleInsertedFlag, _circleKeyTexture);
+        DrawTurningKey();
+        DrawTray();
+        DrawDraggedKey();
+    }
+
+    private void DrawTray()
+    {
+        if (_trayKeys.Count == 0 || _opened)
+            return;
+
+        // A plain wooden ledge on the wall beside the door, with a peg
+        // for every key still in Mara's hand.
+        DrawRect(TrayRect, new Color(0.09f, 0.065f, 0.045f, 0.92f), true);
+        DrawRect(TrayRect, new Color(0.62f, 0.48f, 0.3f, 0.85f), false, 2f);
+        DrawRect(new Rect2(TrayRect.Position + new Vector2(8, 8), TrayRect.Size - new Vector2(16, 16)),
+            new Color(0.4f, 0.3f, 0.18f, 0.4f), false, 1f);
+
+        foreach (var key in _trayKeys)
+        {
+            var center = key.TrayRect.GetCenter();
+            DrawCircle(center + new Vector2(0, -34), 4f, new Color(0.72f, 0.58f, 0.34f, 0.9f));
+            if (key == _dragKey || key == _turningKey)
+                continue;
+            bool hover = HandsFree() && key.TrayRect.HasPoint(GetGlobalMousePosition());
+            if (hover)
+                DrawArc(center, 50f, 0f, Mathf.Tau, 40,
+                    new Color(1f, 0.86f, 0.52f, 0.75f), 2f, true);
+            if (key.Texture != null)
+                DrawTextureRect(key.Texture, key.TrayRect, false);
+            else
+                DrawCircle(center, 9f, new Color(1f, 0.88f, 0.52f, 0.9f));
+        }
+    }
+
+    private void DrawDraggedKey()
+    {
+        if (_dragKey == null || _dragKey.Texture == null)
+            return;
+        var rect = new Rect2(_dragPosition - new Vector2(46, 46), new Vector2(92, 92));
+        DrawCircle(_dragPosition + new Vector2(4, 10), 40f, new Color(0, 0, 0, 0.3f));
+        DrawTextureRect(_dragKey.Texture, rect, false);
+
+        // The hole it is hovering over, agreed or not, answers quietly.
+        string[] keyholeIds = ["LeftKeyhole", "CenterKeyhole", "RightKeyhole"];
+        foreach (var id in keyholeIds)
+        {
+            var hotspot = GetHotspot(id);
+            if (hotspot != null && hotspot.Rect.Grow(12f).HasPoint(_dragPosition) &&
+                !IsInserted(InsertedFlagFor(id)))
+            {
+                DrawArc(hotspot.Center, 56f, 0f, Mathf.Tau, 48,
+                    new Color(1f, 0.88f, 0.52f, 0.65f), 2.5f, true);
+            }
+        }
+    }
+
+    private void DrawTurningKey()
+    {
+        if (_turningKey == null || _turningKey.Texture == null)
+            return;
+        var hotspot = GetHotspot(_turningKey.KeyholeId);
+        if (hotspot == null)
+            return;
+
+        // The whole small ceremony of a key: it goes in sideways, her
+        // wrist rolls, and the bow comes level as the lock lets go.
+        float eased = 1f - Mathf.Pow(1f - Mathf.Clamp(_turnProgress, 0f, 1f), 3f);
+        float angle = Mathf.Lerp(-1.25f, 0f, eased);
+        DrawSetTransform(hotspot.Center, angle, Vector2.One);
+        DrawTextureRect(_turningKey.Texture, new Rect2(-46, -46, 92, 92), false);
+        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
 
     private void DrawInsertedKey(string hotspotId, string insertedFlag, Texture2D texture)
@@ -162,7 +453,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             if (IsInserted(InsertedFlagFor(hotspot.Id)))
                 _ = ExamineDoorPartAsync(hotspot);
             else if (HasKeyFor(hotspot.Id))
-                _ = InsertKeyAsync(hotspot);
+                _ = DragHintAsync(hotspot);
             else
                 _ = MissingKeyAsync(hotspot);
             return;
@@ -239,24 +530,44 @@ public partial class Room4Puzzle : MemoryRoomBase
 
     private bool AllKeysInserted() => InsertedCount() >= 3;
 
-    private async Task InsertKeyAsync(Hotspot hotspot)
+    /// <summary>Clicked an empty hole while carrying its key: the door
+    /// is not worked by clicking any more. Say so once, plainly.</summary>
+    private async Task DragHintAsync(Hotspot hotspot)
     {
         if (Busy)
             return;
         Busy = true;
+        try
+        {
+            AudioManager.Play(Sfx.LockRattle, -10f, hotspot.SfxPitch);
+            await Say("By hand, this one. The key for this hole is on the ledge with the others I've carried here — drag it up and put it in properly.", 4.2f, 23);
+            GameState.Instance?.Toast("Drag the matching key from Mara's ledge (left) into the keyhole, and let go.");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    /// <summary>The turn has finished on screen; now the lock is real.</summary>
+    private async Task FinishInsertAsync(TrayKey key)
+    {
         bool finishDoor = false;
         try
         {
             var gs = GameState.Instance;
-            if (gs == null)
+            var hotspot = GetHotspot(key.KeyholeId);
+            if (gs == null || hotspot == null)
                 return;
 
             RecordExamine(hotspot);
-            AudioManager.Play(Sfx.KeyType, -8f, hotspot.SfxPitch);
-            await WaitSeconds(0.18f);
-            AudioManager.Play(Sfx.LockRattle, -8f, hotspot.SfxPitch);
-            gs.SetFlag(InsertedFlagFor(hotspot.Id));
+            gs.SetFlag(key.InsertedFlag);
             Hotspots.SpawnRipple(hotspot.Center, new Color(1f, 0.88f, 0.55f));
+            RefreshTray();
             UpdateStatusLabel();
             QueueRedraw();
 
@@ -329,17 +640,17 @@ public partial class Room4Puzzle : MemoryRoomBase
         "LeftKeyhole" =>
         [
             "Empty. The bridge keyhole smells faintly of river mud and green copper.",
-            "Whatever belongs here was kept with a morning, not with a memory trick.",
+            "Whatever belongs here was kept with a morning, not with a memory trick. A copper key, in a kitchen drawer, beside a brass one — if I left it lying there, it's lying there still.",
         ],
         "CenterKeyhole" =>
         [
             "Empty. Behind the little-door keyhole: photograph paper, old tape, somebody breathing in a quiet room.",
-            "The key for this one is hidden where a face was kept face-down.",
+            "The key for this one is taped behind a photograph, under a father's pencil: for when you remember it right. The sitting room keeps it — if I only took the picture and left its backing unexamined.",
         ],
         "RightKeyhole" =>
         [
             "Empty, and cold all the way through. Preserves. Glass. A name folded small enough to keep.",
-            "The circle wants the key that was kept the way everything in that room was kept.",
+            "The circle wants the key that was kept the way everything in that room was kept: sealed in the last jar, under the name tape. If I took the tape and never reached deeper, it's still down there in the dark glass.",
         ],
         _ => ["Empty."],
     };
@@ -561,7 +872,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             if (gs.HasFlag(CircleKeyFlag)) carried++;
         }
         _statusLabel.Text = carried > inserted
-            ? $"keys in: {inserted} of 3 — Mara carries {carried}"
-            : $"keys in: {inserted} of 3";
+            ? $"keys in: {inserted} of 3 — drag a carried key into its keyhole"
+            : $"keys in: {inserted} of 3 — the rest are still in their keeping-places";
     }
 }

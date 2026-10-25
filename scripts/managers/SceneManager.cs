@@ -13,6 +13,10 @@ public partial class SceneManager : Node
 	/// <see cref="ResumeDeferredSceneChange"/> when the bag closes over it.</summary>
 	private static string _deferredScenePath;
 
+	/// <summary>One-shot pass set when Mara has just been asked "leave
+	/// anyway?" about a practical thing left behind, and answered yes.</summary>
+	private static bool _leavePromptBypass;
+
 	/// <summary>Fired after a scene has been swapped in (before fade-in completes).
 	/// GameState uses it for music, objectives and autosave.</summary>
 	public static event System.Action<string> SceneChanged;
@@ -30,9 +34,11 @@ public partial class SceneManager : Node
 	{
 		["room_1_puzzle.tscn"] = ("res://scenes/world/room_1.tscn", "← Step Back"),
 		["room_2.tscn"] = ("res://scenes/world/room_1.tscn", "← Previous Room"),
+		["kitchen_cabinet.tscn"] = ("res://scenes/world/room_1.tscn", "← Step Back"),
 		["room_2_puzzle.tscn"] = ("res://scenes/world/room_2.tscn", "← Step Back"),
 		["difference_investigation.tscn"] = ("res://scenes/world/room_2_puzzle.tscn", "← Step Back"),
 		["room_3.tscn"] = ("res://scenes/world/room_2.tscn", "← Previous Room"),
+		["jar_closeup.tscn"] = ("res://scenes/world/room_3.tscn", "← Step Back"),
 		["room_4.tscn"] = ("res://scenes/world/room_3.tscn", "← Previous Room"),
 		["Room_4_puzzle.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),
 		["flashback_landing.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),
@@ -40,6 +46,7 @@ public partial class SceneManager : Node
 		["apartment_now.tscn"] = ("res://scenes/world/room_5.tscn", "← Step Back"),
 		["vent_crawl.tscn"] = ("res://scenes/world/room_5.tscn", "← Back Out"),
 		["basement.tscn"] = ("res://scenes/world/room_5.tscn", "← Climb Back"),
+		["breaker_box.tscn"] = ("res://scenes/world/basement.tscn", "← Step Back"),
 		["room_6.tscn"] = ("res://scenes/world/room_5.tscn", "← Previous Room"),
 		["porch_447.tscn"] = ("res://scenes/world/room_6.tscn", "← Previous Room"),
 		["room_7.tscn"] = ("res://scenes/world/porch_447.tscn", "← Previous Room"),
@@ -127,6 +134,20 @@ public partial class SceneManager : Node
 			Logger.Debug($"Scene change held for a fragment moment: {scenePath}");
 			return;
 		}
+
+		// A fragment alone is enough to leave a room by — but before the
+		// house lets her walk out light, Mara gets one honest chance to
+		// say "maybe I should take a look around more." GameUI asks;
+		// her answer resumes or shelves this exact request.
+		if (!_leavePromptBypass && GameState.Instance != null && GameUI.Instance != null &&
+		    GameState.Instance.TryGetLeavePrompt(CurrentScenePath, scenePath, out string leaveRoom) &&
+		    GameUI.Instance.BeginLeavePrompt(leaveRoom))
+		{
+			_deferredScenePath = scenePath;
+			Logger.Debug($"Scene change held for a leave-anyway prompt: {scenePath}");
+			return;
+		}
+		_leavePromptBypass = false;
 		_deferredScenePath = null; // explicit travel supersedes a held request
 
 		while (IsChanging)
@@ -147,6 +168,25 @@ public partial class SceneManager : Node
 		{
 			IsChanging = false;
 		}
+	}
+
+	/// <summary>Called by GameUI when Mara answers "leave anyway": the held
+	/// change proceeds, and the prompt is not asked twice about it.</summary>
+	public static void ConfirmDeferredLeave()
+	{
+		if (string.IsNullOrWhiteSpace(_deferredScenePath))
+			return;
+		string next = _deferredScenePath;
+		_deferredScenePath = null;
+		_leavePromptBypass = true;
+		ChangeScene(next);
+	}
+
+	/// <summary>Called by GameUI when Mara decides to look around a little
+	/// more instead: the held change is simply forgotten.</summary>
+	public static void CancelDeferredLeave()
+	{
+		_deferredScenePath = null;
 	}
 
 	/// <summary>Called by GameUI the moment a held fragment lands in the

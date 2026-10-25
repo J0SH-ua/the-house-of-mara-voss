@@ -160,7 +160,7 @@ public partial class DifferenceInvestigation : Node2D
                 return;
 
             var gs = GameState.Instance;
-            if (gs != null && (gs.HasFlag(SolvedFlag) || gs.IsShardRecovered(1)))
+            if (gs != null && (gs.HasFlag(SolvedFlag) || gs.HasFlag(DoorKeyFlag)))
             {
                 _phase = Phase.Leaving;
                 SceneManager.ChangeScene(Room2PuzzleScenePath);
@@ -169,6 +169,9 @@ public partial class DifferenceInvestigation : Node2D
 
             if (gs != null && !gs.HasFlag(IntroFlag))
             {
+                await Say("This is the room in the photograph — the real one, before the house started tidying it. Dad taped a key behind this evening and trusted my memory over any lock he ever made. No pressure, then.");
+                if (!StillHere())
+                    return;
                 await Say("Not the room as it flatters itself. The mantel. Two chairs. The little table between them. Hold it the way you'd hold a breath.");
                 if (!StillHere())
                     return;
@@ -399,7 +402,7 @@ public partial class DifferenceInvestigation : Node2D
             await Say("That's the evening. Not polished. Not merciful. Just accurately untidy.");
             if (!StillHere())
                 return;
-            await Say("And accuracy has weight. Behind the photograph, old tape gives with a tiny tearing sound.");
+            await Say("And accuracy has weight. Behind the photograph — under FOR WHEN YOU REMEMBER IT RIGHT — old tape gives with a tiny tearing sound. He was right to trust the condition. Annoyingly, lovingly right.");
             if (!StillHere())
                 return;
             AudioManager.Play(Sfx.KeyType, -8f, 0.95f);
@@ -420,7 +423,7 @@ public partial class DifferenceInvestigation : Node2D
             gs.SetFlag(DoorKeyFlag, save: false);
             gs.UnlockClue("difference_room");
             gs.UnlockClue("hall_key_door");
-            gs.Toast("Little door key — kept in Mara's bag (B). The photograph can be faced now.");
+            gs.Toast("Little door key — kept in Mara's bag (B). Somewhere ahead is a door with a little door stamped above its middle keyhole.");
             gs.SaveGame("difference investigation solved");
         }
 

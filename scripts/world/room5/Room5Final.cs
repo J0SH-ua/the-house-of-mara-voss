@@ -31,6 +31,17 @@ using Godot;
 /// ventilation grille. Together with a light from Mara's present-day
 /// apartment, they open a way under the house that the main remembering
 /// never required her to find.
+///
+/// Then the house runs out of light. Once the letters are Mara's and
+/// her father's tools are back in her hands, the room's one still
+/// thing fails like everything else: the lamp flickers and dies, the
+/// garden stops showing through the coats, and the old rooms stand
+/// dark behind her. What follows is childhood procedure, remembered
+/// with her whole body — the blackout games she and Ida played in
+/// the pitch dark, her father's big torch from a kitchen cabinet
+/// this house never showed her on the way in, and the one door in
+/// the house she cannot picture at all: the basement's. The way
+/// down she can find is the way the house breathes.
 /// </summary>
 public partial class Room5Final : MemoryRoomBase
 {
@@ -148,7 +159,7 @@ public partial class Room5Final : MemoryRoomBase
     protected override void OnRoomReady()
     {
         bool anchored = GameState.Instance?.HasFlag(AnchoredFlag) ?? false;
-        _anchorLabel = CreateLabel("the lamp stayed lit",
+        _anchorLabel = CreateLabel(IsBlackoutOn() ? "the lamp, dark" : "the lamp stayed lit",
             new Vector2(452, 250), 18,
             new Color(1f, 0.9f, 0.62f, 0.9f), new Vector2(215, 34));
         _anchorLabel.Visible = anchored;
@@ -160,13 +171,28 @@ public partial class Room5Final : MemoryRoomBase
         _gardenLabel = CreateLabel("the garden, through the coats",
             new Vector2(876, 42), 18,
             new Color(1f, 0.9f, 0.62f, 0.92f), new Vector2(268, 34));
-        _gardenLabel.Visible = GameState.Instance?.IsShardRecovered(4) ?? false;
+        _gardenLabel.Visible = (GameState.Instance?.IsShardRecovered(4) ?? false) && !IsBlackoutOn();
 
         var gs = GameState.Instance;
         if (gs == null || !gs.IsShardRecovered(4))
         {
             _ = PlayStoryLessonOnceAsync("story_lesson_room5_anchor_room",
                 "This is the room Mara lives in now, laid over the room she grew up in, until neither year can keep its furniture.");
+        }
+
+        // The blackout can already be due the moment Mara walks back in
+        // (an older save that took the letters and the tools before the
+        // house learned to go dark), and her errands resume where they
+        // stopped: power to greet, or a vent still to notice by torchlight.
+        if (gs != null)
+        {
+            MaybeBeginBlackout();
+            if (gs.HasFlag("backup_power_on") && !gs.HasFlag("room5_power_restored_seen") &&
+                gs.HasFlag("blackout_began"))
+                _ = PowerRestoredBeatAsync();
+            else if (IsBlackoutOn() && gs.HasFlag("item_flashlight") &&
+                !gs.HasFlag("blackout_vent_noticed"))
+                _ = AutoNoticeVentAsync();
         }
     }
 
@@ -197,6 +223,14 @@ public partial class Room5Final : MemoryRoomBase
         if (hotspot.Id == "Lamp" && !(gs?.HasFlag(AnchoredFlag) ?? false) && !AllShiftersTouched())
         {
             _ = LampNotYetAsync(hotspot);
+            return;
+        }
+
+        // In a blackout the still thing is only a dead thing. Handle it
+        // before everything else so no verb goes looking for light here.
+        if (hotspot.Id == "Lamp" && IsBlackoutOn())
+        {
+            _ = BlackoutLampAsync(hotspot);
             return;
         }
 
@@ -232,7 +266,12 @@ public partial class Room5Final : MemoryRoomBase
 
         if (hotspot.Id == "Wardrobe" && gs != null && gs.IsShardRecovered(4))
         {
-            _ = ExitToGardenAsync();
+            // No light, no garden. The October behind the coats went out
+            // with the rest of the house and will not be walked into blind.
+            if (IsBlackoutOn())
+                _ = BlackoutWardrobeAsync(hotspot);
+            else
+                _ = ExitToGardenAsync();
             return;
         }
 
@@ -440,6 +479,7 @@ public partial class Room5Final : MemoryRoomBase
                 // Saves that took the letters before the picks existed can
                 // still find what lay underneath them.
                 await TakeLockpicksAsync(drawer, foundUnderLetters: false);
+                MaybeBeginBlackout();
                 return;
             }
 
@@ -487,6 +527,9 @@ public partial class Room5Final : MemoryRoomBase
                     "An apology is not only the minute Mara missed. It is that minute and every minute changed by it. Holding one true thing still has taught her how the others join.",
                     "That joining has a name now. Trace.");
                 await TakeLockpicksAsync(drawer, foundUnderLetters: true);
+                // Letters in one hand, her father's tools in the other.
+                // The house chooses this exact moment to lose its light.
+                MaybeBeginBlackout();
             }
             else
             {
@@ -591,12 +634,29 @@ public partial class Room5Final : MemoryRoomBase
                 return;
             }
 
+            // During the blackout, the vent is found twice: once by a
+            // hand that cannot see it, and once by torchlight, properly.
+            // Only the second finding becomes a way down.
+            if (IsBlackoutOn() && !gs.HasFlag("blackout_vent_noticed"))
+            {
+                if (!gs.HasFlag("item_flashlight"))
+                {
+                    AudioManager.Play(Sfx.Denied, -10f, 0.7f);
+                    await Say("Low in the dark my hand finds cold slats — and stops. I can't work a latch I cannot see. Light first: the kitchen, the cabinet under the counter. The kitchen provides.", 4.5f, 24);
+                }
+                else
+                {
+                    await NoticeVentBeatAsync();
+                }
+                return;
+            }
+
             if (gs.HasFlag("room5_vent_open"))
             {
                 if (!gs.HasFlag("item_flashlight"))
                 {
                     AudioManager.Play(Sfx.Denied, -9f, 0.8f);
-                    await Say("The duct beyond the grille is dark all the way down. I am not crawling into the walls of this house blind. Somewhere in the life I actually live, there is a flashlight in a cupboard.", 5f, 24);
+                    await Say("The duct beyond the grille is dark all the way down. I am not crawling into the walls of this house blind. Dad kept a flashlight in the kitchen — the cabinet under the counter. That's the light this dark wants.", 5f, 24);
                     return;
                 }
 
@@ -625,6 +685,235 @@ public partial class Room5Final : MemoryRoomBase
             gs.ClearFlag("lockpick_origin_basement", save: false);
             gs.SaveGame("lockpick vent armed");
             SceneManager.ChangeScene(LockpickScenePath);
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // The blackout. Letters read, her father's tools in hand — and the
+    // house loses its light the way it used to when weather got into
+    // the wires. Everything after is childhood procedure.
+    // ----------------------------------------------------------------
+
+    private static bool IsBlackoutOn() =>
+        GameState.Instance?.HasFlag("blackout_active") ?? false;
+
+    private void MaybeBeginBlackout()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag("blackout_began") || gs.HasFlag("backup_power_on"))
+            return;
+        if (!gs.IsShardRecovered(4) || !gs.HasFlag("item_lockpick_set"))
+            return;
+        if (gs.IsShardRecovered(5))
+            return;
+        _ = BeginBlackoutAsync();
+    }
+
+    private async Task WaitForHandsFreeAsync()
+    {
+        while ((Busy || Dialogue.IsShowing) &&
+            GodotObject.IsInstanceValid(this) && IsInsideTree())
+            await WaitSeconds(0.25f);
+    }
+
+    private async Task BeginBlackoutAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag("blackout_began"))
+            return;
+
+        await WaitForHandsFreeAsync();
+        if (!GodotObject.IsInstanceValid(this) || !IsInsideTree())
+            return;
+        if (gs.HasFlag("blackout_began"))
+            return;
+
+        Busy = true;
+        try
+        {
+            // The lamp does not simply go out. Nothing she loves ever
+            // simply went out: it argues first.
+            gs.SetFlag("blackout_began", save: false);
+            gs.SetFlag("blackout_flickering", save: false);
+            for (int i = 0; i < 5; i++)
+            {
+                AudioManager.Play(Sfx.UiHover, -16f, 1.7f);
+                await WaitSeconds(GD.RandfRange(0.09f, 0.3f));
+                if (!GodotObject.IsInstanceValid(this))
+                    return;
+            }
+            AudioManager.Play(Sfx.LockOpen, -11f, 0.42f);
+            gs.ClearFlag("blackout_flickering", save: false);
+            gs.SetFlag("blackout_active", save: false);
+            AudioManager.Instance?.PlayCutsceneAmbience(
+                AudioManager.AmbienceRoomToneLoopPath, -22f);
+            if (_gardenLabel != null)
+                _gardenLabel.Visible = false;
+            if (_anchorLabel != null)
+                _anchorLabel.Text = "the lamp, dark";
+            QueueRedraw();
+
+            await WaitSeconds(0.5f);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+
+            await SaySequence(
+                "—and there goes the light. The lamp stuttered, argued, and gave it up. Dark. The whole house at once: the hall, the stairs, every little sound a house makes thinking nobody's listening. All switched off together.",
+                "The wardrobe's stopped being a garden, too. Coats again. Just coats, hanging in the black. Whatever was waiting past them can wait in the dark like everything else.",
+                "I'm not scared. That's the strange part. We LOVED a blackout, Ida and me. Sneaking room to room in the pitch dark, scaring each other half to death, shrieking fit to get told off in two postcodes. The dark was a game with strict rules. Rule one: the shrieker loses.",
+                "Then Dad would come through with the big torch from the kitchen — the cabinet under the counter, where the spare candles lived and the batteries were never, ever dead. \"Right, you two. Ghosts to bed. The kitchen provides.\"",
+                "Fine. The kitchen provides. Even now. Even here.");
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+
+            gs.SetFlag("blackout_remembered_cabinet", save: false);
+            gs.UnlockClue("blackout_games");
+            gs.Toast("The house has lost power. The kitchen provides: a flashlight, from a cabinet Mara hasn't remembered in years (J). Mind the dark — and the way back is the top of the screen.");
+            gs.SaveGame("blackout began");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    private async Task BlackoutLampAsync(Hotspot lamp)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            AudioManager.Play(Sfx.Denied, -11f, 0.7f);
+            await SaySequence(
+                "Dead. Still warm at the neck, but dead. The one thing that never changed in this room — and the dark just changed it like it was nothing.",
+                "It's not the bulb. It's everything. The whole house, holding its breath. Light has to be fetched the old way now.");
+            GameState.Instance?.Toast("The kitchen cabinet. Flashlight. Batteries that were never dead.");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    private async Task BlackoutWardrobeAsync(Hotspot wardrobe)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            AudioManager.Play(Sfx.Examine, -9f, 0.75f);
+            await SaySequence(
+                "Coats. Just coats, in the black. My hand finds the back panel where October was.",
+                "The garden isn't gone. It's dark. There's a difference, and the difference is power. Dad always brought the light back from underneath the house — every blackout we ever had ended with a switch thrown below.");
+            GameState.Instance?.Toast("The garden waits for the light. Backup power sleeps under the house.");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    private async Task AutoNoticeVentAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag("blackout_vent_noticed"))
+            return;
+        await WaitForHandsFreeAsync();
+        if (!GodotObject.IsInstanceValid(this) || !IsInsideTree() || !IsBlackoutOn())
+            return;
+        if (gs.HasFlag("blackout_vent_noticed") || !gs.HasFlag("item_flashlight"))
+            return;
+
+        Busy = true;
+        try
+        {
+            await NoticeVentBeatAsync();
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    /// <summary>Torchlight back in the room — and the one door Mara
+    /// cannot picture. The migraine is the memory refusing; the vent
+    /// is the house offering its other mouth. Caller owns Busy.</summary>
+    private async Task NoticeVentBeatAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag("blackout_vent_noticed"))
+            return;
+
+        AudioManager.Play(Sfx.FlashlightClick, -7f);
+        await SaySequence(
+            "Light. Look at that. The whole room back, in one small honest circle. Dad's torch, and the batteries are fine. Of course they are. In this house they were never, ever dead.",
+            "Now. The basement. When the power went, Dad went down and threw the emergency switch — backup power, for exactly this. So: basement door. Basement door, Mara. It's... it's...");
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+
+        AudioManager.Play(Sfx.ScreenCrack2, -11f, 0.8f);
+        await SaySequence(
+            "—ow. There it is. Right behind the eye. The door won't come. I know this house has a basement the way I know my own name, and I cannot picture its door. Whatever I buried down the years, I buried the way down with it.",
+            "Slow down, then. Breathe. Light low, the way he carried it looking for the draught... wait. There. Low in the wall, under the desk. A vent — and cold coming off it in a thin, steady tongue.",
+            "The vents. The whole house breathes through them, and every duct runs down to one cold heart. The basement doesn't need its door remembered. It has other mouths. And one of them has a latch my father fitted.");
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+
+        gs.SetFlag("blackout_vent_noticed", save: false);
+        gs.UnlockClue("vent_route");
+        gs.Toast("The low vent. Her father's latch, her father's tools (J).");
+        gs.SaveGame("vent noticed in blackout");
+        Hotspots.SpawnRipple(VentRect.GetCenter(), new Color(1f, 0.85f, 0.5f));
+    }
+
+    private async Task PowerRestoredBeatAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag("room5_power_restored_seen"))
+            return;
+        await WaitForHandsFreeAsync();
+        if (!GodotObject.IsInstanceValid(this) || !IsInsideTree())
+            return;
+        if (gs.HasFlag("room5_power_restored_seen"))
+            return;
+
+        Busy = true;
+        try
+        {
+            gs.SetFlag("room5_power_restored_seen", save: false);
+            AudioManager.Play(Sfx.WordChime, -11f, 0.95f);
+            if (_anchorLabel != null)
+                _anchorLabel.Text = "the lamp stayed lit";
+            await SaySequence(
+                "The lamp comes back the way it left — without being asked. Warm. Lit. The one true thing, true again. Somewhere underneath me, a switch I threw is holding.",
+                "And past the coats — light that isn't electric. October. The garden kept its side of the bargain. It only ever needed the house lit to be findable.");
+            gs.SaveGame("room5 power restored greeted");
         }
         finally
         {
@@ -737,7 +1026,7 @@ public partial class Room5Final : MemoryRoomBase
         if (gs == null)
             return;
 
-        if (_gardenLabel != null && gs.IsShardRecovered(4) && !_gardenLabel.Visible)
+        if (_gardenLabel != null && gs.IsShardRecovered(4) && !_gardenLabel.Visible && !IsBlackoutOn())
             _gardenLabel.Visible = true;
 
         if (Settings.ReduceMotionOrDefault())
@@ -1016,12 +1305,13 @@ public partial class Room5Final : MemoryRoomBase
             }
         }
 
-        if (gs.IsShardRecovered(4))
+        // In the blackout the wardrobe is only a wardrobe again.
+        if (gs.IsShardRecovered(4) && !IsBlackoutOn())
             DrawWardrobePortal();
 
         DrawVent();
 
-        if (!anchored)
+        if (!anchored || IsBlackoutOn())
             return;
 
         var lamp = GetHotspot("Lamp");

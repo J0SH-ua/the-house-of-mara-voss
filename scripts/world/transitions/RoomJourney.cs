@@ -84,8 +84,10 @@ public partial class RoomJourney : Node2D
             TexturePath = "res://assets/images/bgs/Journey_Hallway_Door.png",
             Lines =
             [
-                "The kitchen lets go behind me.",
-                "Straight on. The house is being unusually honest about the way.",
+                "Okay. Kitchen's done. Whatever 'done' means here.",
+                "A key in a drawer. Toast I can still actually taste. I keep waiting for it to add up to something and it just... sits there, being a morning.",
+                "Next room smells of ash and paper already. The sitting room. Two chairs. I remember hating how quiet it could get in there.",
+                "Right. One foot, then the other. That's the whole plan. It's worked so far.",
             ],
             RepeatLines = ["Straight on, then. The house puts the same door in front of me again."],
             RandomWalkingLines =
@@ -93,6 +95,8 @@ public partial class RoomJourney : Node2D
                 "My hand still smells faintly of toast. Ridiculous detail for a mind to keep.",
                 "One foot, then the other. That was always the trick, wasn't it?",
                 "The boards know my weight. They don't bother creaking like I'm a stranger.",
+                "Did I leave a cup somewhere back there? I don't even know what day this is. Doesn't matter. Keep walking.",
+                "If this is a dream, my subconscious has really committed to the carpet.",
             ],
             FragmentLines =
             [
@@ -123,8 +127,10 @@ public partial class RoomJourney : Node2D
             TexturePath = "res://assets/images/bgs/Journey_Hallway_Left.png",
             Lines =
             [
-                "The sitting room goes quiet behind me.",
-                "Left, where the runner bends. I used to run this corner too fast.",
+                "That photograph. I keep putting her face back the way it was in my head, and the house keeps handing it to me turned a quarter away. It's rude, is what it is.",
+                "Left at the runner. My feet keep knowing the way before I do. I can't decide whether to trust that or be annoyed about it.",
+                "It's her room next, isn't it. The one at the end. Nobody's said so — the corridor just got that feeling, like the air's holding its breath politely.",
+                "Don't run. Running is how this corner used to win.",
             ],
             RepeatLines = ["Left at the runner. The house puts the same door in front of me again."],
             RandomWalkingLines =
@@ -132,6 +138,8 @@ public partial class RoomJourney : Node2D
                 "Paper. Ash. Someone breathing in another room. Then none of it.",
                 "I can still turn left without looking. My feet remembered before I did.",
                 "Don't run. Running is how this corner used to win.",
+                "My hands feel too big. No — too small. It changes as I walk. I hate that it changes.",
+                "Quiet house. Even the quiet sounds like somebody being quiet on purpose.",
             ],
             FragmentLines =
             [
@@ -163,8 +171,10 @@ public partial class RoomJourney : Node2D
             TexturePath = "res://assets/images/bgs/Journey_Hallway_Right.png",
             Lines =
             [
-                "My steps sound too light. Like socks on boards.",
-                "Right at the photographs. Even facing away, they know my steps.",
+                "Spiders with names. Jars in a row. A whole room preserved like — no. Like it was all still being waited for. That's the word. Waited for.",
+                "I keep turning the pieces over in my bag like they'll explain themselves if I line them up right. They haven't. Honestly, some cooperation would be nice.",
+                "There's a door at the end of this with plates on it. I remember the plates. I don't remember being allowed anywhere near them with my hands full of jam.",
+                "Okay. Right at the photographs. Even facing away, they know my steps.",
             ],
             RepeatLines = ["Right at the photographs. The house puts the same door in front of me again."],
             RandomWalkingLines =
@@ -172,10 +182,12 @@ public partial class RoomJourney : Node2D
                 "I should stop apologising to furniture.",
                 "Names in pencil. Small brave names.",
                 "Her laugh could find me through two closed doors. Some days it still can.",
+                "I should stop narrating. She'd have told me to stop narrating. 'Mara. It's a corridor.'",
+                "Halfway somewhere. That's the most accurate address I've got.",
             ],
             FragmentLines =
             [
-                "The jar knocks softly against my fingers. Names. Pieces. Why does this house keep putting that day in my hands?",
+                "The little square of name tape keeps finding my fingers in the bag. Names. Pieces. Why does this house keep putting that day in my hands?",
                 "A windowsill. Pencil letters. Her laugh—",
             ],
             CalmFragmentLines =
@@ -203,10 +215,10 @@ public partial class RoomJourney : Node2D
             TexturePath = "res://assets/images/bgs/Journey_Empty_Road.png",
             Lines =
             [
-                "The gate shuts behind me.",
-                "No swing now. No counting. Only the road, and my own steps on it.",
-                "It is shorter than I made it in my head. It was always shorter.",
-                "There. A light. The porch.",
+                "Gate. Road. Nobody counting swings now.",
+                "It is shorter than I made it in my head. Twelve years I made this road longer and longer and it's... just a road. That almost makes me angry.",
+                "The porch light's on. Who leaves a light on in a memory? Mum. Mum does. Of course she does.",
+                "Okay. Come on, feet. Nearly kept a promise's worth of road.",
             ],
             RepeatLines =
             [
@@ -218,6 +230,8 @@ public partial class RoomJourney : Node2D
                 "My shoes sound too loud for an empty road.",
                 "I keep expecting my own voice calling from the gate.",
                 "October air. Apples gone soft. Don't make a poem out of it, Mara. Walk.",
+                "Gravel in my shoe. Even here. Of course there's gravel in my shoe.",
+                "If I wave, nobody waves back. I checked. Obviously I checked.",
             ],
             FragmentLines =
             [

@@ -4,8 +4,11 @@ using Godot;
 
 /// <summary>
 /// Under the house — reached only by putting three rooms' practical
-/// things together: her father's lockpicks from the hall drawer, the
-/// Apartment's flashlight, and the low vent between them.
+/// things together: her father's lockpicks from the hall drawer, his
+/// flashlight from the kitchen cabinet, and the low vent between them.
+/// Since the blackout it is also the way back to light: the breaker
+/// box on the wall is the little heart her father always went down
+/// to throw, and it wants setting the way he set it — by his rule.
 ///
 /// This is not a seventh fragment room. It is the house's kept-under
 /// place: a cold furnace, preserves, a crate of outgrown toys, a locked
@@ -21,6 +24,8 @@ public partial class Basement : MemoryRoomBase
 {
     private const string Room5ScenePath = "res://scenes/world/room_5.tscn";
     private const string LockpickScenePath = "res://scenes/world/lockpick_puzzle.tscn";
+    private const string BreakerScenePath = "res://scenes/world/breaker_box.tscn";
+    private static readonly Rect2 BreakerRect = new(452, 62, 196, 128);
 
     private Vector2 _beamPosition = new(576, 324);
     private bool _beamReady;
@@ -47,6 +52,12 @@ public partial class Basement : MemoryRoomBase
         yield return new Hotspot("VentDuct", "The Vent Overhead",
             new Rect2(248, 96, 158, 82), new Vector2(327, 137),
             Sfx.Examine, 0.72f, PointerCursorPath, false);
+        // The reason her father came down here in every blackout. It
+        // was not in the painting either; drawn on the wall like the
+        // cabinet, in chunky bands. Utility, not a required examine.
+        yield return new Hotspot("BreakerBox", "The Breaker Box",
+            BreakerRect, BreakerRect.GetCenter(),
+            Sfx.KeyType, 0.6f, PointerCursorPath, false);
         yield return new Hotspot("LockedTrunk", "The Locked Trunk",
             new Rect2(880, 410, 265, 205), new Vector2(1012, 512),
             Sfx.DrawerClose, 0.78f, PointerCursorPath, false);
@@ -124,6 +135,9 @@ public partial class Basement : MemoryRoomBase
                 return;
             case "ToolCabinet":
                 _ = UseToolCabinetAsync(hotspot);
+                return;
+            case "BreakerBox":
+                _ = UseBreakerBoxAsync(hotspot);
                 return;
             case "VentDuct":
                 _ = ClimbBackAsync();
@@ -315,6 +329,42 @@ public partial class Basement : MemoryRoomBase
         }
     }
 
+    /// <summary>The little heart. Up close it is its own scene: six
+    /// small switches, his pencilled rule, and one big handle.</summary>
+    private async Task UseBreakerBoxAsync(Hotspot breaker)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            var gs = GameState.Instance;
+            if (gs == null)
+                return;
+
+            if (gs.HasFlag("backup_power_on"))
+            {
+                AudioManager.Play(Sfx.WordChime, -13f, 0.7f);
+                await Say("Humming. Three small green eyes open in the dark, exactly as set. The house has its little heart back, and it's holding.", 4.5f, 24);
+                return;
+            }
+
+            AudioManager.Play(Sfx.DrawerOpen, -8f, 0.6f);
+            await Say("There it is. The box he always came down to, torch in his teeth, us shrieking for him from the top of a stair I can't picture. All right, Dad. Your rule. Your handwriting. Show me.", 5f, 24);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            SceneManager.ChangeScene(BreakerScenePath);
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
     private async Task ClimbBackAsync()
     {
         if (Busy)
@@ -374,8 +424,54 @@ public partial class Basement : MemoryRoomBase
             return;
 
         DrawCabinetState(gs.HasFlag("basement_battery_taken"));
+        DrawBreakerBox(gs.HasFlag("backup_power_on"));
         if (gs.HasFlag("basement_trunk_open"))
             DrawOpenTrunk(gs.HasFlag("basement_negatives_taken"));
+    }
+
+    /// <summary>Not in the painting: a grey steel box on conduit, drawn
+    /// over the wall like the tool cabinet. Dead, its one small lamp is
+    /// dark; set right, three green eyes stay open down here.</summary>
+    private void DrawBreakerBox(bool powerOn)
+    {
+        var rect = BreakerRect;
+        // Conduit running up into the dark and down out of sight.
+        DrawRect(new Rect2(rect.GetCenter().X - 7, 0, 14, rect.Position.Y),
+            new Color(0.16f, 0.16f, 0.17f, 0.98f), true);
+        DrawRect(new Rect2(rect.GetCenter().X + 26, rect.End.Y, 10, 120),
+            new Color(0.14f, 0.14f, 0.15f, 0.98f), true);
+
+        DrawRect(rect, new Color(0.21f, 0.22f, 0.23f, 0.99f), true);
+        DrawRect(rect, new Color(0.52f, 0.53f, 0.5f, 0.95f), false, 3f);
+        var door = rect.Grow(-9f);
+        DrawRect(door, new Color(0.17f, 0.18f, 0.19f, 1f), true);
+        DrawRect(door, new Color(0.4f, 0.41f, 0.38f, 0.8f), false, 2f);
+
+        // A stencilled warning stripe, half worn away.
+        DrawRect(new Rect2(door.Position + new Vector2(12, 12), new Vector2(door.Size.X - 24, 10)),
+            new Color(0.62f, 0.42f, 0.14f, 0.75f), true);
+
+        // Three little lamps in a row.
+        for (int i = 0; i < 3; i++)
+        {
+            Vector2 lamp = new(door.Position.X + 30f + i * 26f, door.Position.Y + 44f);
+            if (powerOn)
+            {
+                DrawCircle(lamp, 10f, new Color(0.35f, 0.9f, 0.4f, 0.22f));
+                DrawCircle(lamp, 5f, new Color(0.45f, 0.95f, 0.48f, 1f));
+            }
+            else
+            {
+                DrawCircle(lamp, 5f, new Color(0.16f, 0.2f, 0.17f, 1f));
+                DrawArc(lamp, 7f, 0f, Mathf.Tau, 20, new Color(0.45f, 0.46f, 0.42f, 0.8f), 1.5f, true);
+            }
+        }
+        // And the big handle, down or up.
+        Vector2 pivot = new(door.End.X - 34f, door.GetCenter().Y + 8f);
+        Vector2 grip = pivot + (powerOn ? new Vector2(10, -34) : new Vector2(10, 34));
+        DrawLine(pivot, grip, new Color(0.55f, 0.55f, 0.52f, 1f), 6f, true);
+        DrawCircle(grip, 8f, new Color(0.6f, 0.2f, 0.14f, 1f));
+        DrawCircle(pivot, 6f, new Color(0.35f, 0.35f, 0.34f, 1f));
     }
 
     /// <summary>The painting shows the cabinet with one door ajar, so its
