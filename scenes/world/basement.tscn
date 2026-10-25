@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://cmarabasescn"]
+[gd_scene format=3 uid="uid://cmarabasescn"]
 
 [ext_resource type="Script" uid="uid://cmarabase001" path="res://scripts/world/room5/Basement.cs" id="1"]
 
