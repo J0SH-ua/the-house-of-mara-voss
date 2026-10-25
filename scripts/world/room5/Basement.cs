@@ -17,8 +17,9 @@ using Godot;
 /// follows the mouse directly, with no click or hold; outside its beam
 /// the painting is genuinely hard
 /// to read, and clicking at unseen darkness still counts as a loose
-/// click against MEMORY. The cabinet's spare battery makes the beam
-/// braver for every later visit.
+/// click against MEMORY. The cabinet keeps her father's hammer and
+/// a twist of bridge nails — no use down here at all, and the only
+/// thing that will do, later, where the empty road crosses water.
 /// </summary>
 public partial class Basement : MemoryRoomBase
 {
@@ -284,10 +285,10 @@ public partial class Basement : MemoryRoomBase
             if (gs == null)
                 return;
 
-            if (gs.HasFlag("basement_battery_taken"))
+            if (gs.HasFlag("item_hammer_nails") || gs.HasFlag("basement_battery_taken"))
             {
                 AudioManager.Play(Sfx.DrawerOpen, -9f, 0.85f);
-                await Say("Screwdrivers in order of size, because of course. The strong battery is already earning its keep in my flashlight.");
+                await Say("Screwdrivers in order of size, because of course. The hammer's place on top is empty now. He'd approve of it travelling.");
                 return;
             }
 
@@ -303,20 +304,20 @@ public partial class Basement : MemoryRoomBase
             AudioManager.Play(Sfx.DoorUnlock, -7f, 0.94f);
             AudioManager.Play(Sfx.DrawerOpen, -8f, 0.86f);
             await SaySequence(
-                "The iron key turns like it was oiled yesterday. Inside: screwdrivers by size, a coil of wire, pencils cut short — and one heavy spare battery, still in its paper.",
-                "Click. Oh, that's better. That's a beam with opinions. Down here, opinions help.");
+                "The iron key turns like it was oiled yesterday. Inside: screwdrivers by size, a coil of wire, pencils cut short — and on top, where a reaching hand falls first, his claw hammer and a twist of paper holding bridge nails older than I am.",
+                "He kept the mending tools below stairs because that's where things broke quietly. Crossings. Railings. Anything the weather worries at. …All right, Dad. Whatever's broken between here and morning, I'll bring these.");
             if (!GodotObject.IsInstanceValid(this))
                 return;
 
-            AudioManager.Play(Sfx.FlashlightClick, -6f, 1.08f);
-            gs.SetFlag("basement_battery_taken", save: false);
+            AudioManager.Play(Sfx.HammerHit, -8f, 0.9f);
+            gs.SetFlag("item_hammer_nails", save: false);
             gs.AddCorruption(-2);
             bool refilled = gs.RefillClarity(1);
-            gs.SaveGame("basement battery taken");
+            gs.SaveGame("hammer and nails taken");
             Hotspots.SpawnRipple(cabinet.Center, new Color(1f, 0.9f, 0.62f));
             gs.Toast(refilled
-                ? "Strong battery fitted. The flashlight reaches farther now; MEMORY eased, Clarity +1."
-                : "Strong battery fitted. The flashlight reaches farther now; MEMORY eased.");
+                ? "Father's hammer & nails — kept in Mara's bag (B). MEMORY eased, Clarity +1."
+                : "Father's hammer & nails — kept in Mara's bag (B). MEMORY eased.");
             QueueRedraw();
         }
         finally
@@ -423,7 +424,7 @@ public partial class Basement : MemoryRoomBase
         if (gs == null)
             return;
 
-        DrawCabinetState(gs.HasFlag("basement_battery_taken"));
+        DrawCabinetState(gs.HasFlag("item_hammer_nails") || gs.HasFlag("basement_battery_taken"));
         DrawBreakerBox(gs.HasFlag("backup_power_on"));
         if (gs.HasFlag("basement_trunk_open"))
             DrawOpenTrunk(gs.HasFlag("basement_negatives_taken"));

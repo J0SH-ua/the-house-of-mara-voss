@@ -13,10 +13,11 @@ using Godot;
 /// open the door. Beyond it she expects the hallway; the house gives her
 /// the kitchen instead. Room 1 then offers the existing tutorial cards.
 ///
-/// One-way by design: there is no Step Back from the kitchen, because the
-/// house has already moved the hallway. Reaching the kitchen sets
-/// "prologue_from_bedroom", which completes (and seals) this room and arms
-/// GameUI's "…The kitchen?" beat on arrival.
+/// The house moved the hallway the first time — but it relents for one
+/// small reason: Mum's bent hairpin sleeps in the nightstand's little
+/// drawer, visible and takeable, and a skipped hairpin must stay
+/// fetchable. Step Back from the kitchen returns here, the sealed room
+/// keeps one exception for the nightstand, and that is all.
 /// </summary>
 public partial class BedroomPrologue : MemoryRoomBase
 {
@@ -24,6 +25,11 @@ public partial class BedroomPrologue : MemoryRoomBase
     private const string FromBedroomFlag = "prologue_from_bedroom";
     private const string KitchenScenePath = "res://scenes/world/room_1.tscn";
     private const string CeilingPath = "res://assets/images/bgs/Bedroom_Ceiling_FP.png";
+    private const string HairpinFlag = "item_hairpin";
+    private const string HairpinIconPath = "res://assets/images/core/items/hairpin.png";
+    private static readonly Rect2 HairpinDrawRect = new(36, 452, 86, 86);
+
+    private Texture2D _hairpinTexture;
 
     private TextureRect _ceiling;
     private ColorRect _lidTop;
@@ -52,9 +58,26 @@ public partial class BedroomPrologue : MemoryRoomBase
 
     protected override void OnRoomReady()
     {
+        _hairpinTexture = GD.Load<Texture2D>(HairpinIconPath);
         var gs = GameState.Instance;
         if (gs != null && !gs.HasFlag(AwakeFlag))
             _ = PlayWakingAsync();
+    }
+
+    /// <summary>The finished bedroom goes quiet like every finished
+    /// room — except around the nightstand, while its drawer still
+    /// keeps the hairpin. Coming back for it always works.</summary>
+    protected override bool HotspotSealedException(Hotspot hotspot) =>
+        hotspot.Id == "Nightstand" &&
+        !(GameState.Instance?.HasFlag(HairpinFlag) ?? false);
+
+    public override void _Process(double delta)
+    {
+        base._Process(delta);
+        // The hairpin's beckoning ring breathes while it waits.
+        if (WasExamined("Nightstand") &&
+            !(GameState.Instance?.HasFlag(HairpinFlag) ?? false))
+            QueueRedraw();
     }
 
     protected override async Task OnRequiredExaminesCompletedAsync()
@@ -114,10 +137,11 @@ public partial class BedroomPrologue : MemoryRoomBase
     }
 
     /// <summary>The nightstand is one of the five objects Mara must face
-    /// before the door works. It gives her nothing to carry — the house
-    /// has not started asking for practical things yet. Mum's bent
-    /// hairpin waits further in, where her mother's hands actually left
-    /// it: in the kitchen drawer, beside the keys.</summary>
+    /// before the door works — and its little drawer is where this
+    /// house keeps the first practical thing: Mum's bent hairpin,
+    /// drawn on the nightstand once the drawer is open, taken by its
+    /// own click. She may walk out of the tutorial without it; the
+    /// way back to this room exists for exactly that regret.</summary>
     private async Task ExamineNightstandAsync(Hotspot hotspot)
     {
         if (hotspot == null || Busy)
@@ -132,6 +156,11 @@ public partial class BedroomPrologue : MemoryRoomBase
 
             if (!first)
             {
+                if (!(GameState.Instance?.HasFlag(HairpinFlag) ?? false))
+                {
+                    await TakeHairpinAsync();
+                    return;
+                }
                 GameState.Instance?.RegisterRepeatExaminePenalty();
                 await Say("Stopped. Everything here is stopped except me.", 3.5f, 24);
                 return;
@@ -142,6 +171,21 @@ public partial class BedroomPrologue : MemoryRoomBase
                 "My alarm clock. The hands have stopped, and honestly? Fair enough.",
                 "It used to ring me awake for school. She'd already be in the doorway talking before I'd even sat up.",
             });
+            if (!StillHere())
+                return;
+
+            // Under the clock: the little drawer every childhood
+            // nightstand is legally required to have.
+            AudioManager.Play(Sfx.DrawerOpen, -8f, 0.9f);
+            QueueRedraw();
+            if (!(GameState.Instance?.HasFlag(HairpinFlag) ?? false))
+            {
+                await Say("The little drawer underneath sticks, then gives. Buttons. A ribbon gone grey. And — oh. One of Mum's hairpins. Bent, the way hers always ended up bent.", 5.5f, 24);
+                if (!StillHere())
+                    return;
+                GameState.Instance?.Toast("Something thin and useful lies in the nightstand drawer. Click the nightstand again to take it — or don't. It will keep.");
+            }
+
             if (completedRequiredNow && StillHere())
                 await OnRequiredExaminesCompletedAsync();
         }
@@ -153,6 +197,41 @@ public partial class BedroomPrologue : MemoryRoomBase
                 QueueRedraw();
             }
         }
+    }
+
+    private async Task TakeHairpinAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag(HairpinFlag))
+            return;
+
+        AudioManager.Play(Sfx.KeyType, -10f, 1.3f);
+        await Say("Mum's. She could open a stuck preserve jar with one of these and a look. Borrowed for a hundred jobs it wasn't made for, and bent by every single one. …Come on, then. Be useful again.", 5.5f, 24);
+        if (!StillHere())
+            return;
+
+        gs.SetFlag(HairpinFlag, save: false);
+        gs.UnlockClue("bedroom_hairpin");
+        gs.Toast("Mum's bent hairpin — kept in Mara's bag (B). Thin enough for seals that fingernails only worry.");
+        gs.SaveGame("hairpin taken");
+        QueueRedraw();
+    }
+
+    protected override void DrawRoom()
+    {
+        // Once the nightstand has been faced, its little drawer stands
+        // open — and what sleeps in it stays visible until taken.
+        if (_hairpinTexture == null || !WasExamined("Nightstand"))
+            return;
+        if (GameState.Instance?.HasFlag(HairpinFlag) ?? false)
+            return;
+
+        float pulse = Settings.ReduceMotionOrDefault()
+            ? 0.72f
+            : 0.6f + 0.22f * (float)System.Math.Sin(Time.GetTicksMsec() / 240.0);
+        DrawArc(HairpinDrawRect.GetCenter(), 52f, 0f, Mathf.Tau, 40,
+            new Color(1f, 0.85f, 0.5f, pulse * 0.55f), 2f, true);
+        DrawTextureRect(_hairpinTexture, HairpinDrawRect, false);
     }
 
     // ------------------------------------------------------------ waking

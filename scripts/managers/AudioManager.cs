@@ -49,6 +49,16 @@ public static class Sfx
     public const string LockpickSnap = "lockpick_snap";
     public const string VentCrawl = "vent_crawl";
     public const string FlashlightClick = "flashlight_click";
+    // Second synthesized batch: weather, hands and things breaking.
+    public const string WindGust = "wind_gust";
+    public const string FireWhoomph = "fire_whoomph";
+    public const string CrumbleRumble = "crumble_rumble";
+    public const string VentKick = "vent_kick";
+    public const string VentBreak = "vent_break";
+    public const string HammerHit = "hammer_hit";
+    public const string HammerGlance = "hammer_glance";
+    public const string BridgeCreak = "bridge_creak";
+    public const string KnockWood = "knock_wood";
 }
 
 /// <summary>
@@ -370,7 +380,7 @@ public partial class AudioManager : Node
             PlayMusic(MusicRoom5, -28f);
         else if (scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("lockpick") || scene.Contains("breaker_box"))
             PlayMusic(MusicRoom5, -29f);
-        else if (scene.Contains("porch"))
+        else if (scene.Contains("porch") || scene.Contains("bridge_repair"))
             PlayMusic(MusicRoom6, -26f);
         else if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
             PlayMusic(MusicFinale, -18f);
@@ -441,7 +451,7 @@ public partial class AudioManager : Node
         (string path, float volume) ambience =
             scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("breaker_box") ? (AmbienceBasementPath, -14f)
             : scene.Contains("lockpick") ? (AmbiencePath, -20f)
-            : scene.Contains("porch") ? (AmbiencePorchPath, -16f)
+            : scene.Contains("porch") || scene.Contains("bridge_repair") ? (AmbiencePorchPath, -16f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -15f)
             : scene.Contains("room_5") ? (AmbienceRainPath, -15f)
             : scene.Contains("room_2") || scene.Contains("difference_investigation") ? (AmbienceFirePath, puzzle || scene.Contains("difference_investigation") ? -20f : -17f)

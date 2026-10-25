@@ -43,6 +43,12 @@ public partial class BlackoutOverlay : Control
         _rng.Randomize();
     }
 
+    /// <summary>The size to darken. A full-rect Control under a
+    /// CanvasLayer should resolve to the viewport on its own — but
+    /// "should" is not a rendering strategy, so the viewport itself
+    /// is the fallback and the truth.</summary>
+    private Vector2 ViewSize => Size.X > 10f && Size.Y > 10f ? Size : GetViewportRect().Size;
+
     private static string CurrentSceneFile()
     {
         string path = SceneManager.CurrentScenePath ?? string.Empty;
@@ -119,8 +125,8 @@ public partial class BlackoutOverlay : Control
         {
             // Silhouettes only. She knows these rooms by heart; the
             // player has the cursor, the HUD, and the way back.
-            DrawRect(new Rect2(Vector2.Zero, Size),
-                new Color(0.002f, 0.002f, 0.005f, 0.88f * _darkAlpha), true);
+            DrawRect(new Rect2(Vector2.Zero, ViewSize),
+                new Color(0.002f, 0.002f, 0.005f, 0.94f * _darkAlpha), true);
             return;
         }
 
@@ -129,11 +135,11 @@ public partial class BlackoutOverlay : Control
         // the same strips the basement uses, so one flashlight feels
         // like one flashlight everywhere it goes.
         DrawDarkOutside(_beamPosition, radius + 118f,
-            new Color(0.002f, 0.002f, 0.004f, 0.55f * _darkAlpha));
+            new Color(0.002f, 0.002f, 0.004f, 0.66f * _darkAlpha));
         DrawDarkOutside(_beamPosition, radius + 54f,
-            new Color(0.002f, 0.002f, 0.004f, 0.5f * _darkAlpha));
+            new Color(0.002f, 0.002f, 0.004f, 0.62f * _darkAlpha));
         DrawDarkOutside(_beamPosition, radius,
-            new Color(0.001f, 0.001f, 0.003f, 0.6f * _darkAlpha));
+            new Color(0.001f, 0.001f, 0.003f, 0.72f * _darkAlpha));
         DrawArc(_beamPosition, radius * 0.97f, 0f, Mathf.Tau, 56,
             new Color(1f, 0.83f, 0.45f, 0.08f * _darkAlpha), 13f, true);
         DrawCircle(_beamPosition, 4f, new Color(1f, 0.9f, 0.62f, 0.24f * _darkAlpha));
@@ -141,8 +147,9 @@ public partial class BlackoutOverlay : Control
 
     private void DrawDarkOutside(Vector2 center, float radius, Color dark)
     {
-        float width = Size.X;
-        float height = Size.Y;
+        Vector2 view = ViewSize;
+        float width = view.X;
+        float height = view.Y;
         float top = Mathf.Clamp(center.Y - radius, 0f, height);
         float bottom = Mathf.Clamp(center.Y + radius, 0f, height);
         if (top > 0f)

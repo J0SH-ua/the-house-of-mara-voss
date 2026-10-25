@@ -38,7 +38,7 @@ public partial class BreakerBox : Node2D
     private static readonly Rect2 PanelRect = new(276, 108, 600, 452);
     private static readonly Rect2 NoteRect = new(304, 142, 216, 150);
     private static readonly Rect2 ThrowRect = new(446, 488, 260, 54);
-    private static readonly Rect2 LeaveRect = new(28, 572, 252, 44);
+    private static readonly Rect2 LeaveRect = new(16, 468, 216, 44);
 
     private readonly BreakerSwitch[] _switches = new BreakerSwitch[6];
     private readonly bool[] _on = [false, true, false, false, false, true];
@@ -213,7 +213,7 @@ public partial class BreakerBox : Node2D
             {
                 GetViewport().SetInputAsHandled();
                 _on[i] = !_on[i];
-                AudioManager.Play(Sfx.KeyType, -9f, _on[i] ? 0.72f : 0.58f);
+                AudioManager.Play(Sfx.KeyType, -2f, _on[i] ? 0.72f : 0.58f);
                 QueueRedraw();
                 return;
             }
@@ -244,14 +244,14 @@ public partial class BreakerBox : Node2D
                     anyLivedOff = true;
             }
 
-            AudioManager.Play(Sfx.LockOpen, -8f, 0.5f);
+            AudioManager.Play(Sfx.LockOpen, -1f, 0.5f);
 
             if (onCount > 3)
             {
                 await WaitSeconds(0.3f);
                 if (!StillHere())
                     return;
-                AudioManager.Play(Sfx.ScreenCrack2, -9f, 1.4f);
+                AudioManager.Play(Sfx.ScreenCrack2, -3f, 1.4f);
                 for (int i = 0; i < _on.Length; i++)
                     _on[i] = false;
                 QueueRedraw();
@@ -267,7 +267,7 @@ public partial class BreakerBox : Node2D
                 await WaitSeconds(0.45f);
                 if (!StillHere())
                     return;
-                AudioManager.Play(Sfx.WordChime, -10f, 0.8f);
+                AudioManager.Play(Sfx.WordChime, -4f, 0.8f);
                 gs.SetFlag(PowerFlag, save: false);
                 gs.ClearFlag("blackout_active", save: false);
                 await Say("THUMP. And then — a hum, low and certain, rising through the soles of my shoes. Three small green eyes open in the box. Kettle. The way through. Mum's chair, and the fire.");
@@ -290,7 +290,7 @@ public partial class BreakerBox : Node2D
             await WaitSeconds(0.35f);
             if (!StillHere())
                 return;
-            AudioManager.Play(Sfx.Denied, -10f, 0.65f);
+            AudioManager.Play(Sfx.Denied, -5f, 0.65f);
             if (anyKeptOn)
             {
                 await Say("The hum starts — and labours, and sags into nothing. Power's running to a room that doesn't want mornings. A room that's only kept. The little heart can hear the difference even if I keep pretending I can't.");
@@ -319,7 +319,7 @@ public partial class BreakerBox : Node2D
         if (_busy || _left)
             return;
         _left = true;
-        AudioManager.Play(Sfx.DrawerClose, -9f, 0.7f);
+        AudioManager.Play(Sfx.DrawerClose, -5f, 0.7f);
         await WaitSeconds(0.15f);
         if (!StillHere())
             return;

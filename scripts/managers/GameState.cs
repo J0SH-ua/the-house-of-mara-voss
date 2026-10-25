@@ -130,6 +130,7 @@ public partial class GameState : Node
         ["basement.tscn"] = "Room5",
         ["breaker_box.tscn"] = "Room5",
         ["room_6.tscn"] = "Room6",
+        ["bridge_repair.tscn"] = "Room6",
         ["porch_447.tscn"] = "Room6",
         ["room_7.tscn"] = "Room7",
     };
@@ -372,8 +373,8 @@ public partial class GameState : Node
             "Outside the house there is an apartment with mail unopened behind the door, a phone no one calls, and a chair worn into the shape of waiting. Mara did not stop living at twenty-two. She only stopped letting the life be witnessed.\n\n" +
             "The house is not where she lives. It is where she goes instead."),
         ["bedroom_hairpin"] = ("Mum's bent hairpin",
-            "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for. It lay in the kitchen drawer beside the keys, where a hand that opened preserve jars with it had left it without thinking.\n\n" +
-            "Thin enough to worry the seal of a jar the way she did — worked patiently round the rubber until the lid sighs instead of breaking. Small practical things travel farther in this house than grand gestures do."),
+            "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for. It waited in the little drawer of Mara's childhood nightstand, in the very first room — where a mother's hand left it after some bedtime repair nobody wrote down.\n\n" +
+            "Thin enough to worry the seal of a jar the way she did — tapped true each time the working line crosses where the rubber gives, until the lid sighs instead of breaking. Small practical things travel farther in this house than grand gestures do."),
         ["hall_key_bridge"] = ("The copper bridge key",
             "Found beside the brass key in the kitchen drawer: a smaller copper key gone green at the edges, its bow cut like a little bridge — two posts, one arch.\n\n" +
             "It is not a fragment. It has actual weight and actual teeth, and somewhere ahead there is a keyhole under a bridge waiting for exactly this shape."),
@@ -904,7 +905,8 @@ public partial class GameState : Node
     /// </summary>
     private static readonly System.Collections.Generic.Dictionary<string, string[]> RoomPracticalItems = new()
     {
-        ["Room1"] = ["item_hairpin", "item_hall_key_bridge"],
+        ["Bedroom"] = ["item_hairpin"],
+        ["Room1"] = ["item_hall_key_bridge"],
         ["Room2"] = ["item_hall_key_door"],
         ["Room3"] = ["item_hall_key_circle"],
         ["Room4"] = ["item_lockpick_set"],
@@ -946,10 +948,24 @@ public partial class GameState : Node
     /// close-ups, before the fragment, or during the blackout trek
     /// (when crossing the whole dark house is the point).
     /// </summary>
+    /// <summary>Flag recording that Mara has already asked herself, out
+    /// loud, whether she is ready to leave this room. She asks once per
+    /// room, not every time she crosses it.</summary>
+    public static string LeaveAskedFlag(string roomName) =>
+        "leave_asked_" + (roomName ?? "room").ToLowerInvariant();
+
+    public void MarkLeavePromptShown(string roomName)
+    {
+        if (!string.IsNullOrEmpty(roomName))
+            SetFlag(LeaveAskedFlag(roomName));
+    }
+
     public bool TryGetLeavePrompt(string fromScene, string toScene, out string roomName)
     {
         roomName = RoomNameForScene(fromScene);
         if (roomName == null || !RoomPracticalItems.ContainsKey(roomName))
+            return false;
+        if (HasFlag(LeaveAskedFlag(roomName)))
             return false;
         if (HasFlag("blackout_active"))
             return false;
@@ -991,7 +1007,7 @@ public partial class GameState : Node
         "room_3.tscn", "journey_to_room_4.tscn",
         "room_4.tscn", "Room_4_puzzle.tscn",
         "room_5.tscn",
-        "room_6.tscn", "journey_to_porch.tscn", "porch_447.tscn",
+        "room_6.tscn", "journey_to_porch.tscn", "bridge_repair.tscn", "porch_447.tscn",
         "room_7.tscn",
     ];
 
@@ -1054,6 +1070,9 @@ public partial class GameState : Node
             "jar_closeup.tscn" => null,
             "kitchen_cabinet.tscn" => null,
             "breaker_box.tscn" => null,
+            // The bridge is a repair, not a room of examinables; its
+            // mistimed strikes are graded by the crossing itself.
+            "bridge_repair.tscn" => null,
             "porch_447.tscn" => "Porch447",
             // Journeys borrow the completed room for Clarity/progress, but
             // they are thresholds, not rooms that can rest/seal.
@@ -1136,6 +1155,13 @@ public partial class GameState : Node
             return "Under the house: find the backup-power box and bring the light back. Then the wardrobe can remember the garden.";
         }
 
+        if (file == "room_2.tscn" && HasFlag("difference_room2_solved") && !HasFlag("item_hall_key_door"))
+            return "Something small and metal is waiting where the evening set it down — on the side table, between the chairs.";
+        if (file == "bridge_repair.tscn")
+            return HasFlag("item_hammer_nails")
+                ? "Nail the bridge true again. Strike each nail as its glint crosses — a glanced blow can put her within the water's reach."
+                : "The bridge won't hold her. Something of her father's could mend it — he kept his tools in a little cabinet, under the house.";
+
         switch (file)
         {
             case "room_1_puzzle.tscn":
@@ -1143,16 +1169,18 @@ public partial class GameState : Node
                     ? "The drawer is open. Take what the morning kept — all of it, or only what you need to go on."
                     : "Open the five-dial padlock. The kitchen remembers the combination.";
             case "room_2_puzzle.tscn":
+                if (IsShardRecovered(1) && HasFlag("difference_room2_solved") && !HasFlag("item_hall_key_door"))
+                    return "The drawer is just a drawer now. What the evening gave up is waiting on the side table in the sitting room.";
                 if (IsShardRecovered(1) && !HasFlag("difference_room2_solved"))
                     return "The photograph is Mara's. But its backing still nags at her — something small is taped behind what the house edited.";
                 if (Room2Puzzle.IsUnlocked && !IsShardRecovered(1))
                     return "A face-down photograph waits in the drawer.";
                 return "Spell the four-letter word. The sitting room has been saying it all along.";
             case "difference_investigation.tscn":
-                return "Remember the sitting room for five seconds. Then find what memory moved.";
+                return "The room from the photograph is coming apart. Point out everything that's wrong — the photograph in her bag (B) remembers it right — before the memory breaks.";
             case "jar_closeup.tscn":
                 return HasFlag("item_hairpin")
-                    ? "Work Mum's hairpin round the seal, the patient way. Glass remembers being forced."
+                    ? "Tap as the working line sweeps across the red give in the seal. Seven true taps, faster each time — one miss and the seal starts over."
                     : "The last seal will not give to fingernails. It wants something thin.";
             case "breaker_box.tscn":
                 return "Set the breakers like Father's picture. Then the big handle.";
@@ -1190,9 +1218,9 @@ public partial class GameState : Node
                     return "One locked thing below still keeps its own counsel.";
                 if (!HasFlag("basement_negatives_taken"))
                     return "The trunk below stands open. See what was never printed.";
-                if (!HasFlag("basement_battery_taken"))
+                if (!HasFlag("item_hammer_nails"))
                     return HasFlag("item_iron_cellar_key")
-                        ? "The iron key has a lock below the house."
+                        ? "The iron key has a lock below the house — and something in that cabinet can mend what's broken on the road."
                         : "A little cabinet below wants an iron key from somewhere in the garden.";
                 return "Nothing below the house is still hiding. Climb back when you are ready.";
             case "lockpick_puzzle.tscn":
@@ -1200,15 +1228,19 @@ public partial class GameState : Node
             case "vent_crawl.tscn":
                 return "Hold W to crawl toward the light. The flashlight follows the mouse; release W to stop.";
             case "bedroom_prologue.tscn":
+                if (HasFlag("prologue_from_bedroom") && !HasFlag("item_hairpin"))
+                    return "Back where she woke. The nightstand's little drawer is still keeping something thin.";
                 RoomExamineTracker.GetRoomProgress("Bedroom", out int bDone, out int bTotal, out var bLeft);
                 return bLeft.Count > 0
                     ? $"Just woke up somewhere impossible — look around ({bDone}/{bTotal})."
                     : "There's a door. Beyond it, whatever this is.";
             case "porch_447.tscn":
+                if (HasFlag("porch_passed"))
+                    return "Crossed, and standing. The front door remembers her knock now.";
                 RoomExamineTracker.GetRoomProgress("Porch447", out int pDone, out int pTotal, out var pLeft);
                 return pLeft.Count > 0
                     ? $"The porch, at 4:47 ({pDone}/{pTotal})."
-                    : "The front door. The last room is through it.";
+                    : "The front door. Announce yourself the way family did — and keep your composure while the house tries to take it. The last room is through it.";
             case "journey_to_room_2.tscn":
                 return "Straight on to the next door. Open it when you're ready.";
             case "journey_to_room_3.tscn":
@@ -1216,7 +1248,9 @@ public partial class GameState : Node
             case "journey_to_room_4.tscn":
                 return "Right at the photographs, to the next door. Open it when you're ready.";
             case "journey_to_porch.tscn":
-                return "Walk the empty road to the lit porch.";
+                return HasFlag("bridge_fixed")
+                    ? "Walk the empty road to the lit porch. The bridge holds now."
+                    : "Walk the empty road toward the lit porch — and whatever the memory has left broken across it.";
             case "Room_4_puzzle.tscn":
                 if (HasFlag("room4_door_opened"))
                     return "The way through stands open. Click the door.";
@@ -1308,8 +1342,8 @@ public partial class GameState : Node
             return NextHintLevel("JarCloseup") switch
             {
                 1 => ("Fingernails only worry a seal like this — and glass keeps the score. It wants something thin worried under the rubber.", null),
-                2 => ("Her mother opened these with a hairpin, worked patiently round the rim. One of those hairpins lay in the kitchen drawer, beside the keys — if Mara left it there, it is still there. Step Back and fetch it.", null),
-                _ => ("With the hairpin in Mara's bag (B): press and drag it slowly all the way around the lid's seal. Each stretch of rim gives with a small tick. Under the name tape at the bottom sleeps a key with no beginning and no end.", null),
+                2 => ("Her mother opened these with a hairpin, worked patiently round the rim. One of those hairpins has been in Mara's old nightstand drawer since before she woke up here — the very first room. Step Back (Q) as far as the bedroom and open the little drawer.", null),
+                _ => ("With the hairpin in Mara's bag (B): a line works its way around the seal, faster with every true tap, turning back on itself each time. Click the moment it crosses the red stretch where the rubber gives. Seven true taps sigh the lid open; one miss starts the seal again. Under the name tape at the bottom sleeps a key with no beginning and no end.", null),
             };
         }
         if (file == "breaker_box.tscn")
@@ -1320,7 +1354,7 @@ public partial class GameState : Node
         if (file == "room_1_puzzle.tscn")
         {
             if (Room1Puzzle.IsUnlocked)
-                return ("The drawer kept more than the brass key. A smaller copper key lies beside it in the open drawer, and in its back corner — thin, bent, borrowed for a hundred little jobs — one of her mother's hairpins. Take them or leave them; the house will remember which.", null);
+                return ("The drawer kept more than the brass key. A smaller copper key lies beside it in the open drawer, green at the edges. Take it or leave it; the house will remember which.", null);
             return NextHintLevel("Room1") switch
             {
                 1 => ("Numbers stay. A clock, a calendar, a drawing, a cup — the morning kept count. Your journal (J) keeps what you found.", null),
@@ -1363,16 +1397,22 @@ public partial class GameState : Node
         {
             if (HasFlag("room4_door_opened"))
                 return ("All three locks have already turned. Click any part of the close-up door to go through.", null);
-            string firstOpenKeyhole = !HasFlag("room4_key_bridge_inserted") ? "LeftKeyhole"
-                : !HasFlag("room4_key_door_inserted") ? "CenterKeyhole"
-                : !HasFlag("room4_key_circle_inserted") ? "RightKeyhole"
+            bool holeL = HasFlag("room4_hole_left_bridge") || HasFlag("room4_hole_left_door") || HasFlag("room4_hole_left_circle");
+            bool holeC = HasFlag("room4_hole_center_bridge") || HasFlag("room4_hole_center_door") || HasFlag("room4_hole_center_circle");
+            bool holeR = HasFlag("room4_hole_right_bridge") || HasFlag("room4_hole_right_door") || HasFlag("room4_hole_right_circle");
+            bool placedRight = HasFlag("room4_hole_left_bridge") && HasFlag("room4_hole_center_door") && HasFlag("room4_hole_right_circle");
+            if (holeL && holeC && holeR && !placedRight)
+                return ("They are all in, and the door has not answered — somebody is in the wrong bed. Click a placed key to lift it back out, then look at the brass pictures again: each one names the key beneath it.", null);
+            string firstOpenKeyhole = !holeL ? "LeftKeyhole"
+                : !holeC ? "CenterKeyhole"
+                : !holeR ? "RightKeyhole"
                 : null;
             int r4HintLevel = NextHintLevel("Room4Puzzle");
             return r4HintLevel switch
             {
-                1 => ("The brass pictures are labels now, not a knock to copy. Each one names the keyhole directly beneath it, and each keyhole wants the carried key with that shape.", null),
-                2 => ("The keys travelled with the first three fragments: copper from the kitchen drawer, the little door from behind the sitting-room photograph, and the circle from the last preserve jar. Mara's Bag (B) shows which she carries.", null),
-                _ => ("Drag each key in by hand: copper bridge key → left keyhole; little door key → centre; circle key → right. A wrong hole will only rattle — teeth know their own lock. When all three are in, click the door — though it will still refuse her until the hallway sentence is whole.", firstOpenKeyhole),
+                1 => ("The brass pictures are labels now, not a knock to copy. Each one names the keyhole directly beneath it. Any hole will take any key by hand — the door itself is the judge, and it only judges when all three are in.", null),
+                2 => ("The keys travelled with the first three fragments: copper from the kitchen drawer, the little door from behind the sitting-room photograph, and the circle from the last preserve jar. Mara's Bag (B) shows which she carries. Click a placed key to lift it back out.", null),
+                _ => ("Drag each key in by hand: copper bridge key → left keyhole; little door key → centre; circle key → right. A true key turns its full, easy turn; a borrowed bed only turns partway. And the door will still refuse her until the hallway sentence is whole.", firstOpenKeyhole),
             };
         }
         if (file == "room_5.tscn" && RoomExamineTracker.HasRoomBeenFullyExamined("Room5"))
@@ -1453,15 +1493,38 @@ public partial class GameState : Node
                 return ("A trunk under the house keeps its own lock. The picks remember how locks feel inside.", baLevel >= 3 ? "LockedTrunk" : null);
             if (!HasFlag("basement_negatives_taken"))
                 return ("The trunk is open now. Beneath cedar and blankets is one flat thing their mother never had printed.", baLevel >= 3 ? "LockedTrunk" : null);
-            if (!HasFlag("basement_battery_taken"))
+            if (!HasFlag("item_hammer_nails"))
                 return (HasFlag("item_iron_cellar_key")
-                    ? "Try the iron key on the little cabinet in the wall."
+                    ? "Try the iron key on the little cabinet in the wall. What a father files away below stairs is what a broken bridge will want."
                     : "The little cabinet wants a key. In the garden, their father trusted a loose stone by the gate more than a hook.", baLevel >= 3 ? "ToolCabinet" : null);
             return ("Nothing below is still hiding. The vent overhead is the way back up.", null);
         }
 
+        if (file == "bridge_repair.tscn")
+        {
+            if (!HasFlag("item_hammer_nails"))
+                return ("Bare hands won't mend that crossing. Her father kept his tools where the house keeps everything it needs to stay alive: below it. Garden wall by the gate for the iron key — a loose stone he trusted more than a hook — then the vent, then the little cabinet's lock.", null);
+            return NextHintLevel("Bridge") switch
+            {
+                1 => ("Watch one nail's glint travel before you ever raise the hammer. It crosses the same bright point every swing.", null),
+                2 => ("Strike only as the glint crosses the gold ring — two true strikes sink a nail. A glanced blow shifts the plank, and the bridge puts her within the water's reach; enough falls will break the memory entirely.", null),
+                _ => ("Nails are laid in a steady rhythm, plank by plank, and the glint quickens as she crosses. Patience is the tool her father actually left her: wait for the gold, strike, breathe. Nailed planks stay nailed, whatever the water says.", null),
+            };
+        }
+
         if (file == "porch_447.tscn")
+        {
+            if (RoomExamineTracker.HasRoomBeenFullyExamined("Porch447") && !HasFlag("porch_passed"))
+            {
+                return NextHintLevel("Porch447") switch
+                {
+                    1 => ("The door will not be rushed or verb-ed open. Homes were announced: knock the way family knocked, be seen at the lit window, then hold the handle steady. Her own head will try to interrupt all three — let the interruptions pass through, not over her.", null),
+                    2 => ("The knock their mother listened for: two, a breath, three — each knock close on the last, the breath honestly a breath. At the window, click only while the light is steady. At the handle, keep her hand inside the ring until it fills, however the porch sways.", null),
+                    _ => ("Knock: click the door — knock knock (each within a breath of the last), wait one full second, knock knock knock. Window: click it in the steady light, three times; the flicker is the house blinking, not an invitation. Handle: press and HOLD inside the ring for a slow count of four while it sways; slipping off only costs the count, not the door. Migraines steal a second; let them.", null),
+                };
+            }
             return ("She stopped here for twelve years without ever stopping. The light, the steps, the path. The front door is the way on.", null);
+        }
 
         if (room == null || !RoomExamineTracker.RoomHasRequirements(room))
             return ("Keep looking. The house notices being noticed.", null);
@@ -1894,6 +1957,32 @@ public partial class GameState : Node
         if (HasFlag("blackout_began") && !HasFlag("blackout_active") &&
             !HasFlag("backup_power_on"))
             ClearFlag("blackout_began", save: false);
+
+        // The tool cabinet used to keep a stronger battery; it keeps
+        // mending tools now. A save that already emptied it is not made
+        // to loot it twice.
+        if (HasFlag("basement_battery_taken"))
+            AddItem("item_hammer_nails", null);
+
+        // Hallway keys used to only ever fit their own holes. Old saves
+        // record insertions, not placements; under the old law every
+        // recorded insertion was the right bed, so say so.
+        void PlaceLegacy(string insertedFlag, string holeFlag, string otherA, string otherB)
+        {
+            if (HasFlag(insertedFlag) && !HasFlag(otherA) && !HasFlag(otherB))
+                AddItem(holeFlag, null);
+        }
+        PlaceLegacy("room4_key_bridge_inserted", "room4_hole_left_bridge",
+            "room4_hole_center_bridge", "room4_hole_right_bridge");
+        PlaceLegacy("room4_key_door_inserted", "room4_hole_center_door",
+            "room4_hole_left_door", "room4_hole_right_door");
+        PlaceLegacy("room4_key_circle_inserted", "room4_hole_right_circle",
+            "room4_hole_left_circle", "room4_hole_center_circle");
+
+        // A save already standing on the porch crossed the road before
+        // the memory broke its bridge. It holds for them.
+        if (HasFlag("porch_passed") || !string.IsNullOrEmpty(CompletedEnding))
+            AddItem("bridge_fixed", null);
     }
 
     /// <summary>

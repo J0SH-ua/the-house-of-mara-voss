@@ -4,16 +4,20 @@ using System.Threading.Tasks;
 using Godot;
 
 /// <summary>
-/// Room 2's investigation behind the photograph: "what changed?"
+/// Room 2's investigation: the room in the photograph, remembered wrong.
 ///
-/// Mara is given one ordinary sitting-room evening for exactly five
-/// seconds. The changed details are deliberately hidden while the intro
-/// dialogue is still speaking, so those five seconds are the whole of
-/// her look. The house then presents its edited version: the mantel
-/// clock has run from 4:00 to 4:47, the red book has changed chairs,
-/// the letter has vanished from the table, and the teacup has gone
-/// over. The player clicks the changed places; finding all four earns
-/// the little door key taped behind the photograph.
+/// Behind the sitting-room photograph is a second photograph — the
+/// room itself, the way it was. Mara studies it (in hand, and in her
+/// bag whenever she likes), and then the house does the rest: a wind
+/// takes the fire, the dark takes the room, the fire catches again
+/// on *this* room — the same room, with something off. A memory held
+/// wrong will not hold at all: the ceiling starts to come down in
+/// dust and cracks while Mara points at everything the house moved
+/// (the clock run to 4:47, the red book changed chairs, the letter
+/// vanished, the cup gone over). Name them all before the room goes
+/// and the evening steadies — and sets a little door key down on the
+/// side table, in the real room, to be picked up by hand. Run out of
+/// time and the memory does what strained memories do: it breaks.
 ///
 /// This is a standalone Node2D rather than a MemoryRoomBase room for
 /// one reason: MemoryRoomBase registers Tab/hint targets for every
@@ -26,19 +30,26 @@ public partial class DifferenceInvestigation : Node2D
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     private const string SearchCursorPath = "res://assets/images/core/cursor_magnifying_glass.png";
     private const string Room2PuzzleScenePath = "res://scenes/world/room_2_puzzle.tscn";
+    private const string Room2ScenePath = "res://scenes/world/room_2.tscn";
 
     private const string SolvedFlag = "difference_room2_solved";
     private const string DoorKeyFlag = "item_hall_key_door";
-    private const string IntroFlag = "difference_intro_heard";
-    private const float MemoriseSeconds = 5f;
+    private const string ArrivalHeardFlag = "difference_arrival_heard";
+    private const float CrumbleSeconds = 75f;
+    private const float WrongClickTimeCost = 4f;
+
+    // The painted fireplace's mouth, in 1152×648 design space — where
+    // the fire lives, and where the ashes sit while it doesn't.
+    private static readonly Rect2 FireRect = new(100, 332, 158, 196);
 
     private enum Phase
     {
-        Intro,
-        Memorise,
+        Arrival,
+        Relight,
         Search,
         Resolve,
-        Complete,
+        SolveBeat,
+        Breaking,
         Leaving,
     }
 
@@ -62,7 +73,6 @@ public partial class DifferenceInvestigation : Node2D
         public Vector2 Center => Rect.GetCenter();
     }
 
-    // Search rectangles in the room's 1152x648 design space.
     private static readonly Difference[] Differences =
     [
         new("ChangedClock", new Rect2(168, 86, 82, 82), Sfx.ClockTick, 0.82f,
@@ -82,21 +92,40 @@ public partial class DifferenceInvestigation : Node2D
         "No — that much stayed innocent.",
     ];
 
+    // Cracks that walk the walls as the room gives up, point by point.
+    private static readonly Vector2[][] CrackChains =
+    [
+        [new Vector2(420, 40), new Vector2(452, 96), new Vector2(436, 150), new Vector2(470, 210), new Vector2(458, 268)],
+        [new Vector2(820, 26), new Vector2(796, 84), new Vector2(826, 138), new Vector2(800, 196)],
+        [new Vector2(96, 560), new Vector2(160, 516), new Vector2(214, 528), new Vector2(272, 486), new Vector2(330, 496)],
+        [new Vector2(1050, 520), new Vector2(996, 472), new Vector2(1010, 420), new Vector2(962, 372)],
+    ];
+
     private Texture2D _background;
     private FontFile _font;
     private Label _titleLabel;
     private Label _phaseLabel;
     private readonly HashSet<string> _found = new();
+    private readonly RandomNumberGenerator _rng = new();
 
-    private Phase _phase = Phase.Intro;
-    private bool _detailsVisible;
-    private bool _changedVisible;
-    private float _memoriseRemaining;
+    private Phase _phase = Phase.Arrival;
+    private float _lightLevel = 0.04f;
+    private float _lightTarget = 0.04f;
+    private float _crumbleRemaining = CrumbleSeconds;
     private int _lastCountdownWhole = -1;
+    private bool _warned30;
+    private bool _warned15;
+    private float _rumbleTimer;
+    private bool _broken;
+    private bool _sawShatter;
+    private bool _left;
     private bool _cursorOwned;
     private int _wrongClicks;
     private Vector2 _lastWrongPosition;
     private ulong _lastWrongMsec;
+
+    private struct DustMote { public Vector2 Pos; public float Speed; public float Size; }
+    private readonly DustMote[] _dust = new DustMote[26];
 
     public override void _Ready()
     {
@@ -104,9 +133,17 @@ public partial class DifferenceInvestigation : Node2D
         if (_background == null)
             Logger.Error($"[DifferenceInvestigation] Could not load background: {BackgroundPath}");
         _font = GD.Load<FontFile>(FontPath);
+        _rng.Randomize();
+        for (int i = 0; i < _dust.Length; i++)
+        {
+            _dust[i] = new DustMote
+            {
+                Pos = new Vector2(_rng.RandfRange(40f, 1112f), _rng.RandfRange(0f, 648f)),
+                Speed = _rng.RandfRange(14f, 42f),
+                Size = _rng.RandfRange(1.5f, 3.2f),
+            };
+        }
 
-        // This is ordinary looking, done honestly. Clarity and a Memory
-        // Verb carried in from a later revisit do not get to answer it.
         MemoryVerbSystem.Cancel(silent: true);
         ClaritySystem.Disarm(silent: true);
 
@@ -160,29 +197,46 @@ public partial class DifferenceInvestigation : Node2D
                 return;
 
             var gs = GameState.Instance;
-            if (gs != null && (gs.HasFlag(SolvedFlag) || gs.HasFlag(DoorKeyFlag)))
+            if (gs != null && gs.HasFlag(DoorKeyFlag))
             {
                 _phase = Phase.Leaving;
                 SceneManager.ChangeScene(Room2PuzzleScenePath);
                 return;
             }
 
-            if (gs != null && !gs.HasFlag(IntroFlag))
+            // Dark first. The wind has done its work; somewhere a
+            // fire that was lit a moment ago is only a smell.
+            _phase = Phase.Arrival;
+            _lightLevel = 0.04f;
+            _lightTarget = 0.04f;
+            UpdatePhaseLabel();
+            QueueRedraw();
+            await WaitSeconds(1.15f);
+            if (!StillHere())
+                return;
+
+            // It catches the way memories do: all at once, and certain.
+            _phase = Phase.Relight;
+            AudioManager.Play(Sfx.FireWhoomph, -7f);
+            _lightTarget = 1f;
+            await WaitSeconds(1.5f);
+            if (!StillHere())
+                return;
+
+            bool firstArrival = gs != null && !gs.HasFlag(ArrivalHeardFlag);
+            if (firstArrival)
             {
-                await Say("This is the room in the photograph — the real one, before the house started tidying it. Dad taped a key behind this evening and trusted my memory over any lock he ever made. No pressure, then.");
+                await Say("The fire catches. And— oh. Oh, I know this room. This is the room in the photograph. The mantel. The two chairs. The little table between them.");
                 if (!StillHere())
                     return;
-                await Say("Not the room as it flatters itself. The mantel. Two chairs. The little table between them. Hold it the way you'd hold a breath.");
+                await Say("…Only something's off. I can feel it before I can see it, like a word said in the wrong order. Something here is not the way the photograph kept it.");
                 if (!StillHere())
                     return;
-                await Say("Five seconds. Then tell me what the house moved while nobody was watching.");
-                if (!StillHere())
-                    return;
-                gs.SetFlag(IntroFlag, save: false);
+                gs?.SetFlag(ArrivalHeardFlag, save: false);
             }
             else
             {
-                await Say("Again, then. Five seconds. No flinching at the parts that change.");
+                await Say("The room again. Wrong again. Hold together — both of us.");
                 if (!StillHere())
                     return;
             }
@@ -192,60 +246,139 @@ public partial class DifferenceInvestigation : Node2D
             Dialogue.EndInputBlock();
         }
 
-        if (StillHere() && _phase == Phase.Intro)
-            BeginMemorise();
-    }
-
-    private void BeginMemorise()
-    {
-        _phase = Phase.Memorise;
-        _detailsVisible = true;
-        _changedVisible = false;
-        _memoriseRemaining = MemoriseSeconds;
-        _lastCountdownWhole = -1;
-        UpdatePhaseLabel();
-        QueueRedraw();
+        if (StillHere() && _phase == Phase.Relight)
+            BeginSearch();
     }
 
     private void BeginSearch()
     {
         _phase = Phase.Search;
-        _detailsVisible = true;
-        _changedVisible = true;
-        _memoriseRemaining = 0f;
-        AudioManager.Play(Sfx.ClarifyReveal, -13f, 0.74f);
-        AudioManager.Play(Sfx.PageTurn, -14f, 0.72f);
+        _crumbleRemaining = CrumbleSeconds;
+        _lastCountdownWhole = -1;
+        _rumbleTimer = 0.4f;
+        AudioManager.Play(Sfx.CrumbleRumble, -12f, 0.95f);
         UpdatePhaseLabel();
         QueueRedraw();
-        GameState.Instance?.Toast("What changed? Click each changed place. Press H if the room needs narrowing.");
+        GameState.Instance?.Toast("The memory is breaking. Click everything that's wrong — the photograph is in the bag (B->look closer).");
+        _ = CrumbleOpeningLineAsync();
+    }
+
+    private async Task CrumbleOpeningLineAsync()
+    {
+        Dialogue.BeginInputBlock();
+        try
+        {
+            await Say("The ceiling just— dust. It's coming apart. A memory held wrong won't hold at all. Find what's wrong. Find it the way the photograph kept it. Quickly—!");
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
     }
 
     public override void _Process(double delta)
     {
+        float dt = Mathf.Max((float)delta, 0f);
         UpdateCursor();
+
+        // Firelight, whatever state the argument is in.
+        _lightLevel = Mathf.MoveToward(_lightLevel, _lightTarget, dt * 0.85f);
 
         bool blocked = GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
             SceneManager.IsChanging ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
 
-        if (_phase == Phase.Memorise && !blocked)
+        if (_phase == Phase.Search)
         {
-            _memoriseRemaining -= (float)delta;
-            int whole = Mathf.Clamp(Mathf.CeilToInt(_memoriseRemaining), 0, (int)MemoriseSeconds);
-            if (whole != _lastCountdownWhole)
-            {
-                _lastCountdownWhole = whole;
-                if (whole > 0)
-                    AudioManager.Play(Sfx.ClockTick, -13f, 0.9f + (5 - whole) * 0.05f);
-                UpdatePhaseLabel();
-            }
+            float gone = 1f - Mathf.Clamp(_crumbleRemaining / CrumbleSeconds, 0f, 1f);
+            UpdateDust(dt, 0.4f + gone);
+            ApplyShake(gone);
 
-            if (_memoriseRemaining <= 0f)
-                BeginSearch();
+            if (!blocked)
+            {
+                _crumbleRemaining -= dt;
+
+                int whole = Mathf.Clamp(Mathf.CeilToInt(_crumbleRemaining), 0, (int)CrumbleSeconds);
+                if (whole != _lastCountdownWhole)
+                {
+                    _lastCountdownWhole = whole;
+                    if (whole <= 10 && whole > 0)
+                        AudioManager.Play(Sfx.ClockTick, -11f, 0.85f);
+                    UpdatePhaseLabel();
+                }
+
+                if (!_warned30 && _crumbleRemaining <= 30f)
+                {
+                    _warned30 = true;
+                    GameState.Instance?.Toast("\"It's going— the walls— think, Mara. The photograph. The photograph knows.\"");
+                }
+                if (!_warned15 && _crumbleRemaining <= 15f)
+                {
+                    _warned15 = true;
+                    GameState.Instance?.Toast("\"Hold on. HOLD ON—\"");
+                    AudioManager.Play(Sfx.ScreenCrack2, -9f, 0.9f);
+                }
+
+                _rumbleTimer -= dt;
+                if (_rumbleTimer <= 0f)
+                {
+                    _rumbleTimer = _rng.RandfRange(2.0f, 3.0f);
+                    AudioManager.Play(Sfx.CrumbleRumble, -13f, _rng.RandfRange(0.82f, 1.0f));
+                }
+
+                if (_crumbleRemaining <= 0f)
+                    _ = BreakDownAsync();
+            }
+        }
+        else
+        {
+            Position = Vector2.Zero;
         }
 
-        if (_phase == Phase.Memorise || _phase == Phase.Search || _phase == Phase.Resolve)
-            QueueRedraw();
+        if (_broken && !_left)
+        {
+            bool shattering = GameUI.Instance?.IsShatterPlaying ?? false;
+            if (shattering)
+                _sawShatter = true;
+            else if (_sawShatter)
+            {
+                // Gathered back together, she wakes at the drawer.
+                _left = true;
+                _phase = Phase.Leaving;
+                SceneManager.ChangeScene(Room2PuzzleScenePath);
+            }
+        }
+
+        QueueRedraw();
+    }
+
+    private void ApplyShake(float gone)
+    {
+        if (Settings.ReduceMotionOrDefault())
+        {
+            Position = Vector2.Zero;
+            return;
+        }
+        float amp = (1.2f + 3.4f * gone) * (1f - 0.13f * _found.Count);
+        Position = new Vector2(
+            _rng.RandfRange(-amp, amp),
+            _rng.RandfRange(-amp * 0.7f, amp * 0.7f));
+    }
+
+    private void UpdateDust(float dt, float rate)
+    {
+        for (int i = 0; i < _dust.Length; i++)
+        {
+            var m = _dust[i];
+            m.Pos.Y += m.Speed * rate * dt;
+            m.Pos.X += Mathf.Sin((Time.GetTicksMsec() + i * 397) / 900.0f) * 6f * dt;
+            if (m.Pos.Y > 652f)
+            {
+                m.Pos.Y = -4f;
+                m.Pos.X = _rng.RandfRange(40f, 1112f);
+            }
+            _dust[i] = m;
+        }
     }
 
     private void UpdateCursor()
@@ -270,6 +403,7 @@ public partial class DifferenceInvestigation : Node2D
 
     public override void _ExitTree()
     {
+        Position = Vector2.Zero;
         if (_cursorOwned)
         {
             CursorHelper.EndHover(this);
@@ -314,8 +448,6 @@ public partial class DifferenceInvestigation : Node2D
 
     private static Difference FindDifference(Vector2 position)
     {
-        // Later entries are the smaller table details, so they win the
-        // one-pixel kiss between the letter and cup rectangles.
         for (int i = Differences.Length - 1; i >= 0; i--)
         {
             if (Differences[i].Rect.HasPoint(position))
@@ -327,14 +459,13 @@ public partial class DifferenceInvestigation : Node2D
     private void RegisterWrongClick(Vector2 position)
     {
         _wrongClicks++;
+        _crumbleRemaining = Mathf.Max(0.5f, _crumbleRemaining - WrongClickTimeCost);
         AudioManager.Play(Sfx.Denied, -10f, 0.94f);
+        AudioManager.Play(Sfx.CrumbleRumble, -11f, 0.8f);
 
         var gs = GameState.Instance;
         if (gs != null)
         {
-            // GameState deliberately gives this scene no tracker room,
-            // so the investigation grades its own guesses with the
-            // game's published loose-click costs.
             ulong now = Time.GetTicksMsec();
             bool repeated = now - _lastWrongMsec <= 1400 &&
                 position.DistanceSquaredTo(_lastWrongPosition) <= 110f * 110f;
@@ -346,11 +477,12 @@ public partial class DifferenceInvestigation : Node2D
         }
 
         string toast = _wrongClicks == 1
-            ? $"{WrongLines[0]} Wrong guesses strain MEMORY, like empty clicks."
+            ? $"{WrongLines[0]} And the ceiling gives a little more — wrong guesses cost the room time."
             : _wrongClicks >= 4
-                ? "Still the same. Press H — let the house narrow it before guessing frays the room."
+                ? "Still the same. The photograph, Mara. Bag (B) — look at it properly before the room goes."
                 : WrongLines[_wrongClicks % WrongLines.Length];
         gs?.Toast(toast);
+        UpdatePhaseLabel();
     }
 
     private async Task CorrectAsync(Difference difference)
@@ -377,7 +509,7 @@ public partial class DifferenceInvestigation : Node2D
             Dialogue.EndInputBlock();
         }
 
-        if (!StillHere())
+        if (!StillHere() || _broken)
             return;
 
         if (_found.Count >= Differences.Length)
@@ -392,21 +524,32 @@ public partial class DifferenceInvestigation : Node2D
 
     private async Task CompleteAsync()
     {
-        _phase = Phase.Complete;
+        _phase = Phase.SolveBeat;
+        Position = Vector2.Zero;
         UpdatePhaseLabel();
         QueueRedraw();
 
         Dialogue.BeginInputBlock();
         try
         {
-            await Say("That's the evening. Not polished. Not merciful. Just accurately untidy.");
+            await Say("That's the evening. Not polished. Not merciful. Just accurately untidy — and the room… stops. Listen. It stopped coming down.");
             if (!StillHere())
                 return;
-            await Say("And accuracy has weight. Behind the photograph — under FOR WHEN YOU REMEMBER IT RIGHT — old tape gives with a tiny tearing sound. He was right to trust the condition. Annoyingly, lovingly right.");
+
+            // The fire goes out the way it came in: all at once.
+            _lightTarget = 0.04f;
+            AudioManager.Play(Sfx.WindGust, -16f, 0.7f);
+            await WaitSeconds(1.0f);
             if (!StillHere())
                 return;
-            AudioManager.Play(Sfx.KeyType, -8f, 0.95f);
-            await Say("A key. Not a metaphor wearing key-coloured paint. iron — and its bow is a little door, down to a knob too small for any hand but memory's.");
+
+            AudioManager.Play(Sfx.FireWhoomph, -9f, 0.9f);
+            _lightTarget = 1f;
+            await WaitSeconds(1.2f);
+            if (!StillHere())
+                return;
+
+            await Say("And on the little table between the chairs, where no key was a minute ago — a key. The room set it down like a held breath let out. He was right to trust the condition. Annoyingly, lovingly right.");
             if (!StillHere())
                 return;
         }
@@ -420,16 +563,43 @@ public partial class DifferenceInvestigation : Node2D
         {
             gs.NotifyPuzzleSolved();
             gs.SetFlag(SolvedFlag, save: false);
-            gs.SetFlag(DoorKeyFlag, save: false);
             gs.UnlockClue("difference_room");
-            gs.UnlockClue("hall_key_door");
-            gs.Toast("Little door key — kept in Mara's bag (B). Somewhere ahead is a door with a little door stamped above its middle keyhole.");
+            gs.Toast("The memory held. A little door key is waiting on the side table in the sitting room.");
             gs.SaveGame("difference investigation solved");
         }
 
         AudioManager.Play(Sfx.PuzzleSolve, -7f, 1.02f);
         _phase = Phase.Leaving;
-        SceneManager.ChangeScene(Room2PuzzleScenePath);
+        SceneManager.ChangeScene(Room2ScenePath);
+    }
+
+    private async Task BreakDownAsync()
+    {
+        if (_phase != Phase.Search || _broken)
+            return;
+        _broken = true;
+        _phase = Phase.Breaking;
+        Position = Vector2.Zero;
+        UpdateCursor();
+
+        AudioManager.Play(Sfx.ScreenCrack1, -4f, 0.8f);
+        AudioManager.Play(Sfx.CrumbleRumble, -5f, 0.7f);
+        Dialogue.BeginInputBlock();
+        try
+        {
+            await Say("No— no no, stay— the ceiling— I can't hold it if I can't—");
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+        if (!StillHere())
+            return;
+
+        // A memory held wrong past its limit does what strained
+        // memories do in this house. The shatter machinery — and its
+        // mercy — takes it from here.
+        GameState.Instance?.AddCorruption(GameState.ShatterThreshold);
     }
 
     private void UpdatePhaseLabel()
@@ -439,10 +609,11 @@ public partial class DifferenceInvestigation : Node2D
 
         _phaseLabel.Text = _phase switch
         {
-            Phase.Memorise => $"Look. Really look.  {Mathf.Clamp(Mathf.CeilToInt(_memoriseRemaining), 0, (int)MemoriseSeconds)}",
-            Phase.Search => $"What changed?  ·  found {_found.Count} of {Differences.Length}",
-            Phase.Resolve => $"What changed?  ·  found {_found.Count} of {Differences.Length}",
-            Phase.Complete => "Four changes, remembered in Mara's own hand.",
+            Phase.Arrival => "…",
+            Phase.Search => $"The memory is breaking — what's wrong?  ·  named {_found.Count} of {Differences.Length}",
+            Phase.Resolve => $"The memory is breaking — what's wrong?  ·  named {_found.Count} of {Differences.Length}",
+            Phase.SolveBeat => "Four changes, remembered in Mara's own hand.",
+            Phase.Breaking => "—",
             _ => string.Empty,
         };
     }
@@ -450,6 +621,11 @@ public partial class DifferenceInvestigation : Node2D
     private async Task Say(string line)
     {
         await Dialogue.ShowText(this, line, 5.5f, 576f, 324f, fontSize: 24);
+    }
+
+    private async Task WaitSeconds(float seconds)
+    {
+        await ToSignal(GetTree().CreateTimer(seconds, true), SceneTreeTimer.SignalName.Timeout);
     }
 
     private bool StillHere() => GodotObject.IsInstanceValid(this) && IsInsideTree();
@@ -460,8 +636,6 @@ public partial class DifferenceInvestigation : Node2D
         if (ui != null)
             return ui.IsPointOverInteractiveHud(position);
 
-        // Standalone/one-frame fallback: protect only the Bag button's
-        // familiar corner, not a strip of the investigation.
         return position.X >= 1070f && position.X <= 1144f &&
                position.Y >= 136f && position.Y <= 208f;
     }
@@ -476,30 +650,72 @@ public partial class DifferenceInvestigation : Node2D
         else
             DrawRect(screen, new Color(0.08f, 0.066f, 0.05f), true);
 
-        if (!_detailsVisible)
+        if (_phase == Phase.Arrival)
         {
-            // Before the five seconds begin, the mantel clock is only a
-            // blank face. The player cannot start memorising early
-            // through the introduction dialogue.
-            DrawClockFace(blank: true);
-        }
-        else if (!_changedVisible)
-        {
-            DrawClockFace(blank: false, hour: 4f, minute: 0f);
-            DrawBook(new Vector2(493, 439));
-            DrawLetter(new Vector2(578, 438));
-            DrawUprightCup(new Vector2(671, 448));
+            SittingRoomDetails.DrawClockFace(this, blank: true);
         }
         else
         {
-            DrawClockFace(blank: false, hour: 4f + 47f / 60f, minute: 47f);
-            DrawBook(new Vector2(755, 446));
-            // The letter is gone. Nothing is drawn on purpose.
-            DrawTippedCup(new Vector2(671, 450));
+            SittingRoomDetails.DrawChangedSet(this);
             DrawFoundRings();
         }
 
+        DrawFireState();
+        DrawDarkness();
+        if (_phase == Phase.Search || _phase == Phase.Resolve || _phase == Phase.Breaking)
+        {
+            DrawCracks();
+            DrawDust();
+        }
         DrawPhasePanel();
+
+        if (_phase == Phase.Breaking)
+            DrawRect(screen, new Color(0.02f, 0.01f, 0.01f, 0.45f), true);
+    }
+
+    /// <summary>While the fire is out (or catching), the painted flames
+    /// are covered with ash-dark and a few sulking embers.</summary>
+    private void DrawFireState()
+    {
+        float outAmount = 1f - Mathf.Clamp(_lightLevel, 0f, 1f);
+        if (outAmount <= 0.02f)
+            return;
+        DrawRect(FireRect, new Color(0.015f, 0.014f, 0.02f, 0.92f * outAmount), true);
+        var ember = new Color(0.95f, 0.42f, 0.14f, 0.5f * outAmount);
+        DrawCircle(FireRect.GetCenter() + new Vector2(-22, 58), 3.2f, ember);
+        DrawCircle(FireRect.GetCenter() + new Vector2(8, 66), 2.4f, ember);
+        DrawCircle(FireRect.GetCenter() + new Vector2(30, 52), 2.8f, ember);
+    }
+
+    private void DrawDarkness()
+    {
+        float dark = (1f - Mathf.Clamp(_lightLevel, 0f, 1f)) * 0.88f;
+        if (dark <= 0.01f)
+            return;
+        DrawRect(new Rect2(Vector2.Zero, new Vector2(1152, 648)),
+            new Color(0.002f, 0.002f, 0.006f, dark), true);
+    }
+
+    private void DrawCracks()
+    {
+        float gone = 1f - Mathf.Clamp(_crumbleRemaining / CrumbleSeconds, 0f, 1f);
+        if (_phase == Phase.Breaking)
+            gone = 1f;
+        var crack = new Color(0.85f, 0.8f, 0.7f, 0.16f + 0.5f * gone);
+        foreach (var chain in CrackChains)
+        {
+            int segments = Mathf.Clamp(
+                Mathf.FloorToInt(gone * (chain.Length - 1) + 0.001f), 0, chain.Length - 1);
+            for (int i = 0; i < segments; i++)
+                DrawLine(chain[i], chain[i + 1], crack, 1.6f, true);
+        }
+    }
+
+    private void DrawDust()
+    {
+        var dustColor = new Color(0.85f, 0.78f, 0.62f, 0.35f);
+        foreach (var mote in _dust)
+            DrawRect(new Rect2(mote.Pos, Vector2.One * mote.Size), dustColor, true);
     }
 
     private void DrawPhasePanel()
@@ -508,19 +724,21 @@ public partial class DifferenceInvestigation : Node2D
         DrawRect(panel, new Color(0.025f, 0.02f, 0.016f, 0.72f), true);
         DrawRect(panel, new Color(0.74f, 0.6f, 0.36f, 0.55f), false, 1.5f);
 
-        if (_phase == Phase.Memorise)
+        if (_phase == Phase.Search || _phase == Phase.Resolve || _phase == Phase.Breaking)
         {
-            float frac = Mathf.Clamp(_memoriseRemaining / MemoriseSeconds, 0f, 1f);
-            var track = new Rect2(426, 81, 300, 4);
-            DrawRect(track, new Color(1f, 0.92f, 0.68f, 0.16f), true);
+            // The room's remaining patience, draining red.
+            float frac = Mathf.Clamp(_crumbleRemaining / CrumbleSeconds, 0f, 1f);
+            var track = new Rect2(366, 73, 420, 6);
+            DrawRect(track, new Color(1f, 0.92f, 0.68f, 0.14f), true);
+            var fill = frac > 0.35f
+                ? new Color(1f, 0.86f, 0.52f, 0.9f)
+                : new Color(1f, 0.36f, 0.26f, 0.95f);
             DrawRect(new Rect2(track.Position, new Vector2(track.Size.X * frac, track.Size.Y)),
-                new Color(1f, 0.86f, 0.52f, 0.9f), true);
-        }
-        else if (_detailsVisible)
-        {
+                fill, true);
+
             for (int i = 0; i < Differences.Length; i++)
             {
-                Vector2 center = new(552 + i * 16, 83);
+                Vector2 center = new(552 + i * 16, 86);
                 bool found = _found.Contains(Differences[i].Id);
                 DrawCircle(center, 4.5f, found
                     ? new Color(1f, 0.86f, 0.5f, 0.95f)
@@ -546,150 +764,5 @@ public partial class DifferenceInvestigation : Node2D
             DrawArc(difference.Center, radius * 0.68f, 0f, Mathf.Tau, 36, goldSoft, 1.2f, true);
             DrawCircle(difference.Center, 2.4f, gold);
         }
-    }
-
-    private void DrawClockFace(bool blank, float hour = 4f, float minute = 0f)
-    {
-        Vector2 center = new(209, 122);
-        const float radius = 30f;
-        var ink = new Color(0.13f, 0.1f, 0.08f);
-        var face = new Color(0.93f, 0.87f, 0.72f);
-
-        DrawCircle(center + new Vector2(2, 3), radius + 2f, new Color(0.05f, 0.035f, 0.025f, 0.55f));
-        DrawCircle(center, radius, face);
-        DrawArc(center, radius, 0f, Mathf.Tau, 48, new Color(0.34f, 0.22f, 0.13f), 3f, true);
-        DrawArc(center, radius - 4f, 0f, Mathf.Tau, 44, new Color(0.13f, 0.1f, 0.08f, 0.35f), 1.2f, true);
-
-        if (blank)
-        {
-            // A face with the breath held out of it: enough shape to be
-            // a clock, no time to memorise before Mara's five seconds.
-            DrawCircle(center, 3f, new Color(0.13f, 0.1f, 0.08f, 0.22f));
-            return;
-        }
-
-        for (int i = 0; i < 12; i++)
-        {
-            float angle = -Mathf.Pi / 2f + i * Mathf.Tau / 12f;
-            Vector2 dir = Vector2.FromAngle(angle);
-            float inner = i % 3 == 0 ? 20f : 23f;
-            DrawLine(center + dir * inner, center + dir * 26f, ink, i % 3 == 0 ? 2.4f : 1.4f, true);
-        }
-
-        float hourAngle = -Mathf.Pi / 2f + (hour % 12f) * Mathf.Tau / 12f;
-        float minuteAngle = -Mathf.Pi / 2f + (minute % 60f) * Mathf.Tau / 60f;
-        DrawLine(center, center + Vector2.FromAngle(hourAngle) * 16f, ink, 4.2f, true);
-        DrawLine(center, center + Vector2.FromAngle(minuteAngle) * 23f, ink, 3f, true);
-        DrawCircle(center, 3.4f, ink);
-    }
-
-    private void DrawBook(Vector2 topLeft)
-    {
-        var shadow = new Rect2(topLeft + new Vector2(3, 7), new Vector2(62, 15));
-        DrawRect(shadow, new Color(0.03f, 0.02f, 0.015f, 0.42f), true);
-
-        DrawRect(new Rect2(topLeft + new Vector2(4, 12), new Vector2(56, 7)),
-            new Color(0.88f, 0.8f, 0.64f), true);
-        DrawRect(new Rect2(topLeft + new Vector2(0, 5), new Vector2(60, 13)),
-            new Color(0.48f, 0.13f, 0.11f), true);
-
-        Vector2[] top =
-        [
-            topLeft + new Vector2(0, 5),
-            topLeft + new Vector2(9, 0),
-            topLeft + new Vector2(66, 0),
-            topLeft + new Vector2(60, 5),
-        ];
-        DrawColoredPolygon(top, new Color(0.62f, 0.19f, 0.15f));
-        DrawRect(new Rect2(topLeft + new Vector2(7, 5), new Vector2(3, 13)),
-            new Color(0.3f, 0.07f, 0.06f), true);
-        DrawRect(new Rect2(topLeft + new Vector2(49, 9), new Vector2(7, 5)),
-            new Color(0.82f, 0.64f, 0.32f), true);
-        DrawRect(new Rect2(topLeft + new Vector2(4, 17), new Vector2(56, 2)),
-            new Color(0.08f, 0.05f, 0.04f, 0.7f), true);
-    }
-
-    private void DrawLetter(Vector2 topLeft)
-    {
-        Vector2[] paper =
-        [
-            topLeft + new Vector2(0, 5),
-            topLeft + new Vector2(54, 0),
-            topLeft + new Vector2(58, 22),
-            topLeft + new Vector2(4, 27),
-        ];
-        Vector2[] shadow =
-        [
-            paper[0] + new Vector2(2, 3),
-            paper[1] + new Vector2(2, 3),
-            paper[2] + new Vector2(2, 3),
-            paper[3] + new Vector2(2, 3),
-        ];
-        DrawColoredPolygon(shadow, new Color(0.03f, 0.02f, 0.015f, 0.38f));
-        DrawColoredPolygon(paper, new Color(0.9f, 0.84f, 0.68f));
-
-        var edge = new Color(0.35f, 0.28f, 0.2f, 0.8f);
-        for (int i = 0; i < paper.Length; i++)
-            DrawLine(paper[i], paper[(i + 1) % paper.Length], edge, 1.2f, true);
-
-        var ink = new Color(0.24f, 0.22f, 0.22f, 0.78f);
-        DrawLine(topLeft + new Vector2(9, 8), topLeft + new Vector2(45, 4), ink, 1.4f, true);
-        DrawLine(topLeft + new Vector2(10, 14), topLeft + new Vector2(39, 10), ink, 1.2f, true);
-        DrawLine(topLeft + new Vector2(11, 20), topLeft + new Vector2(48, 16), ink, 1.2f, true);
-    }
-
-    private void DrawUprightCup(Vector2 center)
-    {
-        DrawEllipse(center + new Vector2(0, 15), new Vector2(29, 7), new Color(0.28f, 0.2f, 0.15f));
-        DrawEllipse(center + new Vector2(0, 14), new Vector2(27, 6), new Color(0.88f, 0.82f, 0.7f));
-
-        Vector2[] cup =
-        [
-            center + new Vector2(-19, -10),
-            center + new Vector2(19, -10),
-            center + new Vector2(15, 11),
-            center + new Vector2(-15, 11),
-        ];
-        DrawColoredPolygon(cup, new Color(0.9f, 0.84f, 0.71f));
-        DrawEllipse(center + new Vector2(0, -10), new Vector2(19, 4.5f), new Color(0.32f, 0.17f, 0.08f));
-        DrawArc(center + new Vector2(20, 0), 7f, -Mathf.Pi * 0.45f, Mathf.Pi * 0.45f, 18,
-            new Color(0.9f, 0.84f, 0.71f), 3f, true);
-
-        var steam = new Color(1f, 0.96f, 0.86f, 0.42f);
-        DrawLine(center + new Vector2(-7, -16), center + new Vector2(-4, -24), steam, 1.6f, true);
-        DrawLine(center + new Vector2(5, -16), center + new Vector2(8, -25), steam, 1.6f, true);
-    }
-
-    private void DrawTippedCup(Vector2 center)
-    {
-        DrawEllipse(center + new Vector2(-16, 16), new Vector2(24, 5.5f), new Color(0.84f, 0.78f, 0.65f));
-        DrawEllipse(center + new Vector2(8, 15), new Vector2(32, 7), new Color(0.3f, 0.15f, 0.065f, 0.92f));
-        DrawRect(new Rect2(center + new Vector2(22, 14), new Vector2(5, 13)),
-            new Color(0.3f, 0.15f, 0.065f, 0.75f), true);
-
-        Vector2[] cup =
-        [
-            center + new Vector2(-24, -7),
-            center + new Vector2(8, -14),
-            center + new Vector2(13, 9),
-            center + new Vector2(-18, 14),
-        ];
-        DrawColoredPolygon(cup, new Color(0.89f, 0.83f, 0.7f));
-        DrawEllipse(center + new Vector2(11, -2), new Vector2(6, 12), new Color(0.32f, 0.17f, 0.08f));
-        DrawEllipse(center + new Vector2(13, -2), new Vector2(3.5f, 8), new Color(0.9f, 0.84f, 0.71f));
-        DrawArc(center + new Vector2(-23, -8), 7f, Mathf.Pi * 0.7f, Mathf.Pi * 1.55f, 18,
-            new Color(0.89f, 0.83f, 0.7f), 3f, true);
-    }
-
-    private void DrawEllipse(Vector2 center, Vector2 radii, Color color)
-    {
-        const int segments = 28;
-        var points = new Vector2[segments];
-        for (int i = 0; i < segments; i++)
-        {
-            float angle = i * Mathf.Tau / segments;
-            points[i] = center + new Vector2(Mathf.Cos(angle) * radii.X, Mathf.Sin(angle) * radii.Y);
-        }
-        DrawColoredPolygon(points, color);
     }
 }

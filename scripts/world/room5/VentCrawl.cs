@@ -8,9 +8,11 @@ using Godot;
 /// Mara forward at elbow height, releasing it stops her where she
 /// is, and the flashlight follows the mouse directly with no click or
 /// hold. Three short beats stop the crawl for her voice; the faraway
-/// lit grille eventually fills the dark and is clicked open into the
-/// basement. A first crawl takes its time. Later crawls remember the
-/// route and are brief.
+/// lit grille eventually fills the dark. It is latched from the other
+/// side, the way her father fitted them — so it does not open. It is
+/// kicked: three true kicks, timed as a ring closes on the gold,
+/// each one bending the grille further off its frame. A first crawl
+/// takes its time. Later crawls remember the route and are brief.
 ///
 /// Stepping back is handled by the ordinary contextual navigation
 /// (SceneManager's "Back Out" to Room 5), so this scene only owns the
@@ -29,6 +31,7 @@ public partial class VentCrawl : Node2D
         Crawling,
         Speaking,
         AtGrate,
+        Kicking,
         Leaving,
     }
 
@@ -59,12 +62,20 @@ public partial class VentCrawl : Node2D
     private bool _beamReady;
     private bool _crawlMoving;
 
+    private readonly RandomNumberGenerator _rng = new();
+    private int _kicksLanded;
+    private float _kickPhase;
+    private float _kickDir = 1f;
+    private float _grateShake;
+    private int _kickMisses;
+
     public override void _Ready()
     {
         _background = GD.Load<Texture2D>(BackgroundPath);
         _font = GD.Load<FontFile>(FontPath);
         _repeat = GameState.Instance?.HasFlag("basement_entered") ?? false;
         _duration = _repeat ? 6f : 14f;
+        _rng.Randomize();
         BuildPrompt();
         QueueRedraw();
         _ = PlayIntroAsync();
@@ -136,31 +147,102 @@ public partial class VentCrawl : Node2D
 
     public override void _Input(InputEvent @event)
     {
-        if (_stage != CrawlStage.AtGrate || GetTree().Paused || Dialogue.IsShowing)
-            return;
-        if (@event is not InputEventMouseButton mouse || !mouse.Pressed ||
-            mouse.ButtonIndex != MouseButton.Left)
-            return;
-        if (!GrateClickRect.HasPoint(mouse.Position))
+        if (_stage != CrawlStage.Kicking || GetTree().Paused || Dialogue.IsShowing ||
+            Dialogue.IsInputBlocked)
             return;
 
+        bool kick = false;
+        if (@event is InputEventMouseButton mouse && mouse.Pressed &&
+            mouse.ButtonIndex == MouseButton.Left)
+            kick = true;
+        else if (@event is InputEventKey key && key.Pressed && !key.Echo &&
+            key.PhysicalKeycode == Key.Space)
+            kick = true;
+
+        if (!kick)
+            return;
         GetViewport().SetInputAsHandled();
-        _ = OpenGrateAsync();
+        TryKick();
     }
 
-    private async Task OpenGrateAsync()
+    private float KickHalfWindow => _kicksLanded switch
     {
-        if (_stage != CrawlStage.AtGrate)
+        0 => 0.13f,
+        1 => 0.11f,
+        _ => 0.09f,
+    };
+
+    private void TryKick()
+    {
+        float off = Mathf.Abs(_kickPhase - 0.5f);
+        if (off <= KickHalfWindow)
+        {
+            _kicksLanded++;
+            _grateShake = 0.35f;
+            _kickPhase = 0f;
+            _kickDir = 1f;
+            AudioManager.Play(Sfx.VentKick, -3f, 0.95f + _kicksLanded * 0.06f);
+            if (_kicksLanded >= 3)
+            {
+                _ = BreakGrateAsync();
+            }
+            else
+            {
+                GameState.Instance?.Toast(_kicksLanded == 1
+                    ? "\"Once—\" The frame gives a finger's width."
+                    : "\"Again—\" Metal shrieks, politely, in the dark.");
+            }
+        }
+        else
+        {
+            _kickMisses++;
+            _grateShake = Mathf.Max(_grateShake, 0.12f);
+            AudioManager.Play(Sfx.VentKick, -10f, 0.6f);
+            GameState.Instance?.Toast(_kickMisses == 1
+                ? "A glance off the slats. Kick as the ring closes on the gold."
+                : "Off the slats again. Wait for the gold.");
+        }
+        QueueRedraw();
+    }
+
+    private async Task PlayGrateBeatAsync()
+    {
+        _stage = CrawlStage.Speaking;
+        Dialogue.BeginInputBlock();
+        try
+        {
+            await Say(_repeat
+                ? "The far grille. Still latched from the other side. Still sorry."
+                : "The far grille — and its latch is on the other side, of course it is. He fitted them to be worked from the room, not from inside his own walls.");
+            if (!StillHere())
+                return;
+            await Say("No tools for this end, then. Just boots. Sorry, Dad. You'd have had opinions. You'd also have held the light.");
+            if (!StillHere())
+                return;
+            _stage = CrawlStage.Kicking;
+            _kicksLanded = 0;
+            _kickPhase = 0f;
+            _kickDir = 1f;
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+    }
+
+    private async Task BreakGrateAsync()
+    {
+        if (_stage != CrawlStage.Kicking)
             return;
         _stage = CrawlStage.Leaving;
-        AudioManager.Play(Sfx.DrawerOpen, -5f, 0.64f);
-        AudioManager.Play(Sfx.DoorUnlock, -10f, 0.78f);
+        AudioManager.Play(Sfx.VentBreak, -2f);
+        AudioManager.Play(Sfx.DrawerOpen, -8f, 0.6f);
         Dialogue.BeginInputBlock();
         try
         {
             await Say(_repeat
                 ? "Down again. Mind the last elbow of it."
-                : "It gives. Stone smell, apple smell — and a dark much bigger than the duct.");
+                : "It gives — all at once, the way ice does. Stone smell, apple smell — and a dark much bigger than the duct.");
         }
         finally
         {
@@ -200,10 +282,10 @@ public partial class VentCrawl : Node2D
                 }
                 else if (_progress >= 1f)
                 {
-                    _stage = CrawlStage.AtGrate;
                     _crawlMoving = false;
                     _gratePromptTimer = 0.35f;
                     AudioManager.Play(Sfx.LockpickTick, -9f, 0.7f);
+                    _ = PlayGrateBeatAsync();
                 }
             }
             else
@@ -217,6 +299,14 @@ public partial class VentCrawl : Node2D
         {
             _gratePromptTimer -= dt;
         }
+        else if (_stage == CrawlStage.Kicking && !blocked)
+        {
+            float speed = 0.55f + 0.2f * _kicksLanded;
+            _kickPhase += _kickDir * speed * dt;
+            if (_kickPhase >= 1f) { _kickPhase = 1f; _kickDir = -1f; }
+            else if (_kickPhase <= 0f) { _kickPhase = 0f; _kickDir = 1f; }
+            _gratePromptTimer -= dt;
+        }
         else if (_stage == CrawlStage.Leaving && !Dialogue.IsShowing && !_left)
         {
             _fade = Mathf.Min(1f, _fade + dt * 1.15f);
@@ -227,6 +317,7 @@ public partial class VentCrawl : Node2D
                 SceneManager.ChangeScene(BasementScenePath);
             }
         }
+        _grateShake = Mathf.Max(0f, _grateShake - dt);
 
         UpdatePrompt(dt);
         QueueRedraw();
@@ -256,9 +347,11 @@ public partial class VentCrawl : Node2D
         if (_promptLabel == null)
             return;
 
-        string text = _stage == CrawlStage.AtGrate
-            ? "Click the grille"
-            : "Hold W to crawl · mouse aims the light";
+        string text = _stage == CrawlStage.Kicking
+            ? "SPACE / CLICK — KICK as the ring meets the gold"
+            : _stage == CrawlStage.AtGrate
+                ? "Latched from the other side"
+                : "Hold W to crawl · mouse aims the light";
         if (_promptLabel.Text != text)
             _promptLabel.Text = text;
 
@@ -266,6 +359,7 @@ public partial class VentCrawl : Node2D
         {
             CrawlStage.Crawling => _crawlMoving ? 0.38f : 0.95f,
             CrawlStage.AtGrate => _gratePromptTimer <= 0f ? 1f : 0f,
+            CrawlStage.Kicking => _gratePromptTimer <= 0f ? 0.95f : 0f,
             _ => 0f,
         };
         float alpha = Mathf.MoveToward(_promptLabel.Modulate.A, target, dt * 2.4f);
@@ -299,10 +393,13 @@ public partial class VentCrawl : Node2D
 
             if (!StillHere())
                 return;
-            _stage = _progress >= 1f ? CrawlStage.AtGrate : CrawlStage.Crawling;
+            _stage = CrawlStage.Crawling;
             _crawlSoundTimer = Mathf.Min(_crawlSoundTimer, 0.25f);
-            if (_stage == CrawlStage.AtGrate)
+            if (_progress >= 1f)
+            {
                 _gratePromptTimer = 0.35f;
+                _ = PlayGrateBeatAsync();
+            }
         }
         finally
         {
@@ -331,7 +428,8 @@ public partial class VentCrawl : Node2D
     {
         DrawCrawlView();
         DrawFlashlightDarkness();
-        if (_stage == CrawlStage.AtGrate || _stage == CrawlStage.Leaving)
+        if (_stage == CrawlStage.AtGrate || _stage == CrawlStage.Kicking ||
+            _stage == CrawlStage.Speaking || _stage == CrawlStage.Leaving)
             DrawFarGrate();
         if (_fade > 0f)
             DrawRect(new Rect2(0, 0, 1152, 648), new Color(0, 0, 0, _fade), true);
@@ -366,7 +464,17 @@ public partial class VentCrawl : Node2D
     {
         Vector2 beam = _beamPosition;
         float radius = GameState.Instance?.HasFlag("basement_battery_taken") == true ? 205f : 172f;
-        var dark = new Color(0.004f, 0.004f, 0.006f, 0.58f);
+        DrawDarkOutside(beam, radius + 58f, new Color(0.004f, 0.004f, 0.006f, 0.62f));
+        DrawDarkOutside(beam, radius, new Color(0.003f, 0.003f, 0.005f, 0.78f));
+        // Warm falloff, kept to square pixel rings rather than a shader.
+        DrawArc(beam, radius * 0.96f, 0f, Mathf.Tau, 56,
+            new Color(1f, 0.84f, 0.48f, 0.08f), 12f, true);
+        DrawArc(beam, radius * 0.72f, 0f, Mathf.Tau, 48,
+            new Color(1f, 0.88f, 0.56f, 0.045f), 18f, true);
+    }
+
+    private void DrawDarkOutside(Vector2 beam, float radius, Color dark)
+    {
 
         float top = Mathf.Clamp(beam.Y - radius, 0f, 648f);
         float bottom = Mathf.Clamp(beam.Y + radius, 0f, 648f);
@@ -390,16 +498,19 @@ public partial class VentCrawl : Node2D
                 DrawRect(new Rect2(rightEdge, y, 1152f - rightEdge, height), dark, true);
         }
 
-        // Warm falloff, kept to square pixel rings rather than a shader.
-        DrawArc(beam, radius * 0.96f, 0f, Mathf.Tau, 56,
-            new Color(1f, 0.84f, 0.48f, 0.08f), 12f, true);
-        DrawArc(beam, radius * 0.72f, 0f, Mathf.Tau, 48,
-            new Color(1f, 0.88f, 0.56f, 0.045f), 18f, true);
     }
 
     private void DrawFarGrate()
     {
         var rect = new Rect2(493, 246, 166, 156);
+        // Every true kick bends it further off its frame.
+        rect.Position += new Vector2(7f * _kicksLanded, 4f * _kicksLanded);
+        if (_grateShake > 0.01f && !Settings.ReduceMotionOrDefault())
+        {
+            float s = 3.4f * (_grateShake / 0.35f);
+            rect.Position += new Vector2(
+                _rng.RandfRange(-s, s), _rng.RandfRange(-s * 0.6f, s * 0.6f));
+        }
         if (_stage == CrawlStage.Leaving)
             rect.Position += new Vector2(28, 12);
         DrawRect(rect, new Color(0.1f, 0.09f, 0.07f, 0.98f), true);
@@ -415,10 +526,22 @@ public partial class VentCrawl : Node2D
                 new Color(0.03f, 0.03f, 0.03f, 1f), true);
         }
 
-        bool hover = _stage == CrawlStage.AtGrate && GrateClickRect.HasPoint(GetGlobalMousePosition());
-        if (hover)
+        if (_stage == CrawlStage.Kicking)
         {
-            DrawRect(rect.Grow(7f), new Color(1f, 0.88f, 0.55f, 0.72f), false, 2f);
+            // The closing ring and the gold it has to meet.
+            Vector2 center = new(576, 324);
+            float ringR = 150f - _kickPhase * 96f;
+            DrawArc(center, 102f, 0f, Mathf.Tau, 56,
+                new Color(1f, 0.84f, 0.45f, 0.85f), 3f, true);
+            DrawArc(center, ringR, 0f, Mathf.Tau, 56,
+                new Color(0.88f, 0.86f, 0.8f, 0.9f), 3f, true);
+            for (int i = 0; i < 3; i++)
+            {
+                Vector2 pip = center + new Vector2((i - 1) * 26f, 176f);
+                DrawCircle(pip, 6f, i < _kicksLanded
+                    ? new Color(1f, 0.84f, 0.45f, 0.98f)
+                    : new Color(0.9f, 0.84f, 0.68f, 0.3f));
+            }
         }
     }
 }

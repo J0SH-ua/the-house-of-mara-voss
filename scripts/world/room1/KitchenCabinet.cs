@@ -24,7 +24,7 @@ public partial class KitchenCabinet : Node2D
 
     private static readonly Rect2 CabinetRect = new(396, 210, 360, 300);
     private static readonly Rect2 FlashlightRect = new(508, 252, 136, 96);
-    private static readonly Rect2 LeaveRect = new(28, 572, 252, 44);
+    private static readonly Rect2 LeaveRect = new(16, 468, 216, 44);
 
     private FontFile _font;
     private Texture2D _flashlightTexture;

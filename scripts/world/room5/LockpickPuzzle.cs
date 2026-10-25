@@ -48,7 +48,7 @@ public partial class LockpickPuzzle : Node2D
         Leaving,
     }
 
-    private static readonly Rect2 LeaveRect = new(28, 572, 226, 44);
+    private static readonly Rect2 LeaveRect = new(16, 468, 216, 44);
     private static readonly Vector2 LockCenter = new(576, 324);
     private static readonly string[] NearLines =
     [

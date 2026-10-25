@@ -731,7 +731,14 @@ public partial class RoomJourney : Node2D
             return;
         }
 
-        SceneManager.ChangeScene(DestinationScenePath);
+        string destination = DestinationScenePath;
+        // The empty road crosses water, and the memory left that
+        // crossing broken. Until her father's tools have mended it,
+        // the road to the porch ends at the bridge.
+        if (JourneyId == "Room6ToPorch" &&
+            !(GameState.Instance?.HasFlag("bridge_fixed") ?? false))
+            destination = "res://scenes/world/bridge_repair.tscn";
+        SceneManager.ChangeScene(destination);
     }
 
     private async Task ShowHeldFragmentAsync()

@@ -7,12 +7,13 @@ using Godot;
 ///   • the brass key — shard 0, the morning itself;
 ///   • beside it, a smaller copper key gone green at the edges, its bow
 ///     cut like a little bridge — the first of the hallway door's three
-///     ordinary keys;
-///   • in the drawer's back corner, one of Mum's bent hairpins,
-///     borrowed for a hundred little jobs it wasn't made for.
+///     ordinary keys.
 ///
-/// The brass key alone is enough to go on. The other two are simply
-/// there, visible, takeable or leavable — and if Mara leaves them, the
+/// (Mum's bent hairpin is not here. It sleeps where it always slept:
+/// the little drawer of the nightstand in the very first room.)
+///
+/// The brass key alone is enough to go on. The copper one is simply
+/// there, visible, takeable or leavable — and if Mara leaves it, the
 /// house will ask once, on her way out, whether she meant to. Whatever
 /// she skips stays in the drawer, and a sealed kitchen still lets her
 /// come back for it: finished rooms go quiet, but untaken things stay
@@ -28,7 +29,6 @@ public partial class BrassKey1 : Area2D
 	private const string NextScenePath = "res://scenes/world/room_2.tscn";
 	private const string JourneyScenePath = "res://scenes/world/journey_to_room_2.tscn";
 	private const string CopperKeyIconPath = "res://assets/images/core/items/bridge_key.png";
-	private const string HairpinIconPath = "res://assets/images/core/items/hairpin.png";
 	private string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
 
 	// Local-space shapes, in this Area2D's own scaled coordinates. The
@@ -37,13 +37,10 @@ public partial class BrassKey1 : Area2D
 	// overlap it, so a click always names exactly one thing.
 	private static readonly Rect2 BrassRect = new(23 - 110, -6 - 33, 220, 66);
 	private static readonly Rect2 CopperRect = new(82 - 60, 71 - 38, 120, 76);
-	private static readonly Rect2 HairpinRect = new(-134 - 60, 95 - 38, 120, 76);
 
 	private bool _collecting;
 	private Sprite2D _copperSprite;
 	private CollisionShape2D _copperShape;
-	private Sprite2D _hairpinSprite;
-	private CollisionShape2D _hairpinShape;
 
 	public override void _Ready()
 	{
@@ -51,9 +48,9 @@ public partial class BrassKey1 : Area2D
 		BuildDrawerExtras();
 	}
 
-	/// <summary>The copper key and the hairpin were never in the authored
-	/// scene, so they are laid in the drawer from code — present exactly
-	/// while Mara has not yet taken them, gone for good once she has.</summary>
+	/// <summary>The copper key was never in the authored scene, so it is
+	/// laid in the drawer from code — present exactly while Mara has
+	/// not yet taken it, gone for good once she has.</summary>
 	private void BuildDrawerExtras()
 	{
 		var gs = GameState.Instance;
@@ -78,37 +75,14 @@ public partial class BrassKey1 : Area2D
 			AddChild(_copperShape);
 		}
 
-		if (gs?.HasFlag("item_hairpin") != true)
-		{
-			_hairpinSprite = new Sprite2D
-			{
-				Name = "HairpinSprite",
-				Texture = GD.Load<Texture2D>(HairpinIconPath),
-				Position = HairpinRect.GetCenter(),
-				Scale = new Vector2(0.25f, 0.25f),
-				TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-			};
-			AddChild(_hairpinSprite);
-			_hairpinShape = new CollisionShape2D
-			{
-				Name = "HairpinShape",
-				Position = HairpinRect.GetCenter(),
-				Shape = new RectangleShape2D { Size = HairpinRect.Size },
-			};
-			AddChild(_hairpinShape);
-		}
 	}
 
 	/// <summary>Asked by Room1Puzzle's hover cursor: is the hand over one
-	/// of the two smaller takeables still lying in the drawer?</summary>
+	/// of the smaller takeable still lying in the drawer?</summary>
 	public bool IsOverTakeableItem(Vector2 globalPosition)
 	{
 		Vector2 local = ToLocal(globalPosition);
-		if (_copperSprite != null && _copperSprite.Visible && CopperRect.HasPoint(local))
-			return true;
-		if (_hairpinSprite != null && _hairpinSprite.Visible && HairpinRect.HasPoint(local))
-			return true;
-		return false;
+		return _copperSprite != null && _copperSprite.Visible && CopperRect.HasPoint(local);
 	}
 
 	public override async void _InputEvent(Viewport viewport, InputEvent @event, int shapeIdx)
@@ -124,8 +98,8 @@ public partial class BrassKey1 : Area2D
 
 		Vector2 local = ToLocal(GetGlobalMousePosition());
 
-		// The two smaller things first: taking one is its own small
-		// moment and never moves Mara anywhere.
+		// The smaller thing first: taking it is its own small moment
+		// and never moves Mara anywhere.
 		if (_copperSprite != null && _copperSprite.Visible && CopperRect.HasPoint(local))
 		{
 			_collecting = true;
@@ -133,14 +107,6 @@ public partial class BrassKey1 : Area2D
 			finally { _collecting = false; }
 			return;
 		}
-		if (_hairpinSprite != null && _hairpinSprite.Visible && HairpinRect.HasPoint(local))
-		{
-			_collecting = true;
-			try { await TakeHairpinAsync(); }
-			finally { _collecting = false; }
-			return;
-		}
-
 		if (!BrassRect.HasPoint(local))
 			return;
 
@@ -181,7 +147,11 @@ public partial class BrassKey1 : Area2D
 			await Dialogue.ShowText(this, "\"That's not something you notice until it's gone.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
 		}
 
-		SceneManager.ChangeScene(firstTime ? JourneyScenePath : NextScenePath);
+		// The walk belongs to the first time she leaves with the
+		// fragment — by seen-flag, not by collection, so looking
+		// around first (or fetching the copper key late) never eats it.
+		bool goJourney = gs != null && !gs.HasFlag("journey_seen_Room1ToRoom2");
+		SceneManager.ChangeScene(goJourney ? JourneyScenePath : NextScenePath);
 	}
 
 	private async System.Threading.Tasks.Task TakeCopperKeyAsync()
@@ -202,27 +172,6 @@ public partial class BrassKey1 : Area2D
 		gs.UnlockClue("hall_key_bridge");
 		gs.Toast("Copper bridge key — kept in Mara's bag (B).");
 		HideTaken(_copperSprite, _copperShape);
-	}
-
-	private async System.Threading.Tasks.Task TakeHairpinAsync()
-	{
-		var gs = GameState.Instance;
-		if (gs == null || gs.HasFlag("item_hairpin"))
-			return;
-
-		AudioManager.Play(Sfx.PhotoPickup, -10f, 0.9f);
-		AudioManager.Play(Sfx.KeyType, -13f, 1.35f);
-		await Dialogue.ShowText(this, "In the drawer's back corner, half under a twist of string — one of Mum's hairpins. Bent, the way every hairpin in that house ended up bent: borrowed for catches, seals, little jobs it wasn't made for.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		if (!GodotObject.IsInstanceValid(this))
-			return;
-		await Dialogue.ShowText(this, "I slide it into my sleeve. Old habits travel.", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
-		if (!GodotObject.IsInstanceValid(this))
-			return;
-
-		gs.SetFlag("item_hairpin", save: false);
-		gs.UnlockClue("bedroom_hairpin");
-		gs.Toast("Mum's bent hairpin — kept in Mara's bag (B).");
-		HideTaken(_hairpinSprite, _hairpinShape);
 	}
 
 	private static void HideTaken(Sprite2D sprite, CollisionShape2D shape)

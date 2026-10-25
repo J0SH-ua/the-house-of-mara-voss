@@ -159,6 +159,12 @@ public abstract partial class MemoryRoomBase : Node2D
     /// beyond it: examinables rest. Exits (non-examinable hotspots) never seal.</summary>
     protected bool SealedHere => GameState.Instance?.IsRoomSealed(RoomName) == true;
 
+    /// <summary>A finished room stays quiet — except around the one
+    /// practical thing Mara walked past. Rooms override this for the
+    /// hotspot that still holds an untaken item (a hairpin in a
+    /// nightstand drawer) so going back for it always works.</summary>
+    protected virtual bool HotspotSealedException(Hotspot hotspot) => false;
+
     public override void _Process(double delta)
     {
         if (Busy || Dialogue.IsInputBlocked || Dialogue.IsShowing ||
@@ -170,7 +176,7 @@ public abstract partial class MemoryRoomBase : Node2D
 
         Vector2 mouse = GetGlobalMousePosition();
         var hovered = IsOverUi(mouse) ? null : FindHotspot(mouse);
-        if (hovered != null && SealedHere && hovered.Examinable)
+        if (hovered != null && SealedHere && hovered.Examinable && !HotspotSealedException(hovered))
             hovered = null;
         SetHovered(hovered);
         if (_hovered != null)
@@ -195,7 +201,7 @@ public abstract partial class MemoryRoomBase : Node2D
         if (hotspot == null)
             return;
 
-        if (SealedHere && hotspot.Examinable)
+        if (SealedHere && hotspot.Examinable && !HotspotSealedException(hotspot))
         {
             GetTree().Root.SetInputAsHandled();
             GameState.Instance?.NotifySealedInteraction();

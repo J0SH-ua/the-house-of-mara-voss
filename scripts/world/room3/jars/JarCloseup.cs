@@ -10,12 +10,15 @@ using Godot;
 /// plays out in Mara's hands: the lid strains, a crack starts across
 /// the glass, and she stops herself cold — remembering, out loud, how
 /// her mother used to open these with just a hairpin. The clue is the
-/// moment; the hairpin is back in the kitchen drawer, beside the keys,
-/// where hands left it.
+/// moment; the hairpin sleeps where it always slept, in the little
+/// drawer of her childhood nightstand, in the very first room.
 ///
-/// With the hairpin, the seal becomes work: press and drag it slowly
-/// all the way around the rim, stretch by ticking stretch, until the
-/// lid sighs open instead of breaking. Inside, in layers, lie the two
+/// With the hairpin, the seal becomes timing: a working line travels
+/// the rim, and the one red stretch where the rubber gives keeps
+/// moving. Tap the instant the line crosses the red — seven true
+/// taps, faster and turning back on itself each time — until the lid
+/// sighs open instead of breaking. One mistimed tap and the seal
+/// takes its whole patience back: from the top. Inside, in layers, lie the two
 /// things the jar was keeping: Ida's folded name tape (shard 2) on top,
 /// and underneath it the circle key for the hallway door. Each is
 /// taken by its own click. The tape alone is enough to leave by —
@@ -37,12 +40,13 @@ public partial class JarCloseup : Node2D
     private static readonly Vector2 JarCenter = new(576, 372);
     private static readonly Vector2 SealCenter = new(576, 258);
     private const float SealRadius = 98f;
-    private const float PryNeededRadians = 5.2f; // ≈ 300° of patient rim
+    private const int TapsNeeded = 7;
+    private const float TapWindowDegrees = 10f;
 
     private static readonly Rect2 JarRect = new(452, 196, 248, 330);
     private static readonly Rect2 TapeRect = new(526, 306, 100, 44);
     private static readonly Rect2 KeyRect = new(530, 420, 92, 92);
-    private static readonly Rect2 LeaveRect = new(28, 572, 252, 44);
+    private static readonly Rect2 LeaveRect = new(16, 468, 216, 44);
 
     // Three cracks from one moment of impatience, as point chains.
     private static readonly Vector2[][] Cracks =
@@ -69,11 +73,15 @@ public partial class JarCloseup : Node2D
     private JarState _state = JarState.Intro;
     private bool _busy;
     private bool _hasHairpin;
-    private bool _dragging;
-    private float _lastDragAngle;
-    private bool _dragAngleReady;
-    private float _pryRadians;
-    private int _pryTicks;
+    private readonly RandomNumberGenerator _rng = new();
+    private bool _tapReady;
+    private int _tapsLanded;
+    private float _needleAngle;
+    private float _needleSpeed;
+    private float _targetAngle;
+    private float _tapFlash;
+    private float _missShake;
+    private int _missCount;
     private float _crackProgress;
     private float _lidLift;
     private bool _lidPopped;
@@ -87,6 +95,7 @@ public partial class JarCloseup : Node2D
     {
         _font = GD.Load<FontFile>(FontPath);
         _circleKeyTexture = GD.Load<Texture2D>(CircleKeyIconPath);
+        _rng.Randomize();
 
         var gs = GameState.Instance;
         _hasHairpin = gs?.HasFlag(HairpinFlag) ?? false;
@@ -148,7 +157,7 @@ public partial class JarCloseup : Node2D
             return;
         _helpLabel.Text = _state switch
         {
-            JarState.Sealed when _hasHairpin => "Press and drag the hairpin slowly around the seal — all the way round, like she did.",
+            JarState.Sealed when _hasHairpin => $"Tap as the working line crosses the red give in the seal.  ·  {_tapsLanded} of {TapsNeeded} true",
             JarState.Sealed => "The seal is twelve years stubborn. Fingernails are what she has. Click the jar to try.",
             JarState.Open when !TapeTaken => "Something folded sleeps on top. Take it gently.",
             JarState.Open when !KeyTaken => "Under where the tape lay, something cold catches the light.",
@@ -181,7 +190,7 @@ public partial class JarCloseup : Node2D
             _state = JarState.Sealed;
             if (_hasHairpin)
             {
-                await Say("The last jar. Its seal has had twelve years to become one with the glass. But I watched Mum do this a hundred times — hairpin under the rubber, and patience, worked all the way round.");
+                await Say("The last jar. Its seal has had twelve years to become one with the glass. But I watched Mum do this a hundred times — hairpin under the rubber, worked round and round, tapped true every time it crossed where the rubber gives. Seven of those, usually. She counted under her breath.");
             }
             else if (gs?.HasFlag(BareAttemptFlag) == true)
             {
@@ -193,12 +202,111 @@ public partial class JarCloseup : Node2D
             }
             if (!StillHere())
                 return;
+            if (_hasHairpin)
+                StartTapGame();
             UpdateHelp();
         }
         finally
         {
             Dialogue.EndInputBlock();
         }
+    }
+
+    // ---------------------------------------------------------- the seal
+
+    private static float SpeedForTap(int landed) => Mathf.DegToRad(55f + landed * 24f);
+
+    private static float WrapTau(float a)
+    {
+        while (a > Mathf.Tau) a -= Mathf.Tau;
+        while (a < 0f) a += Mathf.Tau;
+        return a;
+    }
+
+    private static float AngularDistance(float a, float b)
+    {
+        float d = Mathf.Abs(WrapTau(a) - WrapTau(b));
+        return Mathf.Min(d, Mathf.Tau - d);
+    }
+
+    private void StartTapGame()
+    {
+        _tapsLanded = 0;
+        _needleAngle = -Mathf.Pi / 2f;
+        // Counter-clockwise first, the way she started every jar.
+        _needleSpeed = -SpeedForTap(0);
+        NewTarget();
+        _tapReady = true;
+    }
+
+    private void NewTarget()
+    {
+        float a = 0f;
+        for (int guard = 0; guard < 24; guard++)
+        {
+            a = _rng.RandfRange(0f, Mathf.Tau);
+            if (AngularDistance(a, _needleAngle) >= Mathf.DegToRad(70f))
+                break;
+        }
+        _targetAngle = a;
+    }
+
+    private void TapJar()
+    {
+        if (!_tapReady || _busy || _state != JarState.Sealed)
+            return;
+
+        if (AngularDistance(_needleAngle, _targetAngle) <= Mathf.DegToRad(TapWindowDegrees))
+            LandTap();
+        else
+            MissTap();
+    }
+
+    private void LandTap()
+    {
+        _tapsLanded++;
+        _tapFlash = 0.28f;
+        AudioManager.Play(Sfx.LockpickTick, -10f, 0.95f + _tapsLanded * 0.07f);
+        Hotspots.SpawnRipple(
+            SealCenter + Vector2.FromAngle(_targetAngle) * SealRadius,
+            new Color(1f, 0.88f, 0.55f));
+
+        if (_tapsLanded >= TapsNeeded)
+        {
+            _tapReady = false;
+            _ = PopLidAsync();
+            return;
+        }
+
+        // Each true tap turns the work back on itself, a little faster.
+        float sign = _tapsLanded % 2 == 0 ? -1f : 1f;
+        _needleSpeed = sign * SpeedForTap(_tapsLanded);
+        NewTarget();
+        UpdateHelp();
+        QueueRedraw();
+    }
+
+    private void MissTap()
+    {
+        _missCount++;
+        _missShake = 0.35f;
+        AudioManager.Play(Sfx.LockRattle, -8f, 0.75f);
+        AudioManager.Play(Sfx.Denied, -13f, 0.9f);
+
+        // One mistimed tap and the seal takes its whole patience back.
+        _tapsLanded = 0;
+        _needleSpeed = -SpeedForTap(0);
+        NewTarget();
+
+        string[] lines =
+        [
+            "Slipped. The seal takes its whole patience back. From the top.",
+            "Missed the give. Slow is smooth. Again.",
+            "Too eager. Mum never hurried a jar in her life.",
+        ];
+        GameState.Instance?.Toast(lines[Mathf.Min(_missCount - 1, lines.Length - 1)]);
+        UpdateHelp();
+        QueueRedraw();
     }
 
     private bool InputFree() =>
@@ -214,15 +322,7 @@ public partial class JarCloseup : Node2D
         Vector2 pos = GetGlobalMousePosition();
 
         if (!mouseButton.Pressed)
-        {
-            if (_dragging)
-            {
-                _dragging = false;
-                _dragAngleReady = false;
-                GetViewport().SetInputAsHandled();
-            }
             return;
-        }
 
         if (!InputFree())
             return;
@@ -237,11 +337,10 @@ public partial class JarCloseup : Node2D
         switch (_state)
         {
             case JarState.Sealed when _hasHairpin:
-                if (NearSeal(pos))
+                if (JarRect.Grow(70f).HasPoint(pos))
                 {
-                    _dragging = true;
-                    _dragAngleReady = false;
                     GetViewport().SetInputAsHandled();
+                    TapJar();
                 }
                 break;
 
@@ -268,12 +367,6 @@ public partial class JarCloseup : Node2D
         }
     }
 
-    private static bool NearSeal(Vector2 pos)
-    {
-        float r = (pos - SealCenter).Length();
-        return r >= SealRadius - 44f && r <= SealRadius + 40f;
-    }
-
     public override void _Process(double delta)
     {
         float dt = Mathf.Max((float)delta, 0f);
@@ -287,58 +380,16 @@ public partial class JarCloseup : Node2D
         if (_lidPopped && _lidLift < 1f)
             _lidLift = Mathf.MoveToward(_lidLift, 1f, dt / 0.5f);
 
-        if (_dragging && _state == JarState.Sealed && InputFree())
-            DragPryStep();
-        else if (_dragging && !Input.IsMouseButtonPressed(MouseButton.Left))
+        if (_state == JarState.Sealed && _hasHairpin && _tapReady && !_busy &&
+            !Dialogue.IsShowing && !Dialogue.IsInputBlocked && !GetTree().Paused &&
+            !(GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()))
         {
-            _dragging = false;
-            _dragAngleReady = false;
+            _needleAngle = WrapTau(_needleAngle + _needleSpeed * dt);
         }
+        _tapFlash = Mathf.Max(0f, _tapFlash - dt);
+        _missShake = Mathf.Max(0f, _missShake - dt);
 
         QueueRedraw();
-    }
-
-    private void DragPryStep()
-    {
-        Vector2 mouse = GetGlobalMousePosition();
-        Vector2 v = mouse - SealCenter;
-        float r = v.Length();
-        if (r < SealRadius - 52f || r > SealRadius + 52f)
-        {
-            _dragAngleReady = false;
-            return;
-        }
-
-        float angle = Mathf.Atan2(v.Y, v.X);
-        if (!_dragAngleReady)
-        {
-            _lastDragAngle = angle;
-            _dragAngleReady = true;
-            return;
-        }
-
-        float deltaAngle = angle - _lastDragAngle;
-        while (deltaAngle > Mathf.Pi)
-            deltaAngle -= Mathf.Tau;
-        while (deltaAngle < -Mathf.Pi)
-            deltaAngle += Mathf.Tau;
-        _lastDragAngle = angle;
-        _pryRadians += Mathf.Abs(deltaAngle);
-
-        int ticks = Mathf.FloorToInt(_pryRadians / (Mathf.Pi / 4f));
-        if (ticks != _pryTicks)
-        {
-            _pryTicks = ticks;
-            AudioManager.Play(Sfx.LockpickTick, -14f, 0.9f + ticks * 0.05f);
-            Hotspots.SpawnRipple(SealCenter + v.Normalized() * SealRadius,
-                new Color(1f, 0.88f, 0.55f));
-        }
-
-        if (_pryRadians >= PryNeededRadians)
-        {
-            _dragging = false;
-            _ = PopLidAsync();
-        }
     }
 
     private async Task AttemptBarehandedAsync()
@@ -373,7 +424,7 @@ public partial class JarCloseup : Node2D
             await Say("Maybe I need something to open this. Something thin. ...I remember back then, when Mom opened this with just a hairpin. Worried it round the seal, patient as anything, until the lid just — sighed. Never forced. Not once.");
             if (!StillHere())
                 return;
-            await Say("A hairpin, then. Mum's hands left bent ones all over that house. One of them will still be where a hand would put it down.");
+            await Say("A hairpin, then. There's one where there's always been one — the little drawer in my old nightstand. Where I woke up. Everything useful in this house is back the way I came.");
             if (!StillHere())
                 return;
 
@@ -393,6 +444,7 @@ public partial class JarCloseup : Node2D
         if (_busy || _state != JarState.Sealed)
             return;
         _busy = true;
+        _tapReady = false;
         Dialogue.BeginInputBlock();
         try
         {
@@ -529,7 +581,7 @@ public partial class JarCloseup : Node2D
         bool over = InputFree() && (LeaveRect.HasPoint(pos) ||
             (_state == JarState.Open && !TapeTaken && TapeRect.HasPoint(pos)) ||
             (_state == JarState.Open && TapeTaken && !KeyTaken && KeyRect.HasPoint(pos)) ||
-            (_state == JarState.Sealed && !_hasHairpin && JarRect.HasPoint(pos)));
+            (_state == JarState.Sealed && JarRect.Grow(70f).HasPoint(pos)));
         if (over && !_cursorOwned)
         {
             CursorHelper.BeginHover(this, PointerCursorPath);
@@ -568,9 +620,19 @@ public partial class JarCloseup : Node2D
     public override void _Draw()
     {
         DrawPantry();
+        bool shaking = _missShake > 0.01f && !Settings.ReduceMotionOrDefault();
+        if (shaking)
+        {
+            float s = 3.2f * (_missShake / 0.35f);
+            DrawSetTransform(new Vector2(
+                _rng.RandfRange(-s, s), _rng.RandfRange(-s * 0.6f, s * 0.6f)),
+                0f, Vector2.One);
+        }
         DrawJar();
-        if (_state == JarState.Sealed && _hasHairpin)
-            DrawHairpin();
+        if (shaking)
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+        if (_state == JarState.Sealed && _hasHairpin && _tapReady)
+            DrawWorkingLine();
         DrawLeaveControl();
 
         DrawRect(new Rect2(0, 0, 1152, 22), new Color(0, 0, 0, 0.28f), true);
@@ -676,18 +738,39 @@ public partial class JarCloseup : Node2D
         float lift = _lidLift;
         Vector2 offset = new(46f * lift, -54f * lift);
 
-        // The seal ring the hairpin works around (drawn beneath the lid
-        // once popped: pale while sealed shut, gold where it has given).
+        // The seal ring the hairpin works around: pale while sealed,
+        // gold where true taps have worried it loose, and one red
+        // stretch where the rubber gives — never twice in the same
+        // place. Seven true taps, counted in pips above the lid.
         if (!_lidPopped)
         {
             DrawArc(SealCenter, SealRadius, 0f, Mathf.Tau, 64,
                 new Color(0.85f, 0.8f, 0.68f, 0.35f), 5f, true);
-            float given = Mathf.Clamp(_pryRadians / PryNeededRadians, 0f, 1f);
+            float given = (float)_tapsLanded / TapsNeeded;
             if (given > 0.01f)
             {
                 DrawArc(SealCenter, SealRadius, -Mathf.Pi / 2f,
                     -Mathf.Pi / 2f + given * Mathf.Tau * 0.92f, 64,
                     new Color(1f, 0.82f, 0.42f, 0.9f), 5f, true);
+            }
+
+            if (_tapReady)
+            {
+                float halfWin = Mathf.DegToRad(TapWindowDegrees);
+                float flash = _tapFlash > 0f ? 0.35f : 0f;
+                DrawArc(SealCenter, SealRadius, _targetAngle - halfWin, _targetAngle + halfWin, 14,
+                    new Color(0.96f, 0.26f + flash, 0.2f + flash, 0.95f), 8f, true);
+
+                for (int i = 0; i < TapsNeeded; i++)
+                {
+                    Vector2 pip = new(576f + (i - (TapsNeeded - 1) * 0.5f) * 24f, 124f);
+                    bool litPip = i < _tapsLanded;
+                    DrawCircle(pip, 6f, litPip
+                        ? new Color(1f, 0.84f, 0.45f, 0.98f)
+                        : new Color(0.9f, 0.84f, 0.68f, 0.3f));
+                    DrawArc(pip, 8.5f, 0f, Mathf.Tau, 24,
+                        new Color(0.85f, 0.7f, 0.42f, litPip ? 0.8f : 0.35f), 1.5f, true);
+                }
             }
         }
 
@@ -749,29 +832,34 @@ public partial class JarCloseup : Node2D
         }
     }
 
-    private void DrawHairpin()
+    private void DrawWorkingLine()
     {
-        Vector2 mouse = GetGlobalMousePosition();
-        if (!JarRect.Grow(60f).HasPoint(mouse))
-            return;
+        // The hairpin under the rubber, travelling the rim the way her
+        // hand travels it: a steel line from the seal's heart to the
+        // working point, the pin's two legs astride the rim at the tip.
+        Vector2 dir = Vector2.FromAngle(_needleAngle);
+        Vector2 side = new(-dir.Y, dir.X);
+        Vector2 hub = SealCenter + dir * 34f;
+        Vector2 tip = SealCenter + dir * (SealRadius + 6f);
+        var steel = new Color(0.88f, 0.86f, 0.8f, 0.98f);
+        var shadow = new Color(0.03f, 0.03f, 0.03f, 0.55f);
 
-        // The pin in her fingers: two legs and the bend, tipped toward
-        // the seal wherever her hand is.
-        Vector2 toward = (SealCenter - mouse).Normalized();
-        if (toward == Vector2.Zero)
-            toward = Vector2.Up;
-        Vector2 side = new(-toward.Y, toward.X);
-        var steel = new Color(0.85f, 0.83f, 0.78f, 0.98f);
-        var shadow = new Color(0.3f, 0.29f, 0.27f, 0.98f);
-        Vector2 tipA = mouse + toward * 26f + side * 4f;
-        Vector2 tipB = mouse + toward * 26f - side * 4f;
-        Vector2 backA = mouse - toward * 30f + side * 4f;
-        Vector2 backB = mouse - toward * 30f - side * 4f;
-        DrawLine(tipA + new Vector2(1.5f, 1.5f), backA + new Vector2(1.5f, 1.5f), shadow, 3.5f, true);
-        DrawLine(tipB + new Vector2(1.5f, 1.5f), backB + new Vector2(1.5f, 1.5f), shadow, 3.5f, true);
-        DrawLine(tipA, backA, steel, 3f, true);
-        DrawLine(tipB, backB, steel, 3f, true);
-        DrawLine(backA, backB, steel, 3f, true);
+        DrawCircle(SealCenter + new Vector2(1.5f, 2f), 7f, shadow);
+        DrawCircle(SealCenter, 7f, new Color(0.45f, 0.42f, 0.38f, 0.98f));
+        DrawLine(hub + new Vector2(1.5f, 1.5f), tip + new Vector2(1.5f, 1.5f), shadow, 4.5f, true);
+        DrawLine(hub, tip, steel, 3.5f, true);
+
+        Vector2 legBack = tip + dir * 16f;
+        DrawLine(tip + side * 4f, legBack + side * 4f, steel, 3f, true);
+        DrawLine(tip - side * 4f, legBack - side * 4f, steel, 3f, true);
+        DrawLine(legBack + side * 4f, legBack - side * 4f, steel, 3f, true);
+
+        if (_tapFlash > 0f)
+        {
+            DrawCircle(SealCenter + Vector2.FromAngle(_targetAngle) * SealRadius,
+                12f * (_tapFlash / 0.28f) + 4f,
+                new Color(1f, 0.88f, 0.5f, 0.5f * (_tapFlash / 0.28f)));
+        }
     }
 
     private void DrawLeaveControl()

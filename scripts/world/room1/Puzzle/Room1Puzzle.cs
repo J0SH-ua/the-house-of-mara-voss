@@ -346,8 +346,8 @@ public partial class Room1Puzzle : Area2D
 
 		// The combination is the whole of this lock: the drawer was only
 		// ever waiting to be remembered correctly. What the drawer keeps
-		// beyond the brass key — a copper key, a bent hairpin — is for
-		// later rooms to ask about, not for this one to demand.
+		// beyond the brass key — a smaller copper key — is for later
+		// rooms to ask about, not for this one to demand.
 		_isSolved = true;
 		IsUnlocked = true;
 		_readyToUnlock = false;

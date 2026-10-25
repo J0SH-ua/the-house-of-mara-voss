@@ -10,9 +10,12 @@ using Godot;
 /// house. Its three brass plates are labels for three physical keyholes:
 /// the copper bridge key from the kitchen drawer, the little door key
 /// from behind the sitting-room photograph, and the circle key from the
-/// last preserve jar. Mara has to carry all three here and put each one
-/// into its matching hole by hand. Even then, the door will not open
-/// until the hallway sentence is whole.
+/// last preserve jar. Mara carries all three here and puts them in by
+/// hand — and any hole will take any key. The holes do not judge; the
+/// door does, and only when all three stand in it. A mixed-up door
+/// simply refuses, Mara wonders aloud if she mixed them up, and a
+/// click lifts a placed key back out to try again. Even a true set
+/// will not open until the hallway sentence is whole.
 /// </summary>
 public partial class Room4Puzzle : MemoryRoomBase
 {
@@ -46,10 +49,11 @@ public partial class Room4Puzzle : MemoryRoomBase
 
     /// <summary>One carried key resting on the ledge, waiting for a hand.
     /// The door is worked the way doors are: pick the key up, carry it
-    /// to its hole, turn it. A wrong hole only rattles — teeth know
-    /// their own lock.</summary>
+    /// to a hole, turn it. Any hole takes any key — a true key turns
+    /// its full, easy turn, a borrowed bed only turns partway.</summary>
     private sealed class TrayKey
     {
+        public string ShortId;
         public string KeyholeId;
         public string KeyFlag;
         public string InsertedFlag;
@@ -63,9 +67,11 @@ public partial class Room4Puzzle : MemoryRoomBase
     private TrayKey _dragKey;
     private Vector2 _dragPosition;
     private TrayKey _turningKey;
+    private string _turningHoleId;
     private float _turnProgress;
     private bool _turnSoundPlayed;
-    private int _wrongHoleCount;
+    private int _mixedUpCount;
+    private bool _removedOnce;
 
     protected override string RoomName => "Room4";
     protected override string BackgroundPath => "res://assets/images/bgs/DoorCloseup.png";
@@ -143,7 +149,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             return;
         }
 
-        void AddIfCarried(string keyholeId, string keyFlag, string insertedFlag,
+        void AddIfCarried(string shortId, string keyholeId, string keyFlag, string insertedFlag,
             string shortName, Texture2D texture)
         {
             if (!gs.HasFlag(keyFlag) || gs.HasFlag(insertedFlag))
@@ -151,6 +157,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             float cy = 258f + _trayKeys.Count * 96f;
             _trayKeys.Add(new TrayKey
             {
+                ShortId = shortId,
                 KeyholeId = keyholeId,
                 KeyFlag = keyFlag,
                 InsertedFlag = insertedFlag,
@@ -160,9 +167,9 @@ public partial class Room4Puzzle : MemoryRoomBase
             });
         }
 
-        AddIfCarried("LeftKeyhole", BridgeKeyFlag, BridgeInsertedFlag, "copper bridge key", _bridgeKeyTexture);
-        AddIfCarried("CenterKeyhole", DoorKeyFlag, DoorInsertedFlag, "little door key", _doorKeyTexture);
-        AddIfCarried("RightKeyhole", CircleKeyFlag, CircleInsertedFlag, "circle key", _circleKeyTexture);
+        AddIfCarried("bridge", "LeftKeyhole", BridgeKeyFlag, BridgeInsertedFlag, "copper bridge key", _bridgeKeyTexture);
+        AddIfCarried("door", "CenterKeyhole", DoorKeyFlag, DoorInsertedFlag, "little door key", _doorKeyTexture);
+        AddIfCarried("circle", "RightKeyhole", CircleKeyFlag, CircleInsertedFlag, "circle key", _circleKeyTexture);
 
         if (_trayLabel != null)
             _trayLabel.Visible = _trayKeys.Count > 0;
@@ -229,15 +236,25 @@ public partial class Room4Puzzle : MemoryRoomBase
             if (!_turnSoundPlayed && _turnProgress > 0.5f)
             {
                 _turnSoundPlayed = true;
-                var hotspot = GetHotspot(_turningKey.KeyholeId);
-                AudioManager.Play(Sfx.LockOpen, -7f, hotspot?.SfxPitch ?? 1f);
+                var hotspot = GetHotspot(_turningHoleId);
+                bool home = _turningKey.KeyholeId == _turningHoleId;
+                if (home)
+                    AudioManager.Play(Sfx.LockOpen, -7f, hotspot?.SfxPitch ?? 1f);
+                else
+                {
+                    // A borrowed bed sounds like one, if she listens.
+                    AudioManager.Play(Sfx.LockRattle, -9f, (hotspot?.SfxPitch ?? 1f) * 0.82f);
+                    AudioManager.Play(Sfx.KeyType, -12f, 0.8f);
+                }
             }
             QueueRedraw();
             if (_turnProgress >= 1f)
             {
                 var done = _turningKey;
+                string hole = _turningHoleId;
                 _turningKey = null;
-                _ = FinishInsertAsync(done);
+                _turningHoleId = null;
+                _ = FinishInsertAsync(done, hole);
             }
         }
     }
@@ -256,22 +273,16 @@ public partial class Room4Puzzle : MemoryRoomBase
             if (hotspot == null || !hotspot.Rect.Grow(12f).HasPoint(pos))
                 continue;
 
-            if (IsInserted(InsertedFlagFor(id)))
+            if (KeyInHole(id) != null)
             {
                 AudioManager.Play(Sfx.LockRattle, -11f, 0.9f);
-                GameState.Instance?.Toast("That hole already has its key, turned and staying.");
+                GameState.Instance?.Toast("That hole already has a key standing in it. Click it to lift it back out.");
                 QueueRedraw();
                 return;
             }
 
-            if (id == key.KeyholeId)
-            {
-                BeginInsert(key, hotspot);
-                return;
-            }
-
-            _ = WrongHoleAsync(key, hotspot);
-            QueueRedraw();
+            // Any hole takes any key. The door is the judge, later.
+            BeginInsert(key, hotspot);
             return;
         }
 
@@ -284,33 +295,45 @@ public partial class Room4Puzzle : MemoryRoomBase
     {
         Busy = true;
         _turningKey = key;
+        _turningHoleId = hotspot.Id;
         _turnProgress = 0f;
         _turnSoundPlayed = false;
         AudioManager.Play(Sfx.KeyType, -8f, hotspot.SfxPitch);
         QueueRedraw();
     }
 
-    private async Task WrongHoleAsync(TrayKey key, Hotspot hotspot)
+    /// <summary>A placed key can always be lifted back out. Mixing
+    /// them up is information, not a dead end.</summary>
+    private async Task RemoveKeyAsync(Hotspot hotspot, string shortId)
     {
         if (Busy)
             return;
         Busy = true;
         try
         {
-            AudioManager.Play(Sfx.LockRattle, -7f, 0.85f);
-            AudioManager.Play(Sfx.Denied, -12f, 0.92f);
-            string[] lines =
-            [
-                "No. It goes in a thumb's depth and stops, wrong all through. Teeth know their own lock.",
-                "It rattles, nothing more. This key was cut for a different patience.",
-                "Not this hole. Not with that shape. Even I can hear that, and I'm the one holding it wrong.",
-            ];
-            string line = lines[_wrongHoleCount % lines.Length];
-            _wrongHoleCount++;
-            await Say(line, 3.8f, 23);
-            if (!GodotObject.IsInstanceValid(this))
+            var gs = GameState.Instance;
+            var key = TrayKeyFor(shortId);
+            if (gs == null || key == null)
                 return;
-            GameState.Instance?.Toast($"The {key.ShortName} goes back on its peg. Match its shape to the plate above the hole.");
+
+            AudioManager.Play(Sfx.KeyType, -9f, 0.85f);
+            AudioManager.Play(Sfx.LockRattle, -12f, 0.9f);
+            gs.ClearFlag(HoleFlag(hotspot.Id, shortId), save: false);
+            gs.ClearFlag(key.InsertedFlag, save: false);
+            gs.SaveGame("hallway key lifted out");
+            RefreshTray();
+            UpdateStatusLabel();
+            QueueRedraw();
+
+            if (!_removedOnce)
+            {
+                _removedOnce = true;
+                await Say("Out it comes. No harm done — a key can be wrong without being stuck. The plates again: bridge, little door, circle.", 4.2f, 23);
+            }
+            else
+            {
+                gs.Toast($"The {key.ShortName} goes back on its peg.");
+            }
         }
         finally
         {
@@ -320,6 +343,48 @@ public partial class Room4Puzzle : MemoryRoomBase
                 QueueRedraw();
             }
         }
+    }
+
+    /// <summary>Empty hole, nothing on the ledge, but this hole's own
+    /// key exists — standing in somebody else's bed.</summary>
+    private async Task WrongBedHintAsync(Hotspot hotspot)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            AudioManager.Play(Sfx.LockRattle, -10f, hotspot.SfxPitch);
+            await Say("Empty — and the key that belongs here is standing over there, in somebody else's bed. Click it and it will come back out.", 4.2f, 23);
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    /// <summary>Three keys in, sentence whole, and the door says
+    /// nothing at all. It takes Mara a moment to say it herself.</summary>
+    private async Task SayMixedUpAsync()
+    {
+        AudioManager.Play(Sfx.LockRattle, -6f, 0.8f);
+        AudioManager.Play(Sfx.DoorCreak, -11f, 0.7f);
+        if (_mixedUpCount == 0)
+        {
+            await SaySequence(
+                "Three keys in. The sentence whole. And the door just… refuses. Quietly. Like it isn't even a door.",
+                "Maybe I mixed them up. The plates were never decoration, Mara. Bridge. Little door. Circle. Look at who is actually standing where.");
+            GameState.Instance?.Toast("Click a placed key to lift it back out, then try its own bed.");
+        }
+        else
+        {
+            await Say("Still nothing. Somebody is still in the wrong bed.", 3.6f, 23);
+        }
+        _mixedUpCount++;
     }
 
     public override void _Draw()
@@ -333,9 +398,9 @@ public partial class Room4Puzzle : MemoryRoomBase
         // This room replaces the base _Draw to crop the portrait door;
         // keep the ordinary hover outline the base would have drawn.
         DrawHoveredHotspotOutline();
-        DrawInsertedKey("LeftKeyhole", BridgeInsertedFlag, _bridgeKeyTexture);
-        DrawInsertedKey("CenterKeyhole", DoorInsertedFlag, _doorKeyTexture);
-        DrawInsertedKey("RightKeyhole", CircleInsertedFlag, _circleKeyTexture);
+        DrawInsertedKey("LeftKeyhole");
+        DrawInsertedKey("CenterKeyhole");
+        DrawInsertedKey("RightKeyhole");
         DrawTurningKey();
         DrawTray();
         DrawDraggedKey();
@@ -384,7 +449,7 @@ public partial class Room4Puzzle : MemoryRoomBase
         {
             var hotspot = GetHotspot(id);
             if (hotspot != null && hotspot.Rect.Grow(12f).HasPoint(_dragPosition) &&
-                !IsInserted(InsertedFlagFor(id)))
+                KeyInHole(id) == null)
             {
                 DrawArc(hotspot.Center, 56f, 0f, Mathf.Tau, 48,
                     new Color(1f, 0.88f, 0.52f, 0.65f), 2.5f, true);
@@ -396,23 +461,28 @@ public partial class Room4Puzzle : MemoryRoomBase
     {
         if (_turningKey == null || _turningKey.Texture == null)
             return;
-        var hotspot = GetHotspot(_turningKey.KeyholeId);
+        var hotspot = GetHotspot(_turningHoleId ?? _turningKey.KeyholeId);
         if (hotspot == null)
             return;
 
         // The whole small ceremony of a key: it goes in sideways, her
-        // wrist rolls, and the bow comes level as the lock lets go.
+        // wrist rolls, and the bow comes level as the lock lets go —
+        // or stops partway, in a borrowed bed, and stays a little crooked.
+        bool home = _turningKey.KeyholeId == hotspot.Id;
         float eased = 1f - Mathf.Pow(1f - Mathf.Clamp(_turnProgress, 0f, 1f), 3f);
-        float angle = Mathf.Lerp(-1.25f, 0f, eased);
+        float angle = Mathf.Lerp(-1.25f, home ? 0f : -0.55f, eased);
         DrawSetTransform(hotspot.Center, angle, Vector2.One);
         DrawTextureRect(_turningKey.Texture, new Rect2(-46, -46, 92, 92), false);
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
 
-    private void DrawInsertedKey(string hotspotId, string insertedFlag, Texture2D texture)
+    private void DrawInsertedKey(string hotspotId)
     {
-        if (!IsInserted(insertedFlag))
+        string shortId = KeyInHole(hotspotId);
+        if (shortId == null)
             return;
+        if (_turningKey != null && _turningHoleId == hotspotId)
+            return; // mid-turn; DrawTurningKey has it
         var hotspot = GetHotspot(hotspotId);
         if (hotspot == null)
             return;
@@ -422,10 +492,22 @@ public partial class Room4Puzzle : MemoryRoomBase
         DrawArc(hotspot.Center, 40f, 0f, Mathf.Tau, 40,
             new Color(1f, 0.88f, 0.52f, 0.24f), 1.2f, true);
 
+        var texture = TextureForKey(shortId);
+        bool home = HomeKeyholeFor(shortId) == hotspotId;
         if (texture != null)
         {
-            var rect = new Rect2(hotspot.Center - new Vector2(46, 46), new Vector2(92, 92));
-            DrawTextureRect(texture, rect, false);
+            if (home)
+            {
+                var rect = new Rect2(hotspot.Center - new Vector2(46, 46), new Vector2(92, 92));
+                DrawTextureRect(texture, rect, false);
+            }
+            else
+            {
+                // It stands a little crooked, the way it stopped turning.
+                DrawSetTransform(hotspot.Center, -0.55f, Vector2.One);
+                DrawTextureRect(texture, new Rect2(-46, -46, 92, 92), false);
+                DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+            }
         }
         else
         {
@@ -450,10 +532,13 @@ public partial class Room4Puzzle : MemoryRoomBase
             // work. It stays available even if a Memory Verb happens to
             // be armed, rather than making the player put the verb down
             // before the bag is allowed to matter.
-            if (IsInserted(InsertedFlagFor(hotspot.Id)))
-                _ = ExamineDoorPartAsync(hotspot);
-            else if (HasKeyFor(hotspot.Id))
+            string standing = KeyInHole(hotspot.Id);
+            if (standing != null)
+                _ = RemoveKeyAsync(hotspot, standing);
+            else if (_trayKeys.Count > 0)
                 _ = DragHintAsync(hotspot);
+            else if (HasKeyFor(hotspot.Id))
+                _ = WrongBedHintAsync(hotspot);
             else
                 _ = MissingKeyAsync(hotspot);
             return;
@@ -468,7 +553,7 @@ public partial class Room4Puzzle : MemoryRoomBase
 
         if (hotspot.Id == "HallwayDoor")
         {
-            if (AllKeysInserted() && SentenceIsComplete())
+            if (AllPlacedRight() && SentenceIsComplete())
                 _ = CompleteDoorAsync();
             else
                 _ = LockedDoorAsync();
@@ -530,8 +615,90 @@ public partial class Room4Puzzle : MemoryRoomBase
 
     private bool AllKeysInserted() => InsertedCount() >= 3;
 
-    /// <summary>Clicked an empty hole while carrying its key: the door
-    /// is not worked by clicking any more. Say so once, plainly.</summary>
+    // ------------------------------------------------------ placements
+
+    private static string HoleWord(string keyholeId) => keyholeId switch
+    {
+        "LeftKeyhole" => "left",
+        "CenterKeyhole" => "center",
+        "RightKeyhole" => "right",
+        _ => string.Empty,
+    };
+
+    private static string HomeKeyholeFor(string shortId) => shortId switch
+    {
+        "bridge" => "LeftKeyhole",
+        "door" => "CenterKeyhole",
+        "circle" => "RightKeyhole",
+        _ => string.Empty,
+    };
+
+    private static string HoleFlag(string keyholeId, string shortId) =>
+        $"room4_hole_{HoleWord(keyholeId)}_{shortId}";
+
+    /// <summary>Which key (by short id) stands in a hole, or null.
+    /// Once the door has opened, every hole holds its true key.</summary>
+    private string KeyInHole(string keyholeId)
+    {
+        if (_opened)
+        {
+            return keyholeId switch
+            {
+                "LeftKeyhole" => "bridge",
+                "CenterKeyhole" => "door",
+                "RightKeyhole" => "circle",
+                _ => null,
+            };
+        }
+        var gs = GameState.Instance;
+        if (gs == null)
+            return null;
+        foreach (string shortId in new[] { "bridge", "door", "circle" })
+        {
+            if (gs.HasFlag(HoleFlag(keyholeId, shortId)))
+                return shortId;
+        }
+        return null;
+    }
+
+    private int PlacedCount()
+    {
+        int n = 0;
+        if (KeyInHole("LeftKeyhole") != null) n++;
+        if (KeyInHole("CenterKeyhole") != null) n++;
+        if (KeyInHole("RightKeyhole") != null) n++;
+        return n;
+    }
+
+    private bool AllPlacedRight() =>
+        _opened ||
+        (KeyInHole("LeftKeyhole") == "bridge" &&
+         KeyInHole("CenterKeyhole") == "door" &&
+         KeyInHole("RightKeyhole") == "circle");
+
+    private Texture2D TextureForKey(string shortId) => shortId switch
+    {
+        "bridge" => _bridgeKeyTexture,
+        "door" => _doorKeyTexture,
+        "circle" => _circleKeyTexture,
+        _ => null,
+    };
+
+    private TrayKey TrayKeyFor(string shortId)
+    {
+        // A placed key is not on the ledge; rebuild its handle from the
+        // flags so the turn/removal code speaks one language.
+        return shortId switch
+        {
+            "bridge" => new TrayKey { ShortId = "bridge", KeyholeId = "LeftKeyhole", KeyFlag = BridgeKeyFlag, InsertedFlag = BridgeInsertedFlag, ShortName = "copper bridge key", Texture = _bridgeKeyTexture },
+            "door" => new TrayKey { ShortId = "door", KeyholeId = "CenterKeyhole", KeyFlag = DoorKeyFlag, InsertedFlag = DoorInsertedFlag, ShortName = "little door key", Texture = _doorKeyTexture },
+            "circle" => new TrayKey { ShortId = "circle", KeyholeId = "RightKeyhole", KeyFlag = CircleKeyFlag, InsertedFlag = CircleInsertedFlag, ShortName = "circle key", Texture = _circleKeyTexture },
+            _ => null,
+        };
+    }
+
+    /// <summary>Clicked an empty hole while carrying keys: the door is
+    /// not worked by clicking any more. Say so once, plainly.</summary>
     private async Task DragHintAsync(Hotspot hotspot)
     {
         if (Busy)
@@ -540,8 +707,8 @@ public partial class Room4Puzzle : MemoryRoomBase
         try
         {
             AudioManager.Play(Sfx.LockRattle, -10f, hotspot.SfxPitch);
-            await Say("By hand, this one. The key for this hole is on the ledge with the others I've carried here — drag it up and put it in properly.", 4.2f, 23);
-            GameState.Instance?.Toast("Drag the matching key from Mara's ledge (left) into the keyhole, and let go.");
+            await Say("By hand, this one. The keys I've carried here are on the ledge — drag one up and put it in properly. The brass pictures say which bed is whose.", 4.2f, 23);
+            GameState.Instance?.Toast("Drag a key from Mara's ledge (left) into a keyhole, and let go. Click a placed key to lift it back out.");
         }
         finally
         {
@@ -553,43 +720,53 @@ public partial class Room4Puzzle : MemoryRoomBase
         }
     }
 
-    /// <summary>The turn has finished on screen; now the lock is real.</summary>
-    private async Task FinishInsertAsync(TrayKey key)
+    /// <summary>The turn has finished on screen; now the placement is real.</summary>
+    private async Task FinishInsertAsync(TrayKey key, string holeId)
     {
         bool finishDoor = false;
+        bool judgeNow = false;
         try
         {
             var gs = GameState.Instance;
-            var hotspot = GetHotspot(key.KeyholeId);
+            var hotspot = GetHotspot(holeId);
             if (gs == null || hotspot == null)
                 return;
 
+            bool home = key.KeyholeId == holeId;
             RecordExamine(hotspot);
+            gs.SetFlag(HoleFlag(holeId, key.ShortId), save: false);
             gs.SetFlag(key.InsertedFlag);
             Hotspots.SpawnRipple(hotspot.Center, new Color(1f, 0.88f, 0.55f));
             RefreshTray();
             UpdateStatusLabel();
             QueueRedraw();
 
-            await Say(InsertLine(hotspot.Id), 4.5f, 23);
+            await Say(home ? InsertLine(holeId) : WrongBedLine(key.ShortId), 4.5f, 23);
             if (!GodotObject.IsInstanceValid(this))
                 return;
 
-            if (AllKeysInserted())
+            if (PlacedCount() >= 3)
             {
-                if (SentenceIsComplete())
+                if (!SentenceIsComplete())
+                {
+                    await Say("Three keys, all turned partway — and the door still holds. Not out of cruelty. The hall behind me hasn't finished what it was saying.", 5f, 23);
+                }
+                else if (AllPlacedRight())
                 {
                     finishDoor = true;
                 }
                 else
                 {
-                    await Say("Three keys, all turned partway — and the door still holds. Not out of cruelty. The hall behind me hasn't finished what it was saying.", 5f, 23);
+                    judgeNow = true;
                 }
             }
             else
             {
-                gs.Toast($"A key turns ({InsertedCount()}/3 in). It stays where Mara put it.");
+                gs.Toast($"A key turns ({PlacedCount()}/3 in). It stays where Mara put it — click it to lift it out.");
             }
+
+            if (judgeNow && GodotObject.IsInstanceValid(this))
+                await SayMixedUpAsync();
         }
         finally
         {
@@ -610,6 +787,14 @@ public partial class Room4Puzzle : MemoryRoomBase
         "CenterKeyhole" => "The little door key goes in under the little door. For one absurd second, Mara half expects its tiny knob to turn first.",
         "RightKeyhole" => "The circle key goes in under the circle. coldest last. It turns all the way round before it catches.",
         _ => "The key turns.",
+    };
+
+    private static string WrongBedLine(string shortId) => shortId switch
+    {
+        "bridge" => "The copper key goes in… and turns. Partway. It stands a little crooked, like a guest in the wrong chair.",
+        "door" => "The little door key goes in… and turns. Partway. Its tiny knob points the way knobs don't.",
+        "circle" => "The circle key goes in… and turns. Partway. A ring looks wrong at any angle, and somehow this is wronger.",
+        _ => "The key goes in, and turns partway.",
     };
 
     private async Task MissingKeyAsync(Hotspot hotspot)
@@ -686,13 +871,20 @@ public partial class Room4Puzzle : MemoryRoomBase
 
     private string[] FirstLines(string id)
     {
-        if (IsKeyhole(id) && IsInserted(InsertedFlagFor(id)))
+        if (IsKeyhole(id) && KeyInHole(id) is string standing)
         {
-            return id switch
+            bool home = HomeKeyholeFor(standing) == id;
+            return standing switch
             {
-                "LeftKeyhole" => ["The copper bridge key stands in its hole, green at the edges, turned as far as one lock alone will let it."],
-                "CenterKeyhole" => ["The little door key stands in the middle hole. Its tiny knob has not turned. Mara checked. Twice."],
-                "RightKeyhole" => ["The circle key stands in the final hole, its ring catching what light the hall allows."],
+                "bridge" => [home
+                    ? "The copper bridge key stands in its hole, green at the edges, turned as far as one lock alone will let it."
+                    : "The copper bridge key stands here, in somebody else's bed, a little crooked from its partway turn."],
+                "door" => [home
+                    ? "The little door key stands in the middle hole. Its tiny knob has not turned. Mara checked. Twice."
+                    : "The little door key stands here, in somebody else's bed. Its tiny knob points the way knobs don't."],
+                "circle" => [home
+                    ? "The circle key stands in the final hole, its ring catching what light the hall allows."
+                    : "The circle key stands here, in somebody else's bed. A ring looks wrong at any angle, and somehow this is wronger."],
                 _ => ["The key stands where Mara put it."],
             };
         }
@@ -777,7 +969,11 @@ public partial class Room4Puzzle : MemoryRoomBase
         try
         {
             AudioManager.Play(Sfx.LockRattle, -7f, 0.82f);
-            if (AllKeysInserted())
+            if (PlacedCount() >= 3 && SentenceIsComplete() && !AllPlacedRight())
+            {
+                await SayMixedUpAsync();
+            }
+            else if (AllKeysInserted())
             {
                 await SaySequence(
                     "All three keys turn partway and stop, together, like they are waiting for a word.",
@@ -787,7 +983,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             {
                 await SaySequence(
                     "The door gives back three separate rattles and nothing else.",
-                    $"It wants the sentence whole — and {3 - InsertedCount()} more of its keys actually in their holes. Patterns won't substitute for either.");
+                    $"It wants the sentence whole — and {3 - PlacedCount()} more of its keys actually in their holes. Patterns won't substitute for either.");
             }
             else
             {
@@ -805,7 +1001,7 @@ public partial class Room4Puzzle : MemoryRoomBase
 
     private async Task CompleteDoorAsync()
     {
-        if (Busy || _opened || !AllKeysInserted() || !SentenceIsComplete())
+        if (Busy || _opened || !AllPlacedRight() || !SentenceIsComplete())
             return;
         Busy = true;
         try
@@ -854,12 +1050,14 @@ public partial class Room4Puzzle : MemoryRoomBase
             return;
         }
 
-        int inserted = InsertedCount();
+        int inserted = PlacedCount();
         if (inserted >= 3)
         {
-            _statusLabel.Text = SentenceIsComplete()
-                ? "three keys in — click the door"
-                : "three keys in — the sentence is not whole yet";
+            _statusLabel.Text = !SentenceIsComplete()
+                ? "three keys in — the sentence is not whole yet"
+                : AllPlacedRight()
+                    ? "three keys in — click the door"
+                    : "three keys in — and the door hasn't answered. Click a key to lift it out.";
             return;
         }
 
@@ -872,7 +1070,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             if (gs.HasFlag(CircleKeyFlag)) carried++;
         }
         _statusLabel.Text = carried > inserted
-            ? $"keys in: {inserted} of 3 — drag a carried key into its keyhole"
+            ? $"keys in: {inserted} of 3 — drag a carried key into a keyhole"
             : $"keys in: {inserted} of 3 — the rest are still in their keeping-places";
     }
 }

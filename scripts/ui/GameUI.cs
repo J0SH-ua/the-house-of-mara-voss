@@ -437,9 +437,9 @@ public partial class GameUI : CanvasLayer
         new("item_flashlight", "Flashlight",
             "res://assets/images/core/items/flashlight.png",
             "Dad's. Heavy as a hammer, and charged like he just set it down. Of course it is. Of course you are."),
-        new("basement_battery_taken", "Strong battery",
-            "res://assets/images/core/items/flashlight.png",
-            "A stronger battery. Even the dark gets less room to negotiate."),
+        new("item_hammer_nails", "Father's hammer & nails",
+            "res://assets/images/core/items/hammer_nails.png",
+            "Hammer. Nails. Dad's answer to everything that ever came loose in that house — including, one October, a railing nobody mended in time."),
         new("item_iron_cellar_key", "Iron cellar key",
             "res://assets/images/core/items/iron_key.png",
             "Cold from the earth under the gate stone. Dad trusted hiding places more than hooks."),
@@ -527,11 +527,20 @@ public partial class GameUI : CanvasLayer
     private Control _journalPanel;
     private Control _menuSettingsButton;
     private Control _confirmPanel;
+    private Label _confirmEyebrow;
     private Label _confirmTextLabel;
     private Button _confirmOkButton;
     private Button _confirmCancelButton;
     private Action _confirmAction;
     private Action _confirmCancelAction;
+
+    // Photograph viewer (the sitting-room photograph, close up) and the
+    // MEMORY meter's near-shatter warning.
+    private Control _photoPanel;
+    private PhotoCanvas _photoCanvas;
+    private Action _photoClosedCallback;
+    private Button _bagPhotoButton;
+    private bool _memoryWarned;
 
     // Clarity-collapse countdown overlay (house taking the room back)
     private Control _collapseRoot;
@@ -581,6 +590,7 @@ public partial class GameUI : CanvasLayer
         BuildSettingsPanel();
         BuildJournalPanel();
         BuildBagPanel();
+        BuildPhotoPanel();
         BuildMenuButton();
         BuildTutorialPanel();
         BuildCutscene();
@@ -657,6 +667,7 @@ public partial class GameUI : CanvasLayer
         RefreshRememberButton();
         RefreshMemoryVerbBar();
         UpdateCollapsePulse();
+        UpdateMemoryWarning();
         UpdateMaraAsides(delta);
         UpdateAmbientLife(delta);
         UpdateFragmentHeld(delta);
@@ -731,6 +742,11 @@ public partial class GameUI : CanvasLayer
     /// <summary>True while any modal surface owns the screen. GameState asks
     /// this so the collapse count never drains behind a menu.</summary>
     public bool IsBlockingOverlayOpen() => AnyPanelOpen();
+
+    /// <summary>True while the shatter sequence owns the screen. Rooms
+    /// that can force a shatter (a crumbling memory, a broken bridge)
+    /// watch this to know when Mara has been given back to them.</summary>
+    public bool IsShatterPlaying => _shatterPlaying;
 
     private void UpdateCollapsePulse()
     {
@@ -1093,6 +1109,7 @@ public partial class GameUI : CanvasLayer
                || (_cutsceneRoot?.Visible ?? false) || (_endingRoot?.Visible ?? false)
                || (_shatterRoot?.Visible ?? false)
                || (_recollectionPanel?.Visible ?? false)
+               || (_photoPanel?.Visible ?? false)
                || (_confirmPanel?.Visible ?? false);
     }
 
@@ -1878,9 +1895,9 @@ public partial class GameUI : CanvasLayer
         vbox.AddThemeConstantOverride("separation", 16);
         panel.AddChild(vbox);
 
-        var eyebrow = MakeLabel("THE HOUSE ASKS", 16, new Color(0.82f, 0.72f, 0.54f, 0.9f));
-        eyebrow.HorizontalAlignment = HorizontalAlignment.Center;
-        vbox.AddChild(eyebrow);
+        _confirmEyebrow = MakeLabel("THE HOUSE ASKS", 16, new Color(0.82f, 0.72f, 0.54f, 0.9f));
+        _confirmEyebrow.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(_confirmEyebrow);
 
         _confirmTextLabel = MakeLabel(string.Empty, 24);
         _confirmTextLabel.AutowrapMode = TextServer.AutowrapMode.Word;
@@ -1922,7 +1939,8 @@ public partial class GameUI : CanvasLayer
     public void ShowConfirm(string text, Action onConfirm, string okText, string cancelText)
         => ShowConfirm(text, onConfirm, okText, cancelText, null);
 
-    public void ShowConfirm(string text, Action onConfirm, string okText, string cancelText, Action onCancel)
+    public void ShowConfirm(string text, Action onConfirm, string okText, string cancelText, Action onCancel,
+        string eyebrow = null)
     {
         if (_confirmPanel == null)
         {
@@ -1930,6 +1948,8 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
+        if (_confirmEyebrow != null)
+            _confirmEyebrow.Text = string.IsNullOrWhiteSpace(eyebrow) ? "THE HOUSE ASKS" : eyebrow;
         _confirmTextLabel.Text = text;
         _confirmOkButton.Text = okText;
         _confirmCancelButton.Text = cancelText;
@@ -1963,21 +1983,152 @@ public partial class GameUI : CanvasLayer
             _cutscenePlaying || _endingPlaying || _shatterPlaying)
             return false;
 
-        string text = roomName switch
+        // She asks herself once per room, out loud, the way a person
+        // does at a doorway — not every time she crosses it.
+        GameState.Instance?.MarkLeavePromptShown(roomName);
+
+        string nag = roomName switch
         {
-            "Room1" => "The morning's faced, and the brass key is heavy in Mara's hand. But kitchens keep small, useful things where a mother's hands left them — and an opened drawer can hold more than the one thing she came for.\n\nLeave the kitchen anyway?",
-            "Room2" => "Mara has the photograph. But something about its backing still nags at her — a father's pencil, and a room the house keeps quietly editing behind the glass.\n\nLeave the sitting room anyway?",
-            "Room3" => "The name tape is Mara's. But jars keep things in layers, and something small and cold may still be sleeping underneath what she came for.\n\nLeave the jars anyway?",
-            "Room4" => "The hallway has said its sentence. But this was a locksmith's house, and a locksmith's house keeps his tools somewhere ordinary — a drawer she may have walked past.\n\nLeave the hallway anyway?",
-            _ => "Mara has what this room was holding in its heart. It may still be keeping something practical in its pockets.\n\nLeave anyway?",
+            "Room1" => "The brass key's heavy in my hand. But an opened drawer can hold more than the one thing I came for…",
+            "Room2" => "I have the photograph. But its backing still nags at me — Dad's pencil, and a room the house keeps editing behind the glass…",
+            "Room3" => "The name tape's mine. But jars keep things in layers, and something small and cold may still be sleeping underneath what I came for…",
+            "Room4" => "The hallway's said its sentence. But this was a locksmith's house — his tools are somewhere ordinary, in some drawer I may have walked straight past…",
+            _ => "I have what this room was holding in its heart. It may still be keeping something practical in its pockets…",
         };
 
-        ShowConfirm(text,
-            () => SceneManager.ConfirmDeferredLeave(),
-            "Leave anyway",
-            "Look around a little more",
-            () => SceneManager.CancelDeferredLeave());
+        ShowConfirm($"Am I sure I'm ready to leave?\n\n{nag}",
+            () => _ = LeaveAnswerAsync(go: true),
+            "I'm ready — go",
+            "Not yet",
+            () => _ = LeaveAnswerAsync(go: false),
+            "Mara, TO HERSELF");
         return _confirmPanel.Visible;
+    }
+
+    /// <summary>Her answer, said out loud in the room she is standing
+    /// in, before the held scene change is honoured or shelved.</summary>
+    private async Task LeaveAnswerAsync(bool go)
+    {
+        Dialogue.BeginInputBlock();
+        try
+        {
+            await Dialogue.ShowText(this,
+                go ? "Okay. Let's do this. I can go back anyway… I hope."
+                   : "Okay. Let me get ready first.",
+                3.4f, 576f, 486f, fontSize: 24);
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+        if (go)
+            SceneManager.ConfirmDeferredLeave();
+        else
+            SceneManager.CancelDeferredLeave();
+    }
+
+    // ------------------------------------------------------------ photo
+
+    private void BuildPhotoPanel()
+    {
+        _photoPanel = new Control { Visible = false, Name = "PhotoPanel" };
+        _photoPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _photoPanel.AddChild(DimBackdrop());
+
+        _photoCanvas = new PhotoCanvas { Name = "PhotoCanvas" };
+        _photoCanvas.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _photoPanel.AddChild(_photoCanvas);
+
+        var hint = MakeLabel("Mouse wheel — look closer · drag — move over it", 18,
+            new Color(0.85f, 0.79f, 0.67f, 0.85f));
+        hint.AnchorLeft = 0.5f; hint.AnchorRight = 0.5f;
+        hint.AnchorTop = 1f; hint.AnchorBottom = 1f;
+        hint.OffsetLeft = -320; hint.OffsetRight = 320;
+        hint.OffsetTop = -96; hint.OffsetBottom = -68;
+        hint.HorizontalAlignment = HorizontalAlignment.Center;
+        hint.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _photoPanel.AddChild(hint);
+
+        var close = MakeButton("Put the photograph away");
+        close.AnchorLeft = 0.5f; close.AnchorRight = 0.5f;
+        close.AnchorTop = 1f; close.AnchorBottom = 1f;
+        close.OffsetLeft = -150; close.OffsetRight = 150;
+        close.OffsetTop = -60; close.OffsetBottom = -16;
+        close.FocusMode = Control.FocusModeEnum.None;
+        close.Pressed += ClosePhoto;
+        _photoPanel.AddChild(close);
+
+        AddChild(_photoPanel);
+    }
+
+    /// <summary>Hold the sitting-room photograph up to the light. From
+    /// the Bag it is a keepsake to study at leisure; from the drawer it
+    /// is a threshold — <paramref name="onClosed"/> runs when Mara puts
+    /// it away, and the wind is already rising.</summary>
+    public void ShowPhotograph(Action onClosed = null)
+    {
+        if (_photoPanel == null)
+        {
+            onClosed?.Invoke();
+            return;
+        }
+        _photoClosedCallback = onClosed;
+        _photoCanvas?.ResetView();
+        _photoPanel.Visible = true;
+        AudioManager.Play(Sfx.PhotoPickup, -10f, 0.9f);
+    }
+
+    public void ClosePhoto()
+    {
+        if (_photoPanel == null || !_photoPanel.Visible)
+            return;
+        _photoPanel.Visible = false;
+        AudioManager.Play(Sfx.PageTurn, -11f, 0.9f);
+        var callback = _photoClosedCallback;
+        _photoClosedCallback = null;
+        callback?.Invoke();
+    }
+
+    public bool IsPhotoOpen => _photoPanel?.Visible ?? false;
+
+    // ------------------------------------------------------- the warning
+
+    /// <summary>When MEMORY runs low enough to break, the meter stops
+    /// being polite about it: it glows red, pulses, and says so once,
+    /// out loud, per approach.</summary>
+    private void UpdateMemoryWarning()
+    {
+        if (_integrityBar == null || _integrityLabel == null)
+            return;
+
+        var gs = GameState.Instance;
+        float corruption = gs?.Corruption01 ?? 0f;
+        bool warn = _context == UiContext.Game && corruption >= 0.7f && !_shatterPlaying;
+
+        if (warn)
+        {
+            float pulse = 0.5f + 0.5f * (float)Math.Sin(Time.GetTicksMsec() / 150.0);
+            _integrityBar.Modulate = new Color(2.0f, 0.45f + 0.35f * pulse, 0.35f + 0.3f * pulse, 1f);
+            _integrityLabel.AddThemeColorOverride("font_color",
+                new Color(1f, 0.42f + 0.3f * pulse, 0.38f));
+            if (!_memoryWarned)
+            {
+                _memoryWarned = true;
+                ShowToast("MEMORY is about to shatter — ease off, or finish what's in front of her.");
+                AudioManager.Play(Sfx.ScreenCrack2, -10f, 0.85f);
+            }
+        }
+        else
+        {
+            _integrityBar.Modulate = Colors.White;
+            _integrityLabel.AddThemeColorOverride("font_color",
+                new Color(0.93f, 0.89f, 0.82f, 0.95f));
+            if (corruption < 0.55f)
+                _memoryWarned = false;
+        }
     }
 
     // ================================================================= bag UI
@@ -2135,6 +2286,13 @@ public partial class GameUI : CanvasLayer
         _bagDetailStatus.AutowrapMode = TextServer.AutowrapMode.Word;
         detail.AddChild(_bagDetailStatus);
 
+        // One keepsake can be held to the light: the photograph.
+        _bagPhotoButton = MakeButton("Look at the photograph");
+        _bagPhotoButton.Visible = false;
+        _bagPhotoButton.FocusMode = Control.FocusModeEnum.None;
+        _bagPhotoButton.Pressed += () => ShowPhotograph();
+        detail.AddChild(_bagPhotoButton);
+
         var scroll = new ScrollContainer
         {
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
@@ -2243,44 +2401,68 @@ public partial class GameUI : CanvasLayer
                 "res://assets/images/core/items/hairpin.png",
                 "IN BAG",
                 "Taken from behind the bedroom alarm clock",
-                "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for.\n\nIt can hold the kitchen padlock's bent shackle and worry open the last preserve jar without breaking Ida's glass. Small practical things travel farther in this house than grand gestures do."));
+                "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for. It waited in the little drawer of Mara's childhood nightstand, in the very first room.\n\nThin enough to worry the last preserve jar open without breaking Ida's glass — tap true as the working line crosses where the rubber gives. Small practical things travel farther in this house than grand gestures do."));
+        }
+
+        // Where a hallway key currently sleeps, if anywhere: its own
+        // bed, a borrowed one, or the bag. (hole word, is home)
+        static (string Word, bool Home) KeyBed(GameState g, string key, string homeHole)
+        {
+            if (g.HasFlag("room4_door_opened"))
+                return (homeHole, true);
+            if (g.HasFlag($"room4_hole_left_{key}")) return ("left", homeHole == "left");
+            if (g.HasFlag($"room4_hole_center_{key}")) return ("centre", homeHole == "centre");
+            if (g.HasFlag($"room4_hole_right_{key}")) return ("right", homeHole == "right");
+            return (null, false);
         }
 
         if (gs.HasFlag("item_hall_key_bridge"))
         {
-            bool inserted = gs.HasFlag("room4_key_bridge_inserted") || gs.HasFlag("room4_door_opened");
+            var (bed, home) = KeyBed(gs, "bridge", "left");
+            bool inserted = bed != null;
             items.Add(new PracticalItemView(
                 "item_hall_key_bridge",
                 "Copper bridge key",
                 "res://assets/images/core/items/bridge_key.png",
-                inserted ? "LEFT KEYHOLE" : "IN BAG",
-                inserted ? "Standing in the hallway door's left keyhole" : "Found beside the brass key in the kitchen drawer",
+                inserted ? $"{bed.ToUpperInvariant()} KEYHOLE" : "IN BAG",
+                inserted
+                    ? home ? "Standing in the hallway door's left keyhole"
+                           : $"Standing in the hallway door's {bed} keyhole — somebody else's bed"
+                    : "Found beside the brass key in the kitchen drawer",
                 "A smaller copper key gone green at the edges. Its bow is cut like a little bridge: two posts, one arch.\n\nIt is not a fragment. It has actual weight and actual teeth, and it belongs beneath the hallway door's bridge plate.",
                 inBag: !inserted));
         }
 
         if (gs.HasFlag("item_hall_key_door"))
         {
-            bool inserted = gs.HasFlag("room4_key_door_inserted") || gs.HasFlag("room4_door_opened");
+            var (bed, home) = KeyBed(gs, "door", "centre");
+            bool inserted = bed != null;
             items.Add(new PracticalItemView(
                 "item_hall_key_door",
                 "Little door key",
                 "res://assets/images/core/items/door_key.png",
-                inserted ? "CENTRE KEYHOLE" : "IN BAG",
-                inserted ? "Standing in the hallway door's centre keyhole" : "Taped behind the sitting-room photograph",
-                "A little iron key whose bow is a miniature door, complete with its own impossible knob.\n\nMara earned it by remembering the sitting room honestly for five seconds. It belongs beneath the hallway door's little-door plate.",
+                inserted ? $"{bed.ToUpperInvariant()} KEYHOLE" : "IN BAG",
+                inserted
+                    ? home ? "Standing in the hallway door's centre keyhole"
+                           : $"Standing in the hallway door's {bed} keyhole — somebody else's bed"
+                    : "Left waiting on the sitting room's side table",
+                "A little iron key whose bow is a miniature door, complete with its own impossible knob.\n\nIt waited behind the photograph until Mara remembered that room right while it crumbled around her. It belongs beneath the hallway door's little-door plate.",
                 inBag: !inserted));
         }
 
         if (gs.HasFlag("item_hall_key_circle"))
         {
-            bool inserted = gs.HasFlag("room4_key_circle_inserted") || gs.HasFlag("room4_door_opened");
+            var (bed, home) = KeyBed(gs, "circle", "right");
+            bool inserted = bed != null;
             items.Add(new PracticalItemView(
                 "item_hall_key_circle",
                 "Circle key",
                 "res://assets/images/core/items/circle_key.png",
-                inserted ? "RIGHT KEYHOLE" : "IN BAG",
-                inserted ? "Standing in the hallway door's right keyhole" : "Preserved under Ida's folded name tape",
+                inserted ? $"{bed.ToUpperInvariant()} KEYHOLE" : "IN BAG",
+                inserted
+                    ? home ? "Standing in the hallway door's right keyhole"
+                           : $"Standing in the hallway door's {bed} keyhole — somebody else's bed"
+                    : "Preserved under Ida's folded name tape",
                 "A round-bowed key with no beginning and no end to its ring, kept at the bottom of the last preserve jar.\n\nIt belongs beneath the hallway door's empty brass circle.",
                 inBag: !inserted));
         }
@@ -2293,7 +2475,7 @@ public partial class GameUI : CanvasLayer
                 "res://assets/images/core/items/lockpick_set.png",
                 "IN BAG",
                 "Father's oilcloth roll, carried in Mara's bag",
-                "An oilcloth roll of slender picks and a flat tension wrench, kept clean long after the hands that used them were gone.\n\nA / D moves a pick quickly; Shift makes it fine. The wrench follows mouse movement with no button held. Locks answer in layers, and forcing a bind can snap the pick in Mara's hands."));
+                "An oilcloth roll of slender picks and a flat tension wrench, kept clean long after the hands that used them were gone.\n\nThe pick follows the mouse around the top of the lock, locked to it; hold A (or D) to turn. How far it turns before it shakes is the whole secret. Each set layer clicks like a little lock inside the lock. The picks do not break — she never saw him break one."));
         }
 
         if (gs.HasFlag("item_fine_tension_wrench"))
@@ -2309,14 +2491,13 @@ public partial class GameUI : CanvasLayer
 
         if (gs.HasFlag("item_flashlight"))
         {
-            bool strongBattery = gs.HasFlag("basement_battery_taken");
             items.Add(new PracticalItemView(
                 "item_flashlight",
                 "Flashlight",
                 "res://assets/images/core/items/flashlight.png",
-                strongBattery ? "STRONG BATTERY" : "IN BAG",
-                strongBattery ? "The cellar cabinet's battery made its beam wider" : "Taken from the present-day apartment cupboard",
-                "A heavy flashlight with a dented rim, bought for power cuts and forgotten in a cupboard.\n\nIn the vent and under the house its beam follows the mouse on its own — no click or hold. Hold W to crawl; release W and Mara stops."));
+                "IN BAG",
+                "Her father's — top shelf of the kitchen cabinet that was never there",
+                "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout. The batteries, in this house, were never once dead.\n\nIn the dark its beam follows the mouse on its own — no click or hold. In the vent, hold W to crawl; release W and Mara stops."));
         }
 
         if (gs.HasFlag("item_iron_cellar_key"))
@@ -2328,6 +2509,17 @@ public partial class GameUI : CanvasLayer
                 "IN BAG",
                 "Kept beneath the loose stone by the garden gate",
                 "Their father kept the below-stairs spare where a child was trusted not to look: under a loose stone by the gate.\n\nIts plain iron teeth belong to the little tool cabinet in the basement wall."));
+        }
+
+        if (gs.HasFlag("item_hammer_nails"))
+        {
+            items.Add(new PracticalItemView(
+                "item_hammer_nails",
+                "Father's hammer & nails",
+                "res://assets/images/core/items/hammer_nails.png",
+                "IN BAG",
+                "From the little tool cabinet under the house",
+                "A claw hammer worn smooth where his hand lived, and a twist of paper holding bridge nails older than Mara. Screwdrivers in that cabinet stood in size order; the hammer lay on top, where a reaching hand falls first.\n\nSome things in this memory are broken the plain way, and want mending the plain way."));
         }
 
         if (gs.HasFlag("basement_negatives_taken"))
@@ -2380,6 +2572,7 @@ public partial class GameUI : CanvasLayer
 
         if (gs == null)
         {
+            if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
             _bagSummary.Text = "Nothing can be carried yet.";
             _bagDetailTitle.Text = "An empty bag";
             _bagDetailStatus.Text = "";
@@ -2624,6 +2817,7 @@ public partial class GameUI : CanvasLayer
 
         if (selectedItem != null)
         {
+            if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
             _bagDetailTitle.Text = selectedItem.Name;
             _bagDetailStatus.Text = selectedItem.DetailStatus;
             _bagDetailBody.Text = selectedItem.Body;
@@ -2631,6 +2825,7 @@ public partial class GameUI : CanvasLayer
         else if (_bagSelectedIndex >= 0 && gs.IsShardRecovered(_bagSelectedIndex))
         {
             int index = _bagSelectedIndex;
+            if (_bagPhotoButton != null) _bagPhotoButton.Visible = index == 1;
             _bagDetailTitle.Text = GameState.ShardTitles[index];
             _bagDetailStatus.Text = Globals.SHARDS_COLLECTED[index]
                 ? "In Mara's bag"
@@ -2642,6 +2837,7 @@ public partial class GameUI : CanvasLayer
         }
         else
         {
+            if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
             _bagDetailTitle.Text = "Nothing carried yet";
             _bagDetailStatus.Text = "The bag is light.";
             _bagDetailBody.Text = "[i]Fragments Mara recovers will be kept here until the last room asks for them back. The Memory Journal (J) still keeps everything she has heard.[/i]";

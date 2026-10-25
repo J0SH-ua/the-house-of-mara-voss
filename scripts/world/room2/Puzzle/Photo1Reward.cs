@@ -4,18 +4,19 @@ using Godot;
 /// The photograph in the sitting-room drawer — shard 1, and behind it,
 /// a second thing entirely.
 ///
-/// The photograph itself can simply be faced and taken: the fragment
-/// asks nothing practical of Mara. But on its backing, in her father's
-/// pencil, is FOR WHEN YOU REMEMBER IT RIGHT — he taped a little door
-/// key behind the sitting room in this picture, the way he hid anything
-/// he wanted only an honest memory to find. The house has been gently
-/// editing the room the photograph shows ever since. Looking at the
-/// photograph again after taking it sends Mara into that room as it was
-/// kept: five seconds to hold it, then a search for what memory moved.
-/// Only a room remembered right gives up what was taped behind it.
+/// The photograph is faced and taken — and then it turns over in her
+/// hands. On its back is a second photograph: the sitting room itself,
+/// exactly as it was, kept in her bag from then on to study whenever
+/// she likes (B, then "Look at the photograph"). Under the print, in
+/// her father's pencil, is FOR WHEN YOU REMEMBER IT RIGHT. Something
+/// small and metal is taped behind this picture; something in the
+/// room it shows has been edited for twelve years to keep it hidden.
 ///
-/// She may walk away with just the fragment. The key stays behind the
-/// picture — findable later, the same way, whenever she comes back.
+/// The wind does the rest. It takes the fire, the light, and Mara —
+/// into the room from the photograph, with something off, crumbling
+/// around a memory held wrong. Name what moved before it breaks, and
+/// the steadied room sets the little door key down on its side table
+/// in the real sitting room, to be picked up by hand.
 /// </summary>
 public partial class Photo1Reward : Area2D
 {
@@ -139,16 +140,48 @@ public partial class Photo1Reward : Area2D
 	{
 		_collecting = true;
 		AudioManager.Play(Sfx.PhotoPickup, -7f, 0.94f);
-		await Dialogue.ShowText(this, "I turn it over. On the backing, in pencil gone soft at the edges — Dad's handwriting. FOR WHEN YOU REMEMBER IT RIGHT. Under that, one corner of the backing lifts. Something flat and metal is taped behind this photograph.", 6.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
+		await Dialogue.ShowText(this, "FOR WHEN YOU REMEMBER IT RIGHT. Under the pencil, one corner of the backing lifts — something flat and metal, taped down where only an honest memory would ever think to look.", 6.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
 		if (!GodotObject.IsInstanceValid(this))
 			return;
-		await Dialogue.ShowText(this, "Of course it won't just peel. This house has been editing the room in this picture for twelve years — gentler, tidier, later than it was. He knew. That's why the condition. Remember it right, and what he hid stays findable. Remember it kind, and it rots behind the glass with everything else.", 6.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
+		await Dialogue.ShowText(this, "The room as it was is in my bag. The room as it isn't is waiting. All right, house. Blow.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		if (!GodotObject.IsInstanceValid(this))
 			return;
-		await Dialogue.ShowText(this, "Five seconds, then, Dad. I can hold a room for five seconds. I have held worse for twelve years.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+		await WindTakesTheRoomAsync();
+	}
+
+	/// <summary>The wind that ends every version of this moment: a gust
+	/// through a closed house, the fire out, the dark arriving — and
+	/// then the other room.</summary>
+	private async System.Threading.Tasks.Task WindTakesTheRoomAsync()
+	{
+		AudioManager.Play(Sfx.WindGust, -8f);
+		await Dialogue.ShowText(this, "Wind — through a closed house. The fire just— gone. All right. All right. Wherever this is going, I know what the room is supposed to look like.", 5.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		if (!GodotObject.IsInstanceValid(this))
 			return;
 		SceneManager.ChangeScene(DifferenceScenePath);
+	}
+
+	/// <summary>Hold the flipped photograph up to the light and study
+	/// it — zoom, drag, take as long as memory needs. The room waits
+	/// (input-blocked) until she puts it away.</summary>
+	private async System.Threading.Tasks.Task LookAtPhotographAsync()
+	{
+		var ui = GameUI.Instance;
+		if (ui == null)
+			return;
+
+		bool putAway = false;
+		Dialogue.BeginInputBlock();
+		try
+		{
+			ui.ShowPhotograph(() => putAway = true);
+			while (!putAway && GodotObject.IsInstanceValid(this) && IsInsideTree())
+				await ToSignal(GetTree().CreateTimer(0.1, true), SceneTreeTimer.SignalName.Timeout);
+		}
+		finally
+		{
+			Dialogue.EndInputBlock();
+		}
 	}
 
 	private async void CollectAndChangeScene()
@@ -178,14 +211,38 @@ public partial class Photo1Reward : Area2D
 			await Dialogue.ShowText(this, "\"She used to fall asleep in that chair and think it was the best thing in the world — to fall asleep to the sound of someone else in the room.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 18);
 			await Dialogue.ShowText(this, "\"Not silence. Not the sound of herself.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
 			await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 4.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 30);
-		}
-		else
-		{
-			// Passing through again on a later visit — keep it brief.
-			await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
+			if (!GodotObject.IsInstanceValid(this))
+				return;
+
+			// Something on the back. There is always something on the back.
+			AudioManager.Play(Sfx.PageTurn, -8f, 0.85f);
+			await Dialogue.ShowText(this, "Wait. The back of it feels wrong — stiff. Printed. I turn it over…", 4.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+			if (!GodotObject.IsInstanceValid(this))
+				return;
+			await Dialogue.ShowText(this, "It's another photograph. A room. Two chairs, a fire, a little table between them. This room. This room before the house started… helping. And under the print, in Dad's pencil: FOR WHEN YOU REMEMBER IT RIGHT.", 6.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
+			if (!GodotObject.IsInstanceValid(this))
+				return;
+
+			await LookAtPhotographAsync();
+			if (!GodotObject.IsInstanceValid(this))
+				return;
+
+			await Dialogue.ShowText(this, "Under one corner of the backing: tape. Something flat and metal underneath. He hid it the way he hid everything he trusted me with — in the keeping, not the locking.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
+			if (!GodotObject.IsInstanceValid(this))
+				return;
+
+			await WindTakesTheRoomAsync();
+			return;
 		}
 
+		// Passing through again on a later visit — keep it brief.
+		await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
 
-		SceneManager.ChangeScene(firstTime ? JourneyScenePath : NextScenePath);
+		// The walk belongs to the first departure with the fragment,
+		// not the first collection: by seen-flag, so solving the
+		// investigation first can never eat the journey.
+		bool goJourney = GameState.Instance != null &&
+			!GameState.Instance.HasFlag("journey_seen_Room2ToRoom3");
+		SceneManager.ChangeScene(goJourney ? JourneyScenePath : NextScenePath);
 	}
 }

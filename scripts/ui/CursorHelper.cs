@@ -14,10 +14,20 @@ public static class CursorHelper
     private static int activeWidth;
     private static int activeHeight;
 
+    /// <summary>No cursor in this house is bigger than a cursor. The
+    /// authored cursor art is 97–314 px square (drawn big so it could be
+    /// painted chunky), and SetCustomMouseCursor happily shows it at
+    /// native size — a hand the size of Mara's head. Every cursor is
+    /// therefore fitted into this box, requested size or not.</summary>
+    private const int MaxCursorSize = 48;
+
     public static void ApplyCursor(string texturePath, int width = 0, int height = 0)
     {
         if (string.IsNullOrWhiteSpace(texturePath) || (Globals.Instance?.IS_CLARIFYING ?? false))
             return;
+
+        if (width > MaxCursorSize) width = MaxCursorSize;
+        if (height > MaxCursorSize) height = MaxCursorSize;
 
         string key = $"{texturePath}|{width}x{height}";
         if (!TextureCache.TryGetValue(key, out var texToUse))
@@ -27,15 +37,27 @@ public static class CursorHelper
                 return;
 
             texToUse = texture;
-            if (width > 0 && height > 0)
+            Vector2 native = texture.GetSize();
+            bool wantsResize = (width > 0 && height > 0) ||
+                native.X > MaxCursorSize || native.Y > MaxCursorSize;
+            if (wantsResize)
             {
-                var img = texture.GetImage();
+                int targetW = width > 0 ? width
+                    : Mathf.Max(1, Mathf.RoundToInt(MaxCursorSize * native.X / Mathf.Max(native.X, native.Y)));
+                int targetH = height > 0 ? height
+                    : Mathf.Max(1, Mathf.RoundToInt(MaxCursorSize * native.Y / Mathf.Max(native.X, native.Y)));
+
+                // Imported textures may be VRAM-compressed, in which case
+                // GetImage() returns null and the old code silently kept
+                // the enormous original. Loading the file directly always
+                // yields a readable image.
+                var img = texture.GetImage() ?? Image.LoadFromFile(texturePath);
                 if (img != null)
                 {
                     var dup = img.Duplicate() as Image;
                     if (dup != null)
                     {
-                        dup.Resize(width, height);
+                        dup.Resize(targetW, targetH, Image.Interpolation.Nearest);
                         if (ImageTexture.CreateFromImage(dup) is Texture2D resized)
                             texToUse = resized;
                     }

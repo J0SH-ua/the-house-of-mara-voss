@@ -46,6 +46,11 @@ using Godot;
 public partial class Room5Final : MemoryRoomBase
 {
     private const string AnchoredFlag = "room5_anchored_lamp";
+
+    /// <summary>The room's colour with the power out: cold enough that
+    /// even under the blackout overlay, this room reads as a place
+    /// whose light has been taken, not a painting at dusk.</summary>
+    private static readonly Color BlackoutTint = new(0.4f, 0.47f, 0.62f);
     private const string DrawerOpenedFlag = "room5_drawer_opened";
     private const string LampNoticeFlag = "story_monologue_room5_lamp_still";
     private const string LockpickScenePath = "res://scenes/world/lockpick_puzzle.tscn";
@@ -166,6 +171,8 @@ public partial class Room5Final : MemoryRoomBase
         _anchorLabel.Visible = anchored;
         if (anchored)
             SetBackgroundTint(new Color(0.9f, 0.94f, 1f));
+        if (IsBlackoutOn())
+            SetBackgroundTint(BlackoutTint);
 
         // What waits inside the wardrobe once the letters are Mara's.
         _gardenTexture = GD.Load<Texture2D>("res://assets/images/bgs/Room_6_Final.png");
@@ -754,6 +761,7 @@ public partial class Room5Final : MemoryRoomBase
             AudioManager.Play(Sfx.LockOpen, -11f, 0.42f);
             gs.ClearFlag("blackout_flickering", save: false);
             gs.SetFlag("blackout_active", save: false);
+            SetBackgroundTint(BlackoutTint);
             AudioManager.Instance?.PlayCutsceneAmbience(
                 AudioManager.AmbienceRoomToneLoopPath, -22f);
             if (_gardenLabel != null)
@@ -767,9 +775,11 @@ public partial class Room5Final : MemoryRoomBase
                 return;
 
             await SaySequence(
-                "—and there goes the light. The lamp stuttered, argued, and gave it up. Dark. The whole house at once: the hall, the stairs, every little sound a house makes thinking nobody's listening. All switched off together.",
+                "WAH—! What— what happened?! The light— the lamp just—",
+                "A—a blackout. The whole house. The hall, the stairs, every little sound a house makes thinking nobody's listening. All switched off together.",
+                "Okay. Okay. Breathe, Mara. Hands where I can— desk. There's the desk. It's just the dark. I have been in this house in the dark a hundred times.",
                 "The wardrobe's stopped being a garden, too. Coats again. Just coats, hanging in the black. Whatever was waiting past them can wait in the dark like everything else.",
-                "I'm not scared. That's the strange part. We LOVED a blackout, Ida and me. Sneaking room to room in the pitch dark, scaring each other half to death, shrieking fit to get told off in two postcodes. The dark was a game with strict rules. Rule one: the shrieker loses.",
+                "And the strange part is I'm already calming down. We LOVED a blackout, Ida and me. Sneaking room to room in the pitch dark, scaring each other half to death, shrieking fit to get told off in two postcodes. The dark was a game with strict rules. Rule one: the shrieker loses.",
                 "Then Dad would come through with the big torch from the kitchen — the cabinet under the counter, where the spare candles lived and the batteries were never, ever dead. \"Right, you two. Ghosts to bed. The kitchen provides.\"",
                 "Fine. The kitchen provides. Even now. Even here.");
             if (!GodotObject.IsInstanceValid(this))
@@ -909,6 +919,7 @@ public partial class Room5Final : MemoryRoomBase
         {
             gs.SetFlag("room5_power_restored_seen", save: false);
             AudioManager.Play(Sfx.WordChime, -11f, 0.95f);
+            SetBackgroundTint(gs.HasFlag(AnchoredFlag) ? new Color(0.9f, 0.94f, 1f) : Colors.White);
             if (_anchorLabel != null)
                 _anchorLabel.Text = "the lamp stayed lit";
             await SaySequence(
@@ -1312,12 +1323,30 @@ public partial class Room5Final : MemoryRoomBase
 
         DrawVent();
 
-        if (!anchored || IsBlackoutOn())
+        if (!anchored)
             return;
 
         var lamp = GetHotspot("Lamp");
         if (lamp == null)
             return;
+
+        // In the blackout the one true thing goes dark like everything
+        // else — painted out, shade and all, one cold glint left.
+        if (IsBlackoutOn() || (gs?.HasFlag("blackout_flickering") ?? false))
+        {
+            var c = lamp.Center;
+            Vector2[] shade =
+            [
+                c + new Vector2(-30, -40), c + new Vector2(30, -40),
+                c + new Vector2(39, -4), c + new Vector2(-39, -4),
+            ];
+            DrawColoredPolygon(shade, new Color(0.07f, 0.085f, 0.12f, 0.97f));
+            DrawLine(c + new Vector2(0, -4), c + new Vector2(0, 34),
+                new Color(0.1f, 0.11f, 0.14f, 0.95f), 5f, true);
+            DrawCircle(c + new Vector2(-10, -26), 2.6f,
+                new Color(0.65f, 0.78f, 0.92f, 0.5f));
+            return;
+        }
 
         var gold = new Color(1f, 0.88f, 0.55f, 0.82f);
         var faintGold = new Color(1f, 0.88f, 0.55f, 0.22f);

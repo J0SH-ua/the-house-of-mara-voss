@@ -32,6 +32,10 @@ public partial class SceneManager : Node
 	/// </summary>
 	private static readonly System.Collections.Generic.Dictionary<string, (string Target, string Label)> BackTargets = new()
 	{
+		// The kitchen once had no way back — the house had moved the
+		// hallway. It relents for one small reason: a hairpin sleeping
+		// in a nightstand drawer is allowed to be fetched.
+		["room_1.tscn"] = ("res://scenes/world/bedroom_prologue.tscn", "← Previous Room"),
 		["room_1_puzzle.tscn"] = ("res://scenes/world/room_1.tscn", "← Step Back"),
 		["room_2.tscn"] = ("res://scenes/world/room_1.tscn", "← Previous Room"),
 		["kitchen_cabinet.tscn"] = ("res://scenes/world/room_1.tscn", "← Step Back"),
@@ -48,6 +52,7 @@ public partial class SceneManager : Node
 		["basement.tscn"] = ("res://scenes/world/room_5.tscn", "← Climb Back"),
 		["breaker_box.tscn"] = ("res://scenes/world/basement.tscn", "← Step Back"),
 		["room_6.tscn"] = ("res://scenes/world/room_5.tscn", "← Previous Room"),
+		["bridge_repair.tscn"] = ("res://scenes/world/room_6.tscn", "← Back to the Garden"),
 		["porch_447.tscn"] = ("res://scenes/world/room_6.tscn", "← Previous Room"),
 		["room_7.tscn"] = ("res://scenes/world/porch_447.tscn", "← Previous Room"),
 	};
