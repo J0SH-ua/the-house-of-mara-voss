@@ -23,13 +23,11 @@ public partial class KitchenCabinet : Node2D
     private const string FlashlightFlag = "item_flashlight";
 
     private static readonly Rect2 CabinetRect = new(396, 210, 360, 300);
-    private static readonly Rect2 DoorHandleRect = new(688, 330, 54, 60);
     private static readonly Rect2 FlashlightRect = new(508, 252, 136, 96);
     private static readonly Rect2 LeaveRect = new(28, 572, 252, 44);
 
     private FontFile _font;
     private Texture2D _flashlightTexture;
-    private Label _titleLabel;
     private Label _helpLabel;
     private Label _leaveLabel;
 
@@ -52,7 +50,7 @@ public partial class KitchenCabinet : Node2D
 
     private void BuildLabels()
     {
-        _titleLabel = MakeLabel("Under the counter",
+        MakeLabel("Under the counter",
             new Vector2(376, 22), new Vector2(400, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel("The cabinet that wasn't here this morning. Open it the way he did — by feel.",

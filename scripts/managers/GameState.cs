@@ -1883,6 +1883,17 @@ public partial class GameState : Node
         // flags arrived.
         if (HasFlag("backup_power_on") && HasFlag("blackout_active"))
             ClearFlag("blackout_active", save: false);
+
+        // A flicker is a moment, never a saved state — if one ever
+        // outlives its second, let it go. And a blackout that "began"
+        // without ever arriving (Mara stepped out mid-stutter, or the
+        // game closed between the two) is owed a second chance to
+        // happen when Room 5 is next entered.
+        if (HasFlag("blackout_flickering"))
+            ClearFlag("blackout_flickering", save: false);
+        if (HasFlag("blackout_began") && !HasFlag("blackout_active") &&
+            !HasFlag("backup_power_on"))
+            ClearFlag("blackout_began", save: false);
     }
 
     /// <summary>

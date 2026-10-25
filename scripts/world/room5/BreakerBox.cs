@@ -44,7 +44,6 @@ public partial class BreakerBox : Node2D
     private readonly bool[] _on = [false, true, false, false, false, true];
 
     private FontFile _font;
-    private Label _titleLabel;
     private Label _helpLabel;
     private Label _leaveLabel;
     private Label _throwLabel;
@@ -96,7 +95,7 @@ public partial class BreakerBox : Node2D
             };
         }
 
-        _titleLabel = MakeLabel("The breaker box",
+        MakeLabel("The breaker box",
             new Vector2(376, 22), new Vector2(400, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _noteLabel = MakeLabel(

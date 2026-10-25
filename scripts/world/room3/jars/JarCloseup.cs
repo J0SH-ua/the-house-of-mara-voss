@@ -63,7 +63,6 @@ public partial class JarCloseup : Node2D
 
     private FontFile _font;
     private Texture2D _circleKeyTexture;
-    private Label _titleLabel;
     private Label _helpLabel;
     private Label _leaveLabel;
 
@@ -107,7 +106,7 @@ public partial class JarCloseup : Node2D
 
     private void BuildLabels()
     {
-        _titleLabel = MakeLabel("The last jar",
+        MakeLabel("The last jar",
             new Vector2(376, 22), new Vector2(400, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(string.Empty,
@@ -318,7 +317,11 @@ public partial class JarCloseup : Node2D
             return;
         }
 
-        float deltaAngle = Mathf.Wrap(angle - _lastDragAngle, -Mathf.Pi, Mathf.Pi);
+        float deltaAngle = angle - _lastDragAngle;
+        while (deltaAngle > Mathf.Pi)
+            deltaAngle -= Mathf.Tau;
+        while (deltaAngle < -Mathf.Pi)
+            deltaAngle += Mathf.Tau;
         _lastDragAngle = angle;
         _pryRadians += Mathf.Abs(deltaAngle);
 

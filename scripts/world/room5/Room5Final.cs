@@ -746,7 +746,7 @@ public partial class Room5Final : MemoryRoomBase
             for (int i = 0; i < 5; i++)
             {
                 AudioManager.Play(Sfx.UiHover, -16f, 1.7f);
-                await WaitSeconds(GD.RandfRange(0.09f, 0.3f));
+                await WaitSeconds((float)GD.RandfRange(0.09, 0.30));
                 if (!GodotObject.IsInstanceValid(this))
                     return;
             }
