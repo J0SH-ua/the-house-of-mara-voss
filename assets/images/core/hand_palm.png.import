@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmaraambcr21x"
-path="res://.godot/imported/amb_crownR2_1.png-80f5218a86d74f4b821a36b39023b973.ctex"
+uid="uid://cmarahandp01x"
+path="res://.godot/imported/hand_palm.png-737f0b08a271e74b1307b9c7ea7d8084.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/images/bgs/amb_crownR2_1.png"
-dest_files=["res://.godot/imported/amb_crownR2_1.png-80f5218a86d74f4b821a36b39023b973.ctex"]
+source_file="res://assets/images/core/hand_palm.png"
+dest_files=["res://.godot/imported/hand_palm.png-737f0b08a271e74b1307b9c7ea7d8084.ctex"]
 
 [params]
 

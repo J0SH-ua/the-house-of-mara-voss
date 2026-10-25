@@ -8,6 +8,11 @@ public partial class SceneManager : Node
 	public static bool IsChanging { get; private set; }
 	private static string _pendingScenePath;
 
+	/// <summary>Optional pre-transition gate (GameUI's held-fragment moment):
+	/// a scene change waits for it, so a just-earned fragment is picked up,
+	/// admired and bagged before the house moves on. Null = no gate.</summary>
+	public static Func<Task> ChangeGate;
+
 	/// <summary>Fired after a scene has been swapped in (before fade-in completes).
 	/// GameState uses it for music, objectives and autosave.</summary>
 	public static event System.Action<string> SceneChanged;
@@ -117,6 +122,9 @@ public partial class SceneManager : Node
 
 		try
 		{
+			if (ChangeGate != null)
+				await ChangeGate();
+
 			await Instance.LoadScene(scenePath);
 			await Instance.FadeIn();
 		}
