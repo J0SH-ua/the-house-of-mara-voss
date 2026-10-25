@@ -402,6 +402,120 @@ def build_footstep_sfx():
     dirt_step("footstep_dirt_b.wav", 2412, 66, 0.28)
 
 
+def build_truth_sfx():
+    """Diegetic one-shots for the finale's truth replay.
+
+    No score colours these: a child's wet shoes on the stone canal
+    bridge, old railing wood deciding all at once that it is finished,
+    and dark water receiving the fall, then closing over it.
+    """
+
+    def local_noise(rng, seconds):
+        return [rng.uniform(-1.0, 1.0) for _ in range(sec(seconds))]
+
+    # --- Ida crossing the stone bridge ---------------------------------
+    rng = random.Random(4471)
+    steps = zeros(5.4)
+    contact_times = [0.25, 0.92, 1.58, 2.27, 2.94, 3.65, 4.36]
+    for i, at in enumerate(contact_times):
+        even = i % 2 == 0
+        gain = 0.92 if even else 1.0
+        add_into(steps,
+                 thump(118 if even else 108, 0.18, sweep_to=0.55),
+                 at, 0.38 * gain)
+        contact = env_exp(
+            filt(local_noise(rng, 0.09), "bp", 1250, q=0.7),
+            0.001, 0.022)
+        add_into(steps, contact, at, 0.85 * gain)
+        tick = env_exp(
+            filt(local_noise(rng, 0.035), "bp", 2600, q=1.4),
+            0.0007, 0.008)
+        add_into(steps, tick, at + 0.004, 0.28 * gain)
+        scuff = env_ar(
+            filt(local_noise(rng, 0.16), "bp", 760, q=0.8),
+            0.025, 0.10)
+        add_into(steps, scuff, at + 0.035, 0.16 * gain)
+        for _ in range(rng.randrange(1, 4)):
+            grit = env_exp(
+                filt(local_noise(rng, rng.uniform(0.010, 0.024)),
+                     "bp", rng.uniform(1300, 3400), q=rng.uniform(0.9, 1.8)),
+                0.0006, rng.uniform(0.004, 0.010))
+            add_into(steps, grit, at + rng.uniform(0.01, 0.11),
+                     rng.uniform(0.08, 0.20))
+    steps = echo_taps(steps, delay=0.19, gains=(0.10, 0.035))
+    env_ar(steps, 0.01, 0.25)
+    write_wav("truth_bridge_steps.wav",
+              filt(steps, "lp", 3600), peak=0.46)
+
+    # --- the rotten wooden railing gives -------------------------------
+    rng = random.Random(4472)
+    rail = zeros(1.65)
+    strain = env_ar(
+        filt(tone_wow(145, 0.38, depth=0.12, rate=2.8),
+             "bp", 360, q=1.6),
+        0.08, 0.15)
+    add_into(rail, strain, 0.0, 0.42)
+    for at in (0.18, 0.27, 0.33):
+        fibres = env_exp(
+            filt(local_noise(rng, rng.uniform(0.025, 0.045)),
+                 "bp", rng.uniform(700, 1700), q=1.1),
+            0.0007, rng.uniform(0.007, 0.014))
+        add_into(rail, fibres, at, rng.uniform(0.25, 0.42))
+
+    for at, body_hz, gain in ((0.38, 96, 0.72), (0.54, 82, 1.0)):
+        add_into(rail, thump(body_hz, 0.34, sweep_to=0.45), at, 0.58 * gain)
+        snap = env_exp(
+            filt(local_noise(rng, 0.20), "bp", 950, q=0.65),
+            0.0007, 0.038)
+        add_into(rail, snap, at, gain)
+        splinters = env_exp(
+            filt(local_noise(rng, 0.10), "bp", 2450, q=1.0),
+            0.0006, 0.018)
+        add_into(rail, splinters, at + 0.008, 0.42 * gain)
+
+    for at, hz in ((0.86, 520), (1.08, 430), (1.29, 360)):
+        falling_wood = env_exp(
+            filt(local_noise(rng, 0.075), "bp", hz, q=1.5),
+            0.001, 0.018)
+        add_into(rail, falling_wood, at, 0.30)
+    env_ar(rail, 0.001, 0.18)
+    write_wav("truth_railing_break.wav",
+              filt(rail, "lp", 3200), peak=0.62)
+
+    # --- the fall, then the canal ---------------------------------------
+    rng = random.Random(4473)
+    water = zeros(3.3)
+    falling_air = env_ar(
+        filt_sweep(local_noise(rng, 0.55), "lp", 1600, 480, q=0.8),
+        0.12, 0.10)
+    add_into(water, falling_air, 0.0, 0.22)
+
+    add_into(water, thump(58, 0.55, sweep_to=0.42), 0.55, 0.50)
+    impact = env_exp(
+        filt(local_noise(rng, 1.15), "lp", 1900, passes=1),
+        0.002, 0.28)
+    add_into(water, impact, 0.55, 1.0)
+    churn = env_exp(
+        filt(local_noise(rng, 0.85), "bp", 820, q=0.55),
+        0.018, 0.32)
+    add_into(water, churn, 0.62, 0.48)
+
+    for _ in range(42):
+        droplet = env_exp(
+            filt(local_noise(rng, rng.uniform(0.018, 0.055)),
+                 "bp", rng.uniform(1500, 4200), q=rng.uniform(0.8, 1.7)),
+            0.0007, rng.uniform(0.006, 0.020))
+        add_into(water, droplet, rng.uniform(0.58, 2.05),
+                 rng.uniform(0.05, 0.20))
+
+    ripples = env_ar(
+        filt(local_noise(rng, 2.35), "lp", 650, passes=2),
+        0.35, 1.45)
+    add_into(water, ripples, 0.72, 0.22)
+    env_ar(water, 0.004, 0.45)
+    write_wav("truth_water_splash.wav", water, peak=0.66)
+
+
 def build_room_music():
     """Six seamless, room-specific loops in the same F-minor felt/music-box world."""
     print("Generating room music ->", os.path.normpath(BG_DIR))
@@ -880,6 +994,7 @@ def build():
 
     build_crack_sfx()
     build_footstep_sfx()
+    build_truth_sfx()
     build_room_music()
     build_collapse_music()
     build_ending_music()

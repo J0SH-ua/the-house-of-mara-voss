@@ -80,6 +80,9 @@ public partial class GameUI : CanvasLayer
 
     // Memory Verb bar (Echo / Anchor / Trace / Release)
     private PanelContainer _verbPanel;
+    private Button _verbToggleButton;
+    private bool _memoryVerbBarExpanded = true;
+    private MemoryVerb _lastActiveMemoryVerb = MemoryVerb.None;
     private readonly System.Collections.Generic.Dictionary<MemoryVerb, Button> _verbButtons = new();
 
     // Authored endings (Waking / Kept House)
@@ -136,6 +139,7 @@ public partial class GameUI : CanvasLayer
     private bool _cutsceneWaitingForContinue;
     private TaskCompletionSource<bool> _cutsceneContinueSource;
     private (string ImagePath, string Caption, float HoldSeconds)[] _activeShots;
+    private bool _truthCutsceneActive;
     private Action _cutsceneOnComplete;
     private ColorRect _cutsceneBackdrop;
     private ColorRect _cutsceneBand;
@@ -511,6 +515,11 @@ public partial class GameUI : CanvasLayer
         SceneManager.SceneChanged += scenePath =>
         {
             MemoryVerbSystem.Cancel(silent: true);
+            _lastActiveMemoryVerb = MemoryVerb.None;
+            // Room 5's painted photographs live along the bottom edge;
+            // arrive there with only the slim Memory tab showing.
+            if (scenePath != null && scenePath.EndsWith("/room_5.tscn"))
+                _memoryVerbBarExpanded = false;
             Hotspots.HideAll();
             if (_bagPanel != null)
                 _bagPanel.Visible = false;
@@ -971,7 +980,14 @@ public partial class GameUI : CanvasLayer
 
     private void BuildMemoryVerbBar()
     {
-        _verbPanel = new PanelContainer { Visible = false, Name = "MemoryVerbBar" };
+        _verbPanel = new PanelContainer
+        {
+            Visible = false,
+            Name = "MemoryVerbBar",
+            // Only the actual buttons should claim clicks; the panel's
+            // empty corners must never cover a floor-level hotspot.
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
         var style = new StyleBoxFlat
         {
             BgColor = new Color(0.05f, 0.045f, 0.04f, 0.55f),
@@ -993,13 +1009,27 @@ public partial class GameUI : CanvasLayer
         _verbPanel.OffsetTop = -104;
         _verbPanel.OffsetBottom = -48;
 
-        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        var row = new HBoxContainer
+        {
+            Alignment = BoxContainer.AlignmentMode.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
         row.AddThemeConstantOverride("separation", 6);
         _verbPanel.AddChild(row);
 
-        var title = MakeLabel("MEMORY", 15, new Color(0.82f, 0.72f, 0.54f, 0.9f));
-        title.VerticalAlignment = VerticalAlignment.Center;
-        row.AddChild(title);
+        // The title is the tab handle: collapse the four verbs away when
+        // the thing Mara needs to touch is on the floor beneath them.
+        _verbToggleButton = MakeButton("MEMORY  −", 16);
+        _verbToggleButton.Name = "MemoryVerbToggleButton";
+        _verbToggleButton.CustomMinimumSize = new Vector2(132, 36);
+        _verbToggleButton.FocusMode = Control.FocusModeEnum.None;
+        _verbToggleButton.TooltipText = "Collapse or expand the Memory Verb bar";
+        _verbToggleButton.Pressed += () =>
+        {
+            _memoryVerbBarExpanded = !_memoryVerbBarExpanded;
+            RefreshMemoryVerbBar();
+        };
+        row.AddChild(_verbToggleButton);
 
         MemoryVerb[] verbs = [MemoryVerb.Echo, MemoryVerb.Anchor, MemoryVerb.Trace, MemoryVerb.Release];
         foreach (var verb in verbs)
@@ -1024,13 +1054,23 @@ public partial class GameUI : CanvasLayer
             return;
 
         var gs = GameState.Instance;
+        MemoryVerb activeVerb = gs?.ActiveVerb ?? MemoryVerb.None;
+        if (activeVerb != _lastActiveMemoryVerb)
+        {
+            // Once Mara is holding a verb, get the bar out from under her
+            // hand: its target may be exactly where the bar was sitting.
+            if (activeVerb != MemoryVerb.None)
+                _memoryVerbBarExpanded = false;
+            _lastActiveMemoryVerb = activeVerb;
+        }
+
         bool anyUnlocked = false;
         foreach (var (verb, button) in _verbButtons)
         {
             bool unlocked = gs != null && gs.HasVerb(verb);
             anyUnlocked |= unlocked;
             bool active = unlocked && gs.ActiveVerb == verb;
-            button.Visible = unlocked;
+            button.Visible = unlocked && _memoryVerbBarExpanded;
             button.Disabled = false;
             button.Text = $"{(active ? "◆ " : string.Empty)}{MemoryVerbSystem.HotkeyLabel(verb)} — {MemoryVerbSystem.DisplayName(verb)}";
             button.TooltipText = MemoryVerbSystem.Description(verb) + " Right-click or Esc releases it.";
@@ -1038,6 +1078,47 @@ public partial class GameUI : CanvasLayer
                 ? new Color(1f, 0.9f, 0.62f)
                 : new Color(0.93f, 0.89f, 0.82f));
         }
+
+        if (_verbToggleButton != null)
+        {
+            _verbToggleButton.Visible = anyUnlocked;
+            _verbToggleButton.Text = _memoryVerbBarExpanded
+                ? "MEMORY  −"
+                : activeVerb != MemoryVerb.None
+                    ? $"◆ {MemoryVerbSystem.DisplayName(activeVerb)}  +"
+                    : "MEMORY  +";
+            _verbToggleButton.TooltipText = _memoryVerbBarExpanded
+                ? "Collapse the Memory Verb bar"
+                : activeVerb != MemoryVerb.None
+                    ? $"{MemoryVerbSystem.DisplayName(activeVerb)} is held — expand the Memory Verb bar"
+                    : "Expand the Memory Verb bar";
+            _verbToggleButton.AddThemeColorOverride("font_color", activeVerb != MemoryVerb.None
+                ? new Color(1f, 0.9f, 0.62f)
+                : new Color(0.88f, 0.78f, 0.60f));
+        }
+
+        // Expanded: the familiar bottom-centre bar. Collapsed: a slim
+        // tab just right of Step Back, clear of Room 5's floor photos.
+        if (_memoryVerbBarExpanded)
+        {
+            _verbPanel.AnchorLeft = 0.5f;
+            _verbPanel.AnchorRight = 0.5f;
+            _verbPanel.OffsetLeft = -355;
+            _verbPanel.OffsetRight = 355;
+            _verbPanel.OffsetTop = -104;
+            _verbPanel.OffsetBottom = -48;
+        }
+        else
+        {
+            _verbPanel.AnchorLeft = 0f;
+            _verbPanel.AnchorRight = 0f;
+            _verbPanel.OffsetLeft = 284;
+            _verbPanel.OffsetRight = 456;
+            _verbPanel.OffsetTop = -88;
+            _verbPanel.OffsetBottom = -48;
+        }
+        _verbPanel.AnchorTop = 1f;
+        _verbPanel.AnchorBottom = 1f;
 
         _verbPanel.Visible = _context == UiContext.Game
                              && anyUnlocked
@@ -5235,8 +5316,10 @@ public partial class GameUI : CanvasLayer
             }
 
             bool firstShot = true;
-            foreach (var shot in (_activeShots ?? CutsceneShots))
+            var shots = _activeShots ?? CutsceneShots;
+            for (int shotIndex = 0; shotIndex < shots.Length; shotIndex++)
             {
+                var shot = shots[shotIndex];
                 if (_cutsceneSkipRequested)
                     break;
 
@@ -5273,7 +5356,10 @@ public partial class GameUI : CanvasLayer
                     : shot.HoldSeconds + 1.5f;
                 _cutsceneTween.Parallel().TweenProperty(_cutsceneImage, "scale", Vector2.One * 1.07f, zoomSeconds);
                 firstShot = false;
-                AudioManager.Play(Sfx.PageTurn, -16f, 0.65f);
+                if (_truthCutsceneActive)
+                    PlayTruthShotAudio(shotIndex);
+                else
+                    AudioManager.Play(Sfx.PageTurn, -16f, 0.65f);
 
                 if (_cutsceneClickOnly)
                 {
@@ -5334,6 +5420,17 @@ public partial class GameUI : CanvasLayer
 
         if (GetTree().Paused)
             GetTree().Paused = false;
+
+        bool wasTruthCutscene = _truthCutsceneActive;
+        _truthCutsceneActive = false;
+        if (wasTruthCutscene)
+        {
+            // Whether the player reached the bridge or skipped away, the
+            // last room gets its own score and room tone back underneath
+            // the choice that follows.
+            AudioManager.Instance?.RestoreSceneMusic();
+            AudioManager.Instance?.PlayAmbienceForScene(SceneManager.CurrentScenePath);
+        }
 
         // A borrowed screening (the finale's truth reveal) hands control
         // back to its caller instead of falling into the tutorial flow.
@@ -5415,7 +5512,68 @@ public partial class GameUI : CanvasLayer
         _activeShots = TruthShots;
         _cutsceneFadeFromWhite = true;
         _cutsceneOnComplete = onComplete;
+        _truthCutsceneActive = true;
+
+        // No score is allowed to explain this day while Mara is watching
+        // it happen. Places first: garden air, rooms, gathering rain.
+        AudioManager.Instance?.StopMusic(0.25f);
+        AudioManager.Instance?.StopAmbience(0.25f);
         PlayCutsceneAsync();
+    }
+
+    /// <summary>Diegetic sound for the replay, keyed to TruthShots. The
+    /// score stays cut while Ida waits, Mara is late, and Ida crosses the
+    /// stone bridge in the rain. It opens again only on shot 12 — the old
+    /// wooden railing giving, the fall, and the canal taking her.</summary>
+    private void PlayTruthShotAudio(int shotIndex)
+    {
+        var audio = AudioManager.Instance;
+        if (audio == null)
+            return;
+
+        switch (shotIndex)
+        {
+            case 0:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -25f);
+                break;
+            case 5:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -25f);
+                break;
+            case 6:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -27f);
+                break;
+            case 7:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -24f);
+                break;
+            case 8:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -26f);
+                break;
+            case 9:
+                // Rain reaches the road before Mara does.
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -29f);
+                break;
+            case 11:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -24f);
+                AudioManager.Play(Sfx.TruthBridgeSteps, -10f);
+                break;
+            case 12:
+                AudioManager.Play(Sfx.TruthRailingBreak, -6f);
+                AudioManager.Play(Sfx.TruthWaterSplash, -7f);
+                audio.PlayMusic(AudioManager.MusicFinale, -9f, 2.8f);
+                break;
+            case 13:
+                audio.PlayCutsceneAmbience(AudioManager.AmbiencePorchLoopPath, -28f);
+                break;
+            case 14:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -27f);
+                break;
+            case 15:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -28f);
+                break;
+            case 16:
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -28f);
+                break;
+        }
     }
 
     /// <summary>First entry into Room 1: the house ASKS before it teaches.

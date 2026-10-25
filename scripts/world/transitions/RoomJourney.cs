@@ -11,11 +11,11 @@ using Godot;
 /// until the lit porch is close enough to name. No score or ambience
 /// follows her between rooms — only carpeted boards indoors or the dirt
 /// road underfoot. The walks are long enough
-/// that Mara sometimes thinks aloud on the way. On some first arrivals —
-/// not every one — she stops with the newly recovered fragment in her hand,
-/// tries to remember what it could be for, is briefly pulled into the room
-/// it came from, and shakes the migraine back before the door can be
-/// opened. The destination
+/// that Mara sometimes thinks aloud on the way. On every first arrival
+/// she stops with the newly recovered fragment in her hand and tries to
+/// remember what it could be for. Only sometimes does that inspection
+/// pull her briefly into the room it came from as a migraine she has to
+/// shake back before the door can be opened. The destination
 /// is not loaded until the player clicks the door (or the distant porch
 /// light). Each wrapper scene stores its own destination and journey id, so
 /// saving/quitting mid-journey resumes in the right place.
@@ -71,6 +71,7 @@ public partial class RoomJourney : Node2D
         public int FragmentIndex { get; init; } = -1;
         public string MemoryTexturePath { get; init; } = string.Empty;
         public string[] FragmentLines { get; init; } = [];
+        public string[] CalmFragmentLines { get; init; } = [];
         public string[] RecoveryLines { get; init; } = [];
         public string OpenSfx { get; init; } = Sfx.DoorCreak;
         public float OpenPitch { get; init; } = 1f;
@@ -97,6 +98,10 @@ public partial class RoomJourney : Node2D
             [
                 "The key's still warm in my hand. What are you for, now? A door I already opened shouldn't need carrying.",
                 "Morning. Toast. Her voice from the next room—",
+            ],
+            CalmFragmentLines =
+            [
+                "No answer. Fine. You can be a mystery in my bag like everything else.",
             ],
             RecoveryLines =
             [
@@ -133,6 +138,10 @@ public partial class RoomJourney : Node2D
                 "Her face keeps catching the light. What am I meant to do with you? Look until looking turns into staying?",
                 "Two chairs. A page turning. Don't—",
             ],
+            CalmFragmentLines =
+            [
+                "I can hold your face without falling into it. That has to count for something.",
+            ],
             RecoveryLines =
             [
                 "Not backwards. I can carry her without crawling inside the photograph.",
@@ -168,6 +177,10 @@ public partial class RoomJourney : Node2D
             [
                 "The jar knocks softly against my fingers. Names. Pieces. Why does this house keep putting that day in my hands?",
                 "A windowsill. Pencil letters. Her laugh—",
+            ],
+            CalmFragmentLines =
+            [
+                "Pieces. Fine. If the house wants pieces carried, I'll carry them awake.",
             ],
             RecoveryLines =
             [
@@ -210,6 +223,10 @@ public partial class RoomJourney : Node2D
             [
                 "The apple bruises where my thumb holds it. Is every piece meant to be carried back to you?",
                 "The swing. The gate. Four o'—",
+            ],
+            CalmFragmentLines =
+            [
+                "No pull this time. Just the road behind me, and you coming with me.",
             ],
             RecoveryLines =
             [
@@ -517,7 +534,7 @@ public partial class RoomJourney : Node2D
                     return;
             }
 
-            await PlayFragmentMigraineAsync();
+            await PlayFragmentPauseAsync();
             if (!StillHere())
                 return;
 
@@ -603,16 +620,16 @@ public partial class RoomJourney : Node2D
         }
     }
 
-    /// <summary>The pre-open pause. Mara takes the just-recovered fragment
-    /// in her palm, wonders what carrying it can possibly be for, and the
-    /// room it came from cuts through the hallway in flashes. Then she
-    /// pulls herself together — a hard little head shake, a steadier line —
-    /// and only after the hand lowers does the journey make its door (or
-    /// the porch light) clickable. First arrivals only; shortened repeat
-    /// journeys stay shortened.</summary>
-    private async Task PlayFragmentMigraineAsync()
+    /// <summary>The guaranteed pre-open pause. Mara always takes the
+    /// just-recovered fragment in her palm and wonders what carrying it can
+    /// possibly be for. The random part is only whether that inspection
+    /// turns into a migraine — the room it came from cutting through in
+    /// flashes, followed by a hard little head shake. On a calm threshold
+    /// she simply steadies the fragment and lowers her hand. First arrivals
+    /// only; shortened repeat journeys stay shortened.</summary>
+    private async Task PlayFragmentPauseAsync()
     {
-        if (_seenBefore || !_migrainePlanned || _spec.FragmentIndex < 0 ||
+        if (_seenBefore || _spec.FragmentIndex < 0 ||
             _spec.FragmentIndex >= FragmentIconPaths.Length ||
             _spec.FragmentLines == null || _spec.FragmentLines.Length == 0)
         {
@@ -631,7 +648,7 @@ public partial class RoomJourney : Node2D
         if (!StillHere())
             return;
 
-        if (_spec.FragmentLines.Length > 1)
+        if (_migrainePlanned && _spec.FragmentLines.Length > 1)
         {
             try
             {
@@ -660,9 +677,12 @@ public partial class RoomJourney : Node2D
             QueueRedraw();
         }
 
-        if (_spec.RecoveryLines != null)
+        string[] closingLines = _migrainePlanned
+            ? _spec.RecoveryLines
+            : _spec.CalmFragmentLines;
+        if (closingLines != null)
         {
-            foreach (string line in _spec.RecoveryLines)
+            foreach (string line in closingLines)
             {
                 await Say(line, 5.2f, 23);
                 if (!StillHere())

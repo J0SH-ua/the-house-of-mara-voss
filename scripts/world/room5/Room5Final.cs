@@ -31,6 +31,8 @@ public partial class Room5Final : MemoryRoomBase
     private Label _anchorLabel;
     private Label _gardenLabel;
     private Texture2D _gardenTexture;
+    private Tween _wardrobeZoomTween;
+    private Tween _wardrobeStepTween;
 
     /// <summary>Everything that starts sliding once inspected. The lamp is
     /// deliberately absent: it is the only thing in the room that does not
@@ -489,12 +491,67 @@ public partial class Room5Final : MemoryRoomBase
             await SaySequence(
                 "Behind the adult coats there is no back panel. Only October light, smelling of apples and wet leaves.",
                 "The yellow raincoat moves once in a wind from a garden Mara has spent twelve years not entering.");
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            await ZoomIntoWardrobeAsync();
+            if (!GodotObject.IsInstanceValid(this))
+                return;
             SceneManager.ChangeScene("res://scenes/world/room_6.tscn");
         }
         finally
         {
             Busy = false;
         }
+    }
+
+    /// <summary>Do not cut from the wardrobe's mouth to the garden. Mara
+    /// crosses her own floor and goes through it: the whole authored room
+    /// (painting, portal, coats and labels together) leans toward the open
+    /// wardrobe until October fills the doorway, and only then does Room 6
+    /// take over.</summary>
+    private async Task ZoomIntoWardrobeAsync()
+    {
+        Vector2 screenCenter = new(576f, 324f);
+        Vector2 focus = WardrobePortalRect.GetCenter();
+        Position = Vector2.Zero;
+        Scale = Vector2.One;
+
+        if (Settings.ReduceMotionOrDefault())
+        {
+            const float gentleScale = 1.25f;
+            Scale = Vector2.One * gentleScale;
+            Position = screenCenter - focus * gentleScale;
+            QueueRedraw();
+            await WaitSeconds(0.35f);
+            return;
+        }
+
+        _wardrobeZoomTween?.Kill();
+        _wardrobeStepTween?.Kill();
+
+        // Three soft steps from the rug toward the boards while the room
+        // moves; the garden itself takes over the soundscape on arrival.
+        AudioManager.PlayVaried(Sfx.FootstepCarpetA, -11.5f, 0.95f, 0.03f);
+        _wardrobeStepTween = CreateTween();
+        _wardrobeStepTween.TweenInterval(0.62f);
+        _wardrobeStepTween.TweenCallback(Callable.From(
+            () => AudioManager.PlayVaried(Sfx.FootstepCarpetB, -11f, 1f, 0.03f)));
+        _wardrobeStepTween.TweenInterval(0.62f);
+        _wardrobeStepTween.TweenCallback(Callable.From(
+            () => AudioManager.PlayVaried(Sfx.FootstepCarpetA, -10.5f, 1.05f, 0.03f)));
+        _wardrobeStepTween.TweenInterval(0.62f);
+        _wardrobeStepTween.TweenCallback(Callable.From(
+            () => AudioManager.PlayVaried(Sfx.FootstepCarpetB, -10f, 1.08f, 0.03f)));
+
+        const float finalScale = 4.6f;
+        Vector2 finalPosition = screenCenter - focus * finalScale;
+        _wardrobeZoomTween = CreateTween();
+        _wardrobeZoomTween.SetParallel(true);
+        _wardrobeZoomTween.TweenProperty(this, "scale", Vector2.One * finalScale, 2.45f)
+            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.InOut);
+        _wardrobeZoomTween.TweenProperty(this, "position", finalPosition, 2.45f)
+            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.InOut);
+        await ToSignal(_wardrobeZoomTween, Tween.SignalName.Finished);
     }
 
     public override void _Process(double delta)

@@ -42,6 +42,9 @@ public static class Sfx
     public const string FootstepCarpetB = "footstep_carpet_b";
     public const string FootstepDirtA = "footstep_dirt_a";
     public const string FootstepDirtB = "footstep_dirt_b";
+    public const string TruthBridgeSteps = "truth_bridge_steps";
+    public const string TruthRailingBreak = "truth_railing_break";
+    public const string TruthWaterSplash = "truth_water_splash";
 }
 
 /// <summary>
@@ -80,6 +83,10 @@ public partial class AudioManager : Node
     private const string AmbienceFirePath = SfxDir + "ambience_fire.wav";
     private const string AmbienceGardenPath = SfxDir + "ambience_garden.wav";
     private const string AmbiencePorchPath = SfxDir + "ambience_porch.wav";
+    public const string AmbienceRoomToneLoopPath = AmbiencePath;
+    public const string AmbienceRainLoopPath = AmbienceRainPath;
+    public const string AmbienceGardenLoopPath = AmbienceGardenPath;
+    public const string AmbiencePorchLoopPath = AmbiencePorchPath;
     private const string HeartbeatPath = SfxDir + "heartbeat.wav";
 
     private static readonly Dictionary<string, string> LegacySfxPaths = new()
@@ -416,17 +423,32 @@ public partial class AudioManager : Node
             : scene.Contains("room_6") ? (AmbienceGardenPath, -24f)
             : (AmbiencePath, -22f);
 
-        if (ambience.path == _currentAmbiencePath && ActiveAmbience.Playing)
+        CrossfadeAmbience(ambience.path, ambience.volume);
+    }
+
+    /// <summary>Play one named ambience loop for a scripted sequence
+    /// without reviving the corruption heartbeat underneath it.</summary>
+    public void PlayCutsceneAmbience(string path, float volumeDb)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+        _ambienceWanted = true;
+        CrossfadeAmbience(path, volumeDb);
+    }
+
+    private void CrossfadeAmbience(string path, float volumeDb)
+    {
+        if (path == _currentAmbiencePath && ActiveAmbience.Playing)
         {
-            ActiveAmbience.VolumeDb = ambience.volume;
+            ActiveAmbience.VolumeDb = volumeDb;
             return;
         }
 
-        var stream = LoadStream(ambience.path);
+        var stream = LoadStream(path);
         if (stream == null)
             return;
         MakeLooping(stream);
-        _currentAmbiencePath = ambience.path;
+        _currentAmbiencePath = path;
 
         var incoming = InactiveAmbience;
         var outgoing = ActiveAmbience;
@@ -439,7 +461,7 @@ public partial class AudioManager : Node
         _ambienceTween?.Kill();
         _ambienceTween = CreateTween();
         _ambienceTween.SetParallel(true);
-        _ambienceTween.TweenProperty(incoming, "volume_db", ambience.volume, 1.8f);
+        _ambienceTween.TweenProperty(incoming, "volume_db", volumeDb, 1.8f);
         if (outgoing.Playing)
         {
             _ambienceTween.TweenProperty(outgoing, "volume_db", -60f, 1.8f);

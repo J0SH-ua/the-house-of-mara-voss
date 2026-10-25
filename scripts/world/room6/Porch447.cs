@@ -10,8 +10,9 @@ using Godot;
 /// onto Room 7. It bends here instead: the front of the Eldfen house at the
 /// minute Mara finally arrived. Three looks (the lit window, the steps, the
 /// garden path) write "The porch, at 4:47" into the Journal. The front door
-/// leads on to the last room whenever Mara is ready — crossed once, the
-/// porch counts as passed, and Room 7 steps back here.
+/// will not take Mara inside until all three have actually been faced:
+/// this time, she does not rush across the porch without looking. Crossed
+/// once, the porch counts as passed, and Room 7 steps back here.
 /// </summary>
 public partial class Porch447 : MemoryRoomBase
 {
@@ -108,19 +109,22 @@ public partial class Porch447 : MemoryRoomBase
         Busy = true;
         try
         {
+            if (!AllRequiredExamined())
+            {
+                AudioManager.Play(Sfx.Denied, -9f, 0.9f);
+                var door = GetHotspot("FrontDoor");
+                if (door != null)
+                    Hotspots.SpawnRipple(door.Center, new Color(0.78f, 0.72f, 0.64f));
+                await Say("My hand stops on the handle. Not yet. I rushed across this porch once without looking. This time I stay until I've seen it.", 5f, 23);
+                return;
+            }
+
             var gs = GameState.Instance;
+            gs?.SetFlag(SeenFlag);
             gs?.SetFlag(PassedFlag);
-            if (AllRequiredExamined())
-            {
-                gs?.SetFlag(SeenFlag);
-                await SaySequence(
-                    "Mara puts her hand on the door she has opened ten thousand times in her head.",
-                    "This time she opens it with everything she knows carried in front of her, where she can see it.");
-            }
-            else
-            {
-                await Say("Through the front door, the way she came at 4:47 — too fast to look at anything.", 4.5f, 23);
-            }
+            await SaySequence(
+                "Mara puts her hand on the door she has opened ten thousand times in her head.",
+                "This time she opens it with everything she knows carried in front of her, where she can see it.");
 
             AudioManager.Play(Sfx.DoorCreak, -7f, 0.88f);
             await WaitSeconds(0.25f);
