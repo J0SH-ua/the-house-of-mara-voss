@@ -146,6 +146,91 @@ public partial class GameUI : CanvasLayer
     private string _asideBagRoom = string.Empty;
     private readonly Random _asideRandom = new();
 
+    // ------------------------------------------------------- ambient life
+    //
+    // The rooms are paintings; these are the small motions that keep a
+    // painting from being a photograph — steam curling, a fire breathing,
+    // rain crossing two windows, leaves down and a branch swaying in the
+    // garden, dust turning in the light. Three frames each (ping-ponged),
+    // placed per scene where that room would actually have them, always
+    // under the interface, and held perfectly still by Reduce Motion.
+
+    private sealed class AmbientSpec
+    {
+        public string Effect;   // steam / flame / leaves / rain / dust / branch / glow
+        public float Cx, Cy;    // centre, as fractions of the room
+        public float W, H;      // px at 1152x648; 0 = follow the other by aspect
+        public float Fps = 3f;
+        public float Alpha = 0.85f;
+        public float Phase;
+        public Color Tint = Colors.White;
+        public float SwayDegrees, SwaySpeed = 0.5f, PivotX = 0.5f;
+        public float Pulse;     // glows breathe by this much alpha
+    }
+
+    private static readonly Dictionary<string, AmbientSpec[]> AmbientByScene = new()
+    {
+        ["room_1.tscn"] =
+        [
+            // steam off the stove, where the kettle lives
+            new() { Effect = "steam", Cx = 0.255f, Cy = 0.262f, H = 110f, Fps = 5f, Alpha = 0.85f },
+        ],
+        ["room_2.tscn"] =
+        [
+            // the sitting-room fire, lit and breathing
+            new() { Effect = "glow", Cx = 0.135f, Cy = 0.60f, W = 280f, H = 280f, Alpha = 0.17f, Tint = new Color(1f, 0.69f, 0.36f), Pulse = 0.05f },
+            new() { Effect = "flame", Cx = 0.135f, Cy = 0.645f, W = 78f, Fps = 7f, Alpha = 0.92f },
+        ],
+        ["room_3.tscn"] =
+        [
+            new() { Effect = "dust", Cx = 0.70f, Cy = 0.42f, W = 420f, Fps = 2f, Alpha = 0.6f },
+        ],
+        ["room_4.tscn"] =
+        [
+            new() { Effect = "dust", Cx = 0.5f, Cy = 0.45f, W = 480f, Fps = 2f, Alpha = 0.38f },
+        ],
+        ["flashback_landing.tscn"] =
+        [
+            new() { Effect = "dust", Cx = 0.5f, Cy = 0.45f, W = 480f, Fps = 2f, Alpha = 0.32f, Tint = new Color(0.78f, 0.84f, 1f) },
+        ],
+        ["room_5.tscn"] =
+        [
+            // rain crossing the window; the lamp's light, breathing
+            new() { Effect = "rain", Cx = 0.145f, Cy = 0.33f, W = 250f, H = 380f, Fps = 6f, Alpha = 0.55f, Tint = new Color(0.75f, 0.83f, 0.93f) },
+            new() { Effect = "glow", Cx = 0.485f, Cy = 0.47f, W = 300f, H = 300f, Alpha = 0.14f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.04f },
+        ],
+        ["apartment_now.tscn"] =
+        [
+            new() { Effect = "rain", Cx = 0.145f, Cy = 0.30f, W = 260f, H = 330f, Fps = 6f, Alpha = 0.5f, Tint = new Color(0.75f, 0.83f, 0.93f) },
+        ],
+        ["room_6.tscn"] =
+        [
+            // leaves coming down past both trees; a near branch swaying
+            new() { Effect = "leaves", Cx = 0.24f, Cy = 0.42f, W = 220f, Fps = 3f, Alpha = 0.95f, SwayDegrees = 0.7f, SwaySpeed = 0.6f },
+            new() { Effect = "leaves", Cx = 0.50f, Cy = 0.36f, W = 180f, Fps = 3f, Alpha = 0.9f, Phase = 1.7f, SwayDegrees = 0.7f, SwaySpeed = 0.5f },
+            new() { Effect = "branch", Cx = 0.835f, Cy = 0.155f, W = 400f, Alpha = 1f, SwayDegrees = 1.1f, SwaySpeed = 0.45f, PivotX = 0.85f },
+        ],
+        ["porch_447.tscn"] =
+        [
+            // chimney smoke (the kettle's wisp, greyer), a lit window, leaves
+            new() { Effect = "steam", Cx = 0.10f, Cy = 0.02f, H = 120f, Fps = 4f, Alpha = 0.5f, Tint = new Color(0.8f, 0.82f, 0.85f) },
+            new() { Effect = "glow", Cx = 0.16f, Cy = 0.36f, W = 170f, H = 170f, Alpha = 0.13f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.04f },
+            new() { Effect = "leaves", Cx = 0.62f, Cy = 0.50f, W = 165f, Fps = 3f, Alpha = 0.9f, Phase = 0.9f, SwayDegrees = 0.7f, SwaySpeed = 0.55f },
+        ],
+        ["room_7.tscn"] =
+        [
+            new() { Effect = "dust", Cx = 0.42f, Cy = 0.40f, W = 420f, Fps = 2f, Alpha = 0.25f },
+        ],
+    };
+
+    private const int AmbientPoolSize = 6;
+    private TextureRect[] _ambientRects;
+    private AmbientSpec[] _ambientActive = System.Array.Empty<AmbientSpec>();
+    private string _ambientSceneFile = string.Empty;
+    private float _ambientTime;
+    private readonly Dictionary<string, Texture2D[]> _ambientFrameCache = new();
+    private static readonly int[] AmbientPingPong = [0, 1, 2, 1];
+
     private static readonly string[] GenericAsideLines =
     [
         "Okay. Just look at everything. Properly this time.",
@@ -253,6 +338,7 @@ public partial class GameUI : CanvasLayer
         ProcessMode = ProcessModeEnum.Always;
         _font = GD.Load<FontFile>(FontPath);
 
+        BuildAmbientLife();
         BuildCorruptionOverlay();
         BuildCollapseOverlay();
         BuildHud();
@@ -335,6 +421,7 @@ public partial class GameUI : CanvasLayer
         RefreshMemoryVerbBar();
         UpdateCollapsePulse();
         UpdateMaraAsides(delta);
+        UpdateAmbientLife(delta);
 
         // "Remember it all": offered once per Clarity arming — but retried
         // every frame until the moment is actually free (no dialogue, no
@@ -3861,6 +3948,155 @@ public partial class GameUI : CanvasLayer
     }
 
     // ---------------------------------------------------------- Mara's voice
+
+    private void BuildAmbientLife()
+    {
+        // First children of all: the weather sits over the room but under
+        // every scrap of interface built after it.
+        _ambientRects = new TextureRect[AmbientPoolSize];
+        for (int i = 0; i < AmbientPoolSize; i++)
+        {
+            var rect = new TextureRect
+            {
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.Scale,
+                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                Visible = false,
+            };
+            _ambientRects[i] = rect;
+            AddChild(rect);
+        }
+    }
+
+    private Texture2D[] AmbientFrames(string effect)
+    {
+        if (_ambientFrameCache.TryGetValue(effect, out var cached))
+            return cached;
+
+        string[] paths = effect switch
+        {
+            "steam" => ["res://assets/images/bgs/amb_steam_0.png", "res://assets/images/bgs/amb_steam_1.png", "res://assets/images/bgs/amb_steam_2.png"],
+            "flame" => ["res://assets/images/bgs/amb_flame_0.png", "res://assets/images/bgs/amb_flame_1.png", "res://assets/images/bgs/amb_flame_2.png"],
+            "leaves" => ["res://assets/images/bgs/amb_leaves_0.png", "res://assets/images/bgs/amb_leaves_1.png", "res://assets/images/bgs/amb_leaves_2.png"],
+            "rain" => ["res://assets/images/bgs/amb_rain_0.png", "res://assets/images/bgs/amb_rain_1.png", "res://assets/images/bgs/amb_rain_2.png"],
+            "dust" => ["res://assets/images/bgs/amb_dust_0.png", "res://assets/images/bgs/amb_dust_1.png", "res://assets/images/bgs/amb_dust_2.png"],
+            "branch" => ["res://assets/images/bgs/amb_branch.png"],
+            _ => ["res://assets/images/bgs/amb_glow.png"],
+        };
+        var frames = new Texture2D[paths.Length];
+        for (int i = 0; i < paths.Length; i++)
+            frames[i] = ResourceLoader.Exists(paths[i]) ? GD.Load<Texture2D>(paths[i]) : null;
+        _ambientFrameCache[effect] = frames;
+        return frames;
+    }
+
+    private static string AmbientSceneFileName(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return string.Empty;
+        int slash = path.LastIndexOf('/');
+        return slash >= 0 ? path.Substring(slash + 1) : path;
+    }
+
+    /// <summary>Polled scene watch (a UI-context lag on the exact frame of
+    /// a scene change can never eat a room's weather).</summary>
+    private void WatchAmbientScene()
+    {
+        string file = AmbientSceneFileName(SceneManager.CurrentScenePath);
+        if (string.IsNullOrEmpty(file) || file == _ambientSceneFile)
+            return;
+        if (_context != UiContext.Game)
+            return; // unspent — retried next frame, once we're in the game
+        _ambientSceneFile = file;
+        _ambientActive = AmbientByScene.TryGetValue(file, out var specs)
+            ? specs
+            : System.Array.Empty<AmbientSpec>();
+    }
+
+    private void HideAmbientRects()
+    {
+        if (_ambientRects == null)
+            return;
+        foreach (var rect in _ambientRects)
+        {
+            if (rect != null)
+                rect.Visible = false;
+        }
+    }
+
+    private void UpdateAmbientLife(double delta)
+    {
+        WatchAmbientScene();
+        if (_ambientRects == null)
+            return;
+
+        bool show = _context == UiContext.Game
+            && !_cutscenePlaying && !_endingPlaying && !_shatterPlaying
+            && _ambientActive.Length > 0;
+        if (!show)
+        {
+            HideAmbientRects();
+            return;
+        }
+
+        // Reduce Motion keeps the weather but holds it perfectly still.
+        bool frozen = Settings.ReduceMotionOrDefault();
+        if (!frozen && !GetTree().Paused)
+            _ambientTime += (float)delta;
+
+        Vector2 view = GetViewport().GetVisibleRect().Size;
+        float scale = view.Y / 648f; // specs are authored at 1152x648
+        for (int i = 0; i < _ambientRects.Length; i++)
+        {
+            var rect = _ambientRects[i];
+            if (i >= _ambientActive.Length)
+            {
+                rect.Visible = false;
+                continue;
+            }
+
+            var spec = _ambientActive[i];
+            var frames = AmbientFrames(spec.Effect);
+            int frame = 0;
+            if (frames.Length > 1 && !frozen)
+            {
+                int step = (int)((_ambientTime + spec.Phase) * spec.Fps);
+                frame = AmbientPingPong[Mathf.Abs(step) % AmbientPingPong.Length] % frames.Length;
+            }
+            var tex = frame < frames.Length ? frames[frame] : null;
+            if (tex == null)
+            {
+                rect.Visible = false;
+                continue;
+            }
+
+            float w = spec.W, h = spec.H;
+            float aspect = tex.GetSize().X / Mathf.Max(tex.GetSize().Y, 1f);
+            if (w <= 0f && h > 0f) w = h * aspect;
+            else if (h <= 0f && w > 0f) h = w / aspect;
+            w *= scale;
+            h *= scale;
+
+            rect.Texture = tex;
+            rect.TextureFilter = spec.Effect == "glow"
+                ? CanvasItem.TextureFilterEnum.Linear
+                : CanvasItem.TextureFilterEnum.Nearest;
+            rect.Size = new Vector2(w, h);
+            rect.PivotOffset = new Vector2(w * spec.PivotX, 0f);
+            rect.Position = new Vector2(
+                spec.Cx * view.X - w / 2f, spec.Cy * view.Y - h / 2f);
+
+            float alpha = spec.Alpha;
+            if (spec.Pulse > 0f && !frozen)
+                alpha += spec.Pulse * Mathf.Sin(_ambientTime * 1.35f + spec.Phase);
+            rect.Modulate = new Color(spec.Tint, Mathf.Clamp(alpha, 0f, 1f));
+            rect.Rotation = spec.SwayDegrees > 0f && !frozen
+                ? Mathf.DegToRad(spec.SwayDegrees * Mathf.Sin(_ambientTime * spec.SwaySpeed + spec.Phase))
+                : 0f;
+            rect.Visible = true;
+        }
+    }
 
     private void BuildMaraAside()
     {
