@@ -183,8 +183,10 @@ public partial class MainMenu : Control
 		_menuRainRight = MakeMenuFxRect(parent, insertIndex++, "MenuRainRight", _menuRainTextures[0],
 			new Rect2(587f, 73f, 330f, 337f), new Color(1f, 1f, 1f, 0.68f));
 		// Coffee surface maps to about (979,448) in the menu viewport.
+		// Keep the plume's base at that surface (268 + 180 = 448), but let
+		// it reach noticeably higher than the first, shorter placement.
 		_menuSteam = MakeMenuFxRect(parent, insertIndex, "MenuSteam", _menuSteamTextures[0],
-			new Rect2(959f, 338f, 55f, 110f), new Color(1f, 1f, 1f, 0.52f));
+			new Rect2(955f, 268f, 63f, 180f), new Color(1f, 1f, 1f, 0.52f));
 	}
 
 	private static TextureRect MakeMenuFxRect(Node parent, int insertIndex, string name,
@@ -210,21 +212,22 @@ public partial class MainMenu : Control
 	private static void TightenMenuButton(BaseButton button)
 	{
 		// The scene's buttons previously used horizontal Expand/Fill inside
-		// the 420 px menu column, so hover fired far beyond the painted
-		// button. Use the *resting* label as the hitbox: the hover art is
-		// wider because a key appears beside the words, and that not-yet-
-		// visible key must not be hoverable empty space. KeepCentered still
-		// lets the hover/pressed art draw at its native size once active.
+		// the menu column, so hover fired far beyond the painted button.
+		// Keep their original left-side placement, but use the *resting*
+		// label as the hitbox: the hover art is wider because a key appears
+		// beside the words, and that not-yet-visible key must not be
+		// hoverable empty space. Keep (top-left) preserves the labels' left
+		// edge and lets the wider hover/pressed art extend to the right.
 		if (button is not TextureButton textureButton)
 			return;
 
-		textureButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
-		textureButton.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		textureButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+		textureButton.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
 		// IgnoreTextureSize stops the wider hover texture from enlarging
 		// the control's own minimum size; CustomMinimumSize below supplies
 		// the resting label's exact bounds instead.
 		textureButton.IgnoreTextureSize = true;
-		textureButton.StretchMode = TextureButton.StretchModeEnum.KeepCentered;
+		textureButton.StretchMode = TextureButton.StretchModeEnum.Keep;
 
 		Vector2 minSize = textureButton.TextureNormal?.GetSize() ?? Vector2.Zero;
 		if (minSize != Vector2.Zero)
