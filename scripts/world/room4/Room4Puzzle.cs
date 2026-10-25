@@ -239,7 +239,10 @@ public partial class Room4Puzzle : MemoryRoomBase
                 await SaySequence(FirstLines(hotspot.Id));
             }
             else
+            {
+                GameState.Instance?.RegisterRepeatExaminePenalty();
                 await Say(RepeatLine(hotspot.Id), 3.5f, 23);
+            }
         }
         finally
         {

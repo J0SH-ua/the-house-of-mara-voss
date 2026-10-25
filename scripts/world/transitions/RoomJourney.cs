@@ -10,7 +10,7 @@ using Godot;
 /// the bent runner, right past the photographs, or along the empty road
 /// until the lit porch is close enough to name. No score or ambience
 /// follows her between rooms — only carpeted boards indoors or the dirt
-/// road underfoot. The walks are long enough
+/// road underfoot, and the ordinary sound of her dialogue. The walks are long enough
 /// that Mara sometimes thinks aloud on the way. On every first arrival
 /// she stops with the newly recovered fragment in her hand and tries to
 /// remember what it could be for. Only sometimes does that inspection
@@ -67,7 +67,7 @@ public partial class RoomJourney : Node2D
         public float CameraSeconds { get; init; }
         public string[] FootstepSfx { get; init; } = [];
         public float FootstepVolumeDb { get; init; } = -12f;
-        public float FootstepIntervalSeconds { get; init; } = 0.68f;
+        public float FootstepIntervalSeconds { get; init; } = 0.84f;
         public int FragmentIndex { get; init; } = -1;
         public string MemoryTexturePath { get; init; } = string.Empty;
         public string[] FragmentLines { get; init; } = [];
@@ -113,10 +113,10 @@ public partial class RoomJourney : Node2D
             FinalScale = 1.7f,
             TargetRect = new Rect2(372f, 12f, 410f, 620f),
             Prompt = "Click the door to open it",
-            CameraSeconds = 5.2f,
+            CameraSeconds = 7.8f,
             FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
             FootstepVolumeDb = -13f,
-            FootstepIntervalSeconds = 0.68f,
+            FootstepIntervalSeconds = 0.84f,
         },
         ["Room2ToRoom3"] = new JourneySpec
         {
@@ -153,10 +153,10 @@ public partial class RoomJourney : Node2D
             FinalScale = 1.75f,
             TargetRect = new Rect2(450f, 80f, 250f, 490f),
             Prompt = "Click the door to open it",
-            CameraSeconds = 5.8f,
+            CameraSeconds = 8.7f,
             FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
             FootstepVolumeDb = -13f,
-            FootstepIntervalSeconds = 0.68f,
+            FootstepIntervalSeconds = 0.84f,
         },
         ["Room3ToRoom4"] = new JourneySpec
         {
@@ -193,10 +193,10 @@ public partial class RoomJourney : Node2D
             FinalScale = 1.75f,
             TargetRect = new Rect2(430f, 80f, 290f, 490f),
             Prompt = "Click the door to open it",
-            CameraSeconds = 5.8f,
+            CameraSeconds = 8.7f,
             FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
             FootstepVolumeDb = -13f,
-            FootstepIntervalSeconds = 0.68f,
+            FootstepIntervalSeconds = 0.84f,
         },
         ["Room6ToPorch"] = new JourneySpec
         {
@@ -238,10 +238,10 @@ public partial class RoomJourney : Node2D
             FinalScale = 2.45f,
             TargetRect = new Rect2(490f, 215f, 220f, 155f),
             Prompt = "Click the porch light to arrive",
-            CameraSeconds = 8.0f,
+            CameraSeconds = 12.0f,
             FootstepSfx = [Sfx.FootstepDirtA, Sfx.FootstepDirtB],
             FootstepVolumeDb = -11f,
-            FootstepIntervalSeconds = 0.74f,
+            FootstepIntervalSeconds = 0.92f,
             OpenSfx = Sfx.DoorCreak,
             OpenPitch = 0.82f,
         },
@@ -270,7 +270,7 @@ public partial class RoomJourney : Node2D
     private float _cameraSeconds = 3.4f;
     private float _elapsed;
     private float _progress;
-    private float _nextFootstepElapsed = 0.38f;
+    private float _nextFootstepElapsed = 0.5f;
     private int _footstepIndex;
     private bool _heldSettled;
     private bool _migraineActive;
@@ -353,7 +353,7 @@ public partial class RoomJourney : Node2D
         _rng.Randomize();
         _seenBefore = GameState.Instance?.HasFlag(SeenFlag) ?? false;
         _reduceMotion = Settings.ReduceMotionOrDefault();
-        _cameraSeconds = _seenBefore ? Math.Min(2.6f, _spec.CameraSeconds) : _spec.CameraSeconds;
+        _cameraSeconds = _seenBefore ? Math.Min(4.2f, _spec.CameraSeconds) : _spec.CameraSeconds;
         _progress = _reduceMotion ? 1f : 0f;
         _migrainePlanned = !_seenBefore && SavedRandomDecision("migraine", MigraineChance);
         _walkingMonologuePlanned = _seenBefore
@@ -468,7 +468,7 @@ public partial class RoomJourney : Node2D
         // A barely-there walking bob, gone once Mara arrives (or for
         // Reduce Motion). It is in source pixels, so it stays subtle.
         if (!_reduceMotion && _progress < 1f)
-            focus.Y += (float)Math.Sin(_elapsed * 4.3f) * 1.6f * (1f - _progress);
+            focus.Y += (float)Math.Sin(_elapsed * 3.3f) * 1.6f * (1f - _progress);
 
         Vector2 sourcePos = new(
             Mathf.Clamp(focus.X - sourceSize.X * 0.5f, 0f, 1152f - sourceSize.X),
@@ -487,7 +487,7 @@ public partial class RoomJourney : Node2D
         }
     }
 
-    /// <summary>Footfalls are the journey's whole soundscape. Their cadence
+    /// <summary>Footfalls are the journey's environmental soundscape. Their cadence
     /// follows the camera's smoothstep speed, and alternating samples keep
     /// the carpet runner (or dirt road) from sounding like a metronome.</summary>
     private void UpdateFootsteps()

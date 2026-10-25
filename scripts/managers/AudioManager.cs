@@ -45,6 +45,10 @@ public static class Sfx
     public const string TruthBridgeSteps = "truth_bridge_steps";
     public const string TruthRailingBreak = "truth_railing_break";
     public const string TruthWaterSplash = "truth_water_splash";
+    public const string LockpickTick = "lockpick_tick";
+    public const string LockpickSnap = "lockpick_snap";
+    public const string VentCrawl = "vent_crawl";
+    public const string FlashlightClick = "flashlight_click";
 }
 
 /// <summary>
@@ -83,10 +87,12 @@ public partial class AudioManager : Node
     private const string AmbienceFirePath = SfxDir + "ambience_fire.wav";
     private const string AmbienceGardenPath = SfxDir + "ambience_garden.wav";
     private const string AmbiencePorchPath = SfxDir + "ambience_porch.wav";
+    private const string AmbienceBasementPath = SfxDir + "ambience_basement.wav";
     public const string AmbienceRoomToneLoopPath = AmbiencePath;
     public const string AmbienceRainLoopPath = AmbienceRainPath;
     public const string AmbienceGardenLoopPath = AmbienceGardenPath;
     public const string AmbiencePorchLoopPath = AmbiencePorchPath;
+    public const string AmbienceBasementLoopPath = AmbienceBasementPath;
     private const string HeartbeatPath = SfxDir + "heartbeat.wav";
 
     private static readonly Dictionary<string, string> LegacySfxPaths = new()
@@ -236,12 +242,6 @@ public partial class AudioManager : Node
 
     public void PlaySfx(string sfxId, float volumeDb = 0f, float pitchScale = 1f)
     {
-        // Journey scenes are a held breath: let any walking monologue type
-        // silently so the surface under Mara feet is the only sound.
-        if ((sfxId == Sfx.DialogueBlip || sfxId == Sfx.DialogueAdvance) &&
-            SceneManager.CurrentScenePath.Contains("/journey_to_"))
-            return;
-
         var stream = LoadStream(SfxPathFor(sfxId));
         if (stream == null)
             return;
@@ -341,8 +341,8 @@ public partial class AudioManager : Node
         string scene = scenePath.ToLowerInvariant();
 
         // Walking between rooms is deliberately bare: no borrowed room
-        // score, room tone, garden loop, or heartbeat — only Mara
-        // footsteps supplied by the journey itself.
+        // score, room tone, garden loop, or heartbeat. Mara footsteps and
+        // the ordinary dialogue sounds still belong to the walk itself.
         if (scene.Contains("/journey_to_"))
         {
             StopMusic(0.3f);
@@ -352,19 +352,24 @@ public partial class AudioManager : Node
 
         PlayAmbienceForScene(scenePath);
 
+        // The score now sits underneath the place itself. Ambience loops
+        // are several dB quieter at source than the room music, so these
+        // gains are low enough for rain/fire/room tone to lead the mix.
         bool puzzle = scene.Contains("puzzle");
-        float volume = puzzle ? -15f : -11f;
+        float volume = puzzle ? -28f : -25f;
 
         if (scene.Contains("flashback"))
-            PlayMusic(MusicRoom4, -16f);
+            PlayMusic(MusicRoom4, -28f);
         else if (scene.Contains("apartment"))
-            PlayMusic(MusicRoom5, -16f);
+            PlayMusic(MusicRoom5, -28f);
+        else if (scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("lockpick"))
+            PlayMusic(MusicRoom5, -29f);
         else if (scene.Contains("porch"))
-            PlayMusic(MusicRoom6, -14f);
+            PlayMusic(MusicRoom6, -26f);
         else if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
-            PlayMusic(MusicFinale, -6f);
+            PlayMusic(MusicFinale, -18f);
         else if (scene.Contains("bedroom"))
-            PlayMusic(MusicRoom1, -14f);
+            PlayMusic(MusicRoom1, -26f);
         else if (scene.Contains("room_1"))
             PlayMusic(MusicRoom1, volume);
         else if (scene.Contains("room_2"))
@@ -397,11 +402,11 @@ public partial class AudioManager : Node
         }
     }
 
-    /// <summary>Each place sounds like itself, mixed well under the score
-    /// (rooms play at −11 dB; these sit 12–17 dB below that): rain where
-    /// the windows are wet (Room 5, the Apartment), the fire in Room 2,
-    /// wind and leaves in the garden, crickets at dusk on the porch, and
-    /// the plain room tone everywhere else. Crossfaded like the music.</summary>
+    /// <summary>Each place sounds like itself, mixed in front of the
+    /// background score: rain where the windows are wet (Room 5, the
+    /// Apartment), the fire in Room 2, wind and leaves in the garden,
+    /// crickets at dusk on the porch, drips and furnace air below the
+    /// house, and plain room tone everywhere else. Crossfaded like music.</summary>
     public void PlayAmbienceForScene(string scenePath)
     {
         string scene = (scenePath ?? string.Empty).ToLowerInvariant();
@@ -416,12 +421,14 @@ public partial class AudioManager : Node
 
         bool puzzle = scene.Contains("puzzle");
         (string path, float volume) ambience =
-            scene.Contains("porch") ? (AmbiencePorchPath, -24f)
-            : scene.Contains("apartment") ? (AmbienceRainPath, -23f)
-            : scene.Contains("room_5") ? (AmbienceRainPath, -23f)
-            : scene.Contains("room_2") ? (AmbienceFirePath, puzzle ? -28f : -25f)
-            : scene.Contains("room_6") ? (AmbienceGardenPath, -24f)
-            : (AmbiencePath, -22f);
+            scene.Contains("basement") || scene.Contains("vent_crawl") ? (AmbienceBasementPath, -14f)
+            : scene.Contains("lockpick") ? (AmbiencePath, -20f)
+            : scene.Contains("porch") ? (AmbiencePorchPath, -16f)
+            : scene.Contains("apartment") ? (AmbienceRainPath, -15f)
+            : scene.Contains("room_5") ? (AmbienceRainPath, -15f)
+            : scene.Contains("room_2") ? (AmbienceFirePath, puzzle ? -20f : -17f)
+            : scene.Contains("room_6") ? (AmbienceGardenPath, -16f)
+            : (AmbiencePath, -18f);
 
         CrossfadeAmbience(ambience.path, ambience.volume);
     }
@@ -499,7 +506,7 @@ public partial class AudioManager : Node
     }
 
     /// <summary>Swap the room score for the countdown bed (collapse).</summary>
-    public void PlayCollapseMusic() => PlayMusic(MusicCollapse, -8f, 0.45f);
+    public void PlayCollapseMusic() => PlayMusic(MusicCollapse, -22f, 0.45f);
 
     /// <summary>Restore whatever score the current scene calls for.</summary>
     public void RestoreSceneMusic() => PlayMusicForScene(SceneManager.CurrentScenePath);

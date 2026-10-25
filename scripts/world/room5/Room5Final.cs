@@ -21,12 +21,21 @@ using Godot;
 /// are Mara's, the inside of the wardrobe — past the coats and the yellow
 /// raincoat — stops being a wardrobe and becomes the garden, waiting to be
 /// clicked through.
+///
+/// The room also keeps something practical. Beneath the apology letters
+/// are her father's lockpicks; low in the wall beneath the writing desk
+/// is a latched ventilation grille. Together with a light from Mara's
+/// present-day apartment, they open a way under the house that the main
+/// remembering never required her to find.
 /// </summary>
 public partial class Room5Final : MemoryRoomBase
 {
     private const string AnchoredFlag = "room5_anchored_lamp";
     private const string DrawerOpenedFlag = "room5_drawer_opened";
     private const string LampNoticeFlag = "story_monologue_room5_lamp_still";
+    private const string LockpickScenePath = "res://scenes/world/lockpick_puzzle.tscn";
+    private const string VentCrawlScenePath = "res://scenes/world/vent_crawl.tscn";
+    private static readonly Rect2 VentRect = new(812, 438, 76, 52);
 
     private Label _anchorLabel;
     private Label _gardenLabel;
@@ -112,6 +121,14 @@ public partial class Room5Final : MemoryRoomBase
             Sfx.Examine, 0.82f, PointerCursorPath);
         yield return new Hotspot("AlarmClock", "Alarm Clock",
             new Rect2(582, 350, 62, 78), new Vector2(613, 389), Sfx.ClockTick, 1f);
+        // Low in the wall beneath the desk drawer, stopping at the
+        // floor line. It is yielded after the broad writing-desk hotspot
+        // so the little grille wins their overlap; the painted wall
+        // there gets a code-drawn vent in DrawRoom. Utility, not a
+        // required examine.
+        yield return new Hotspot("LowVent", "Low Vent",
+            VentRect, VentRect.GetCenter(), Sfx.Examine, 0.7f,
+            PointerCursorPath, false);
         foreach (var photoRect in FloorPhotographRects)
         {
             yield return new Hotspot("FloorPhotographs", "Photographs on the Floor",
@@ -171,6 +188,15 @@ public partial class Room5Final : MemoryRoomBase
         if (hotspot.Id == "Lamp" && !(gs?.HasFlag(AnchoredFlag) ?? false) && !AllShiftersTouched())
         {
             _ = LampNotYetAsync(hotspot);
+            return;
+        }
+
+        // The vent is a practical thing, not a memory to address with a
+        // verb. Handle it before verb routing so it stays reachable even
+        // if a way of remembering happens to be armed.
+        if (hotspot.Id == "LowVent")
+        {
+            _ = UseVentAsync(hotspot);
             return;
         }
 
@@ -402,6 +428,9 @@ public partial class Room5Final : MemoryRoomBase
             {
                 AudioManager.Play(Sfx.DrawerOpen, -7f);
                 await Say("The drawer is empty now except for dust and the pale rectangles where envelopes used to lie.");
+                // Saves that took the letters before the picks existed can
+                // still find what lay underneath them.
+                await TakeLockpicksAsync(drawer, foundUnderLetters: false);
                 return;
             }
 
@@ -448,6 +477,7 @@ public partial class Room5Final : MemoryRoomBase
                     "The last letter is unfinished. Not because Mara forgave herself — because an unsent apology can still be answered by the house.",
                     "An apology is not only the minute Mara missed. It is that minute and every minute changed by it. Holding one true thing still has taught her how the others join.",
                     "That joining has a name now. Trace.");
+                await TakeLockpicksAsync(drawer, foundUnderLetters: true);
             }
             else
             {
@@ -458,6 +488,109 @@ public partial class Room5Final : MemoryRoomBase
         {
             Busy = false;
             QueueRedraw();
+        }
+    }
+
+    /// <summary>The practical thing under the apology: her father's
+    /// oilcloth roll. Granted once, whether the drawer was opened in this
+    /// version of the game or in a save that predates it.</summary>
+    private async Task TakeLockpicksAsync(Hotspot drawer, bool foundUnderLetters)
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag("item_lockpick_set"))
+            return;
+
+        AudioManager.Play(Sfx.PhotoPickup, -9f, 0.92f);
+        AudioManager.Play(Sfx.KeyType, -13f, 1.25f);
+        if (foundUnderLetters)
+        {
+            await SaySequence(
+                "Under the last envelope is an oilcloth roll, tied twice. My father's handwriting on the cloth: MARA DO NOT — and then, in smaller letters, — lose these.",
+                "Lockpicks. A whole roll of them, oiled and clean. I watched him open our neighbours' doors with these when they locked themselves out, one knee on the step, telling me to listen for the little sounds.");
+        }
+        else
+        {
+            await SaySequence(
+                "One pale rectangle is longer than an envelope. At the back of the drawer, an oilcloth roll is wedged where the letters used to hide it.",
+                "My father's lockpicks. Tied twice, the way he tied everything. I held the lamp for him often enough to know what each one is for.");
+        }
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+
+        gs.SetFlag("item_lockpick_set", save: false);
+        gs.UnlockClue("father_lockpicks");
+        Hotspots.SpawnRipple(drawer.Center, new Color(1f, 0.85f, 0.5f));
+        gs.Toast("Father's lockpick set — kept in Mara's bag (B). The Journal (J) remembers how he taught her to listen.");
+    }
+
+    /// <summary>The low vent: a latched grille, a tool earned in this
+    /// room, and a dark that also wants the apartment's flashlight.</summary>
+    private async Task UseVentAsync(Hotspot vent)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            var gs = GameState.Instance;
+            if (gs == null)
+                return;
+
+            bool firstFound = gs.SetFlag("room5_vent_found", save: false);
+            if (firstFound)
+                gs.UnlockClue("under_house_vent");
+
+            if (!gs.HasFlag(AnchoredFlag))
+            {
+                AudioManager.Play(Sfx.Denied, -10f, 0.72f);
+                await Say(firstFound
+                    ? "Low in the wall — a vent grille. Only, half the time the wall there is my childhood one and the grille is somewhere else entirely. Cold air, though. Stone-cold. That part doesn't slide."
+                    : "The grille won't stay on one wall long enough to work at. Not while the room is still two rooms.", 4.5f, 24);
+                return;
+            }
+
+            if (gs.HasFlag("room5_vent_open"))
+            {
+                if (!gs.HasFlag("item_flashlight"))
+                {
+                    AudioManager.Play(Sfx.Denied, -9f, 0.8f);
+                    await Say("The duct beyond the grille is dark all the way down. I am not crawling into the walls of this house blind. Somewhere in the life I actually live, there is a flashlight in a cupboard.", 5f, 24);
+                    return;
+                }
+
+                AudioManager.Play(Sfx.FlashlightClick, -6f);
+                await Say("Flashlight on. Knees, elbows, and a duct built by somebody who had never met a grown woman. Deep breath.", 4.5f, 24);
+                if (GodotObject.IsInstanceValid(this))
+                    SceneManager.ChangeScene(VentCrawlScenePath);
+                return;
+            }
+
+            if (!gs.HasFlag("item_lockpick_set"))
+            {
+                AudioManager.Play(Sfx.DrawerClose, -7f, 0.65f);
+                await SaySequence(
+                    "A vent grille, low in the baseboard. No screws — a little latch, the cheap kind, meant to be worked from inside by someone who knew locks.",
+                    "My father fitted latches like this. Two slender tools and patience would do it. Fingernails won't.");
+                return;
+            }
+
+            await Say("The latch is my father's work. His tools are in my bag. All right, Dad. Let's see if I was listening.", 4.5f, 24);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            gs.SetFlag("lockpick_target_vent", save: false);
+            gs.SetFlag("lockpick_origin_room5", save: false);
+            gs.ClearFlag("lockpick_target_trunk", save: false);
+            gs.ClearFlag("lockpick_origin_basement", save: false);
+            gs.SaveGame("lockpick vent armed");
+            SceneManager.ChangeScene(LockpickScenePath);
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
         }
     }
 
@@ -764,6 +897,57 @@ public partial class Room5Final : MemoryRoomBase
         DrawRect(WardrobePortalRect.Grow(-6f), new Color(1f, 0.88f, 0.55f, 0.14f), false, 1f);
     }
 
+    /// <summary>The vent was not in the Room 5 painting, so it is drawn
+    /// onto the baseboard in chunky bands at hotspot scale. Closed, it is
+    /// a slatted grille with a brass latch; once picked, the duct mouth
+    /// goes dark and the grille leans against the wall beside it.</summary>
+    private void DrawVent()
+    {
+        bool open = GameState.Instance?.HasFlag("room5_vent_open") ?? false;
+        var outer = VentRect;
+        var inner = outer.Grow(-5f);
+
+        DrawRect(outer, new Color(0.09f, 0.075f, 0.06f, 0.96f), true);
+        DrawRect(outer, new Color(0.42f, 0.36f, 0.27f, 0.9f), false, 2f);
+
+        if (open)
+        {
+            DrawRect(inner, new Color(0.015f, 0.015f, 0.02f, 1f), true);
+            // A faint cold breath from below — two pale chips, no more.
+            DrawRect(new Rect2(inner.Position + new Vector2(9, 12), new Vector2(16, 3)),
+                new Color(0.45f, 0.55f, 0.62f, 0.35f), true);
+            DrawRect(new Rect2(inner.Position + new Vector2(38, 36), new Vector2(20, 3)),
+                new Color(0.45f, 0.55f, 0.62f, 0.24f), true);
+
+            var leaning = new Rect2(outer.Position + new Vector2(52, 8), new Vector2(28, 42));
+            DrawRect(leaning, new Color(0.16f, 0.15f, 0.13f, 0.96f), true);
+            DrawRect(leaning, new Color(0.5f, 0.47f, 0.4f, 0.95f), false, 2f);
+            for (int i = 0; i < 4; i++)
+            {
+                float y = leaning.Position.Y + 7f + i * 9f;
+                DrawLine(new Vector2(leaning.Position.X + 4, y),
+                    new Vector2(leaning.End.X - 4, y - 3),
+                    new Color(0.55f, 0.53f, 0.46f, 0.9f), 2f);
+            }
+            return;
+        }
+
+        DrawRect(inner, new Color(0.2f, 0.19f, 0.17f, 1f), true);
+        for (int i = 0; i < 4; i++)
+        {
+            float y = inner.Position.Y + 6f + i * 9f;
+            DrawRect(new Rect2(inner.Position.X + 5, y, inner.Size.X - 10, 3),
+                new Color(0.04f, 0.04f, 0.045f, 1f), true);
+            DrawRect(new Rect2(inner.Position.X + 5, y + 3, inner.Size.X - 10, 2),
+                new Color(0.48f, 0.45f, 0.39f, 0.9f), true);
+        }
+        // The little brass latch her father fitted, at the right edge.
+        DrawRect(new Rect2(inner.End.X - 10, inner.GetCenter().Y - 8, 7, 16),
+            new Color(0.72f, 0.55f, 0.25f, 1f), true);
+        DrawRect(new Rect2(inner.End.X - 8, inner.GetCenter().Y - 2, 3, 4),
+            new Color(0.1f, 0.07f, 0.03f, 1f), true);
+    }
+
     protected override void DrawRoom()
     {
         var gs = GameState.Instance;
@@ -792,6 +976,8 @@ public partial class Room5Final : MemoryRoomBase
 
         if (gs.IsShardRecovered(4))
             DrawWardrobePortal();
+
+        DrawVent();
 
         if (!anchored)
             return;

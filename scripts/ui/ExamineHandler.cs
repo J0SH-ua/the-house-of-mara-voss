@@ -293,13 +293,14 @@ public partial class ExamineHandler : TileMapLayer
 
     private void OnAnyExamineClicked()
     {
-        // Only looking *deeper* than the first layer destabilises the memory.
+        // Only looking *deeper* than the first layer destabilises the
+        // memory. A deliberate second look now costs 3.0× the old unit.
         if (ExamineHelper.ExtractExamineNumber(Name.ToString()) != 1)
         {
             if (GameState.Instance != null)
-                GameState.Instance.AddCorruption(1);
+                GameState.Instance.RegisterRepeatExaminePenalty();
             else if (Globals.Instance != null)
-                Globals.Instance.CORRUPTION_COUNT++;
+                Globals.Instance.CORRUPTION_COUNT += 3;
         }
     }
 

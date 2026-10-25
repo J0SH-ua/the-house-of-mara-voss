@@ -309,7 +309,10 @@ public partial class Room4 : Node2D
 
 	private async void OnDrawerCollisionPressed()
 	{
+		bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "HallDrawer");
 		RoomExamineTracker.RecordExamine("Room4", "HallDrawer");
+		if (facedBefore)
+			GameState.Instance?.RegisterRepeatExaminePenalty();
 		AudioManager.Play(Sfx.DrawerOpen, -7f);
 		var globalPosition = _drawerCollisionArea.GlobalPosition;
 		await Dialogue.ShowText(this, "The hall drawer. Old wood, a bit sticky. I've opened it a hundred times in here and never once seen inside. The house is gentle like that. I've let it be.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
@@ -331,6 +334,7 @@ public partial class Room4 : Node2D
 
 			if (facedBefore)
 			{
+				GameState.Instance?.RegisterRepeatExaminePenalty();
 				await Dialogue.ShowText(this, "Two frames, still facing the wall. Some things Mara is allowed to approach in her own order.", 4.0f, pos.X, pos.Y, HoverFontPath, 24);
 				return;
 			}

@@ -401,7 +401,7 @@ public abstract partial class MemoryRoomBase : Node2D
             }
             else
             {
-                GameState.Instance?.AddCorruption(1);
+                GameState.Instance?.RegisterRepeatExaminePenalty();
                 if (!string.IsNullOrWhiteSpace(repeatLine))
                     await Say(repeatLine, 3.5f, 24);
             }

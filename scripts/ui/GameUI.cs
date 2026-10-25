@@ -41,6 +41,7 @@ public partial class GameUI : CanvasLayer
     private Label _bagDetailTitle;
     private Label _bagDetailStatus;
     private RichTextLabel _bagDetailBody;
+    private Label _bagItemsLabel;
     private Label _bagVerbsLabel;
     private int _bagSelectedIndex = -1;
     private bool _openedBagFromPause;
@@ -789,13 +790,32 @@ public partial class GameUI : CanvasLayer
         if (GetTree().Paused)
             return;
 
-        // A click nothing claimed: the softest acknowledgement, so the mouse
-        // never feels dead. Claimed clicks (examines, doors, triggers) call
-        // SetInputAsHandled and never reach _UnhandledInput.
+        // A click nothing claimed. Claimed clicks (examines, doors,
+        // triggers) call SetInputAsHandled and never reach here. In an
+        // active room, testing empty air now strains MEMORY: 2.0× the old
+        // repeat-look unit, or 2.3× for another loose click in nearly the
+        // same place. HUD-only areas are exempt; GameState also excludes
+        // journeys, thresholds and sealed rooms.
         if (@event is InputEventMouseButton emptyClick && emptyClick.Pressed &&
             emptyClick.ButtonIndex == MouseButton.Left && !FocusIsTextEditing() && !AnyPanelOpen())
         {
+            float penalty = 0f;
+            var gs = GameState.Instance;
+            if (gs != null && !Dialogue.IsShowing && !Dialogue.IsInputBlocked &&
+                !_heldShowing && !SceneManager.IsChanging &&
+                !IsHudOnlyClick(emptyClick.Position))
+            {
+                penalty = gs.RegisterNonInteractableClick(emptyClick.Position);
+            }
+
             AudioManager.Play(Sfx.UiClick, -17f, 0.9f);
+            if (penalty >= GameState.RepeatedNonInteractableClickPenalty)
+                AudioManager.Play(Sfx.CorruptionGlitch, -18f, 0.75f);
+            if (penalty > 0f && gs != null && gs.SetFlag("click_penalty_warned", save: false))
+            {
+                gs.SaveGame("click penalty learned");
+                gs.Toast("Empty clicks strain the memory. Repeated looks strain it more.");
+            }
             return;
         }
 
@@ -844,6 +864,26 @@ public partial class GameUI : CanvasLayer
             GoBack();
             GetViewport().SetInputAsHandled();
         }
+    }
+
+    /// <summary>Screen furniture that is allowed to receive a harmless
+    /// click even where its labels are mouse-transparent. Actual buttons
+    /// are consumed by GUI input before _UnhandledInput in any case.</summary>
+    private bool IsHudOnlyClick(Vector2 position)
+    {
+        if (position.Y >= 606f)
+            return true;
+        if (position.X < 520f && position.Y < 132f) // objective / room label
+            return true;
+        if (position.X > 780f && position.Y < 252f) // MEMORY, bag, Remember It All
+            return true;
+        if ((_backButton?.Visible ?? false) && _backButton.GetGlobalRect().Grow(6f).HasPoint(position))
+            return true;
+        if ((_forwardButton?.Visible ?? false) && _forwardButton.GetGlobalRect().Grow(6f).HasPoint(position))
+            return true;
+        if ((_verbPanel?.Visible ?? false) && _verbPanel.GetGlobalRect().Grow(6f).HasPoint(position))
+            return true;
+        return false;
     }
 
     private void HandleEscape()
@@ -1912,6 +1952,11 @@ public partial class GameUI : CanvasLayer
         _bagDetailBody.AddThemeColorOverride("default_color", new Color(0.93f, 0.89f, 0.82f));
         scroll.AddChild(_bagDetailBody);
 
+        _bagItemsLabel = MakeLabel("", 18, new Color(0.86f, 0.8f, 0.66f, 0.95f));
+        _bagItemsLabel.AutowrapMode = TextServer.AutowrapMode.Word;
+        _bagItemsLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(_bagItemsLabel);
+
         _bagVerbsLabel = MakeLabel("", 18, new Color(0.82f, 0.78f, 0.68f, 0.9f));
         _bagVerbsLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         _bagVerbsLabel.HorizontalAlignment = HorizontalAlignment.Center;
@@ -2003,6 +2048,7 @@ public partial class GameUI : CanvasLayer
             _bagDetailTitle.Text = "An empty bag";
             _bagDetailStatus.Text = "";
             _bagDetailBody.Text = "[i]Recover a memory fragment and it will be kept here.[/i]";
+            if (_bagItemsLabel != null) _bagItemsLabel.Text = "";
             _bagVerbsLabel.Text = "";
             return;
         }
@@ -2147,6 +2193,22 @@ public partial class GameUI : CanvasLayer
         _bagVerbsLabel.Text = learned.Count > 0
             ? "Ways of remembering: " + string.Join(" · ", learned) + " — Mara's notes are in the Journal (J)."
             : "Ways of remembering: none learned yet — the house will teach them as the story gives them to her.";
+
+        var carriedThings = new List<string>();
+        if (gs.HasFlag("item_lockpick_set"))
+            carriedThings.Add("Father's lockpick set");
+        if (gs.HasFlag("item_flashlight"))
+            carriedThings.Add(gs.HasFlag("basement_battery_taken") ? "Flashlight — strong battery" : "Flashlight");
+        if (gs.HasFlag("item_iron_cellar_key"))
+            carriedThings.Add("Iron cellar key");
+        if (gs.HasFlag("basement_negatives_taken"))
+            carriedThings.Add("Tin of photograph negatives");
+        if (_bagItemsLabel != null)
+        {
+            _bagItemsLabel.Text = carriedThings.Count > 0
+                ? "Also carried: " + string.Join(" · ", carriedThings)
+                : "Also carried: nothing practical yet.";
+        }
     }
 
     private static void ApplyBagSlotStyle(Button button, bool selected, bool recovered, bool carried)
@@ -4950,17 +5012,22 @@ public partial class GameUI : CanvasLayer
             if (Settings.ReduceMotionOrDefault())
             {
                 SetRoomFlashAmount(0.85f);
-                await WaitArrivalSeconds(0.9f);
+                await WaitArrivalSeconds(0.35f);
             }
             else
             {
+                // A blink, not a lighting state: seven hard changes in
+                // under half a second, then the room has its colour back
+                // before Mara even names what happened.
                 (float Amount, float Seconds)[] flicker =
                 [
-                    (1f, 0.14f),
-                    (0.18f, 0.08f),
-                    (0.92f, 0.18f),
-                    (0.35f, 0.08f),
-                    (1f, 0.65f),
+                    (1f, 0.055f),
+                    (0.12f, 0.035f),
+                    (0.94f, 0.06f),
+                    (0.22f, 0.03f),
+                    (1f, 0.07f),
+                    (0.45f, 0.035f),
+                    (1f, 0.16f),
                 ];
                 foreach (var step in flicker)
                 {
@@ -4974,7 +5041,7 @@ public partial class GameUI : CanvasLayer
             if (!StillInArrivalScene(scenePath))
                 return;
 
-            SetRoomFlashAmount(0.82f);
+            SetRoomFlashAmount(0f);
             await Dialogue.ShowText(this, "What was that?", 2.8f, 576f, 324f, fontSize: 27);
             if (!StillInArrivalScene(scenePath))
                 return;
@@ -4984,7 +5051,7 @@ public partial class GameUI : CanvasLayer
             if (!StillInArrivalScene(scenePath))
                 return;
 
-            await WaitArrivalSeconds(0.45f);
+            await WaitArrivalSeconds(0.12f);
         }
         finally
         {
@@ -5534,44 +5601,44 @@ public partial class GameUI : CanvasLayer
         switch (shotIndex)
         {
             case 0:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -25f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -17f);
                 break;
             case 5:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -25f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -18f);
                 break;
             case 6:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -27f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -19f);
                 break;
             case 7:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -24f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -16f);
                 break;
             case 8:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -26f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -19f);
                 break;
             case 9:
                 // Rain reaches the road before Mara does.
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -29f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -19f);
                 break;
             case 11:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -24f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -15f);
                 AudioManager.Play(Sfx.TruthBridgeSteps, -10f);
                 break;
             case 12:
                 AudioManager.Play(Sfx.TruthRailingBreak, -6f);
                 AudioManager.Play(Sfx.TruthWaterSplash, -7f);
-                audio.PlayMusic(AudioManager.MusicFinale, -9f, 2.8f);
+                audio.PlayMusic(AudioManager.MusicFinale, -19f, 2.8f);
                 break;
             case 13:
-                audio.PlayCutsceneAmbience(AudioManager.AmbiencePorchLoopPath, -28f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbiencePorchLoopPath, -18f);
                 break;
             case 14:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -27f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -19f);
                 break;
             case 15:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -28f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -18f);
                 break;
             case 16:
-                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -28f);
+                audio.PlayCutsceneAmbience(AudioManager.AmbienceRoomToneLoopPath, -19f);
                 break;
         }
     }

@@ -10,6 +10,10 @@ using Godot;
 /// apple basket (waiting) → swing (counting) → broken gate (leaving) →
 /// empty road (Mara never appeared). Completing the line recovers
 /// Fragment VI and teaches Release through GameState's shard progression.
+///
+/// One ordinary secret also lives here: beneath a loose stone by the
+/// gate, their father hid the iron key to a little cabinet under the
+/// house. It is outside the Trace line, and touching it never breaks it.
 /// </summary>
 public partial class Room6Final : MemoryRoomBase
 {
@@ -42,6 +46,9 @@ public partial class Room6Final : MemoryRoomBase
         yield return new Hotspot("BrokenGate", "Broken Garden Gate",
             new Rect2(735, 335, 175, 220), new Vector2(815, 455),
             Sfx.DoorCreak, 0.88f, PointerCursorPath);
+        yield return new Hotspot("LooseGateStone", "A Loose Stone",
+            new Rect2(1018, 478, 80, 66), new Vector2(1058, 511),
+            Sfx.Examine, 0.62f, PointerCursorPath, false);
         yield return new Hotspot("EmptyRoad", "Empty Road",
             new Rect2(930, 255, 210, 145), new Vector2(1035, 320),
             Sfx.Examine, 0.64f, PointerCursorPath);
@@ -96,6 +103,14 @@ public partial class Room6Final : MemoryRoomBase
     {
         if (hotspot == null || Busy)
             return;
+
+        // A loose stone is pried with fingers, not remembered at. Keeping
+        // it ahead of Trace routing means it can never break the line.
+        if (hotspot.Id == "LooseGateStone")
+        {
+            _ = PryLooseStoneAsync(hotspot);
+            return;
+        }
 
         var activeVerb = MemoryVerbSystem.Active;
         if (activeVerb == MemoryVerb.Trace)
@@ -155,6 +170,42 @@ public partial class Room6Final : MemoryRoomBase
                     "At 4:47 I came through that gate calling her name. All the road gave me back was the swing chain, creaking behind me.",
                 }, "No car. No figure on the bridge. Just the place where being late stopped being temporary.");
                 break;
+        }
+    }
+
+    private async Task PryLooseStoneAsync(Hotspot stone)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            var gs = GameState.Instance;
+            AudioManager.Play(Sfx.PhotoPickup, -10f, 0.62f);
+
+            if (gs != null && gs.HasFlag("item_iron_cellar_key"))
+            {
+                await Say("The little hollow is empty now, except for one very surprised woodlouse. Sorry. Housing shortage. Blame my father.", 4.5f, 24);
+                return;
+            }
+
+            await SaySequence(
+                "One stone by the gate post moves. Just a breath. Dad's work, that — a hiding place made to look like the wall doing what walls do.",
+                "Behind it, wrapped in a square of oiled rag: the heavy iron key to below-stairs. I was trusted not to know about this until I was twenty. I knew at nine. Ida knew at six and told the cat.");
+            if (!GodotObject.IsInstanceValid(this) || gs == null)
+                return;
+
+            AudioManager.Play(Sfx.KeyType, -9f, 0.8f);
+            gs.SetFlag("item_iron_cellar_key", save: false);
+            gs.UnlockClue("iron_cellar_key");
+            Hotspots.SpawnRipple(stone.Center, new Color(0.9f, 0.86f, 0.72f));
+            gs.Toast("Iron cellar key — kept in Mara's bag (B). Something little and locked waits under the house.");
+            QueueRedraw();
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+                Busy = false;
         }
     }
 
@@ -336,8 +387,33 @@ public partial class Room6Final : MemoryRoomBase
         }
     }
 
+    private void DrawLooseStone()
+    {
+        bool opened = GameState.Instance?.HasFlag("item_iron_cellar_key") ?? false;
+        var niche = new Rect2(1036, 493, 42, 28);
+        if (opened)
+        {
+            DrawRect(niche, new Color(0.03f, 0.025f, 0.02f, 0.96f), true);
+            DrawRect(niche.Grow(-3f), new Color(0.1f, 0.08f, 0.06f, 0.9f), true);
+            var shifted = new Rect2(1048, 526, 38, 20);
+            DrawRect(shifted, new Color(0.48f, 0.45f, 0.4f, 0.95f), true);
+            DrawRect(shifted, new Color(0.18f, 0.16f, 0.13f, 0.95f), false, 2f);
+        }
+        else
+        {
+            // Just enough separation for a careful reader of walls: one
+            // stone sits a shade proud of the rest.
+            DrawRect(niche, new Color(0.52f, 0.49f, 0.43f, 0.28f), true);
+            DrawRect(niche, new Color(0.08f, 0.07f, 0.06f, 0.55f), false, 2f);
+            DrawLine(niche.Position + new Vector2(5, 20), niche.Position + new Vector2(32, 7),
+                new Color(0.12f, 0.1f, 0.08f, 0.5f), 1.5f);
+        }
+    }
+
     protected override void DrawRoom()
     {
+        DrawLooseStone();
+
         if (_tracePoints.Count == 0)
             return;
 

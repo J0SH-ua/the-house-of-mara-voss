@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cmaraventscn"]
+
+[ext_resource type="Script" uid="uid://cmaravent001" path="res://scripts/world/room5/VentCrawl.cs" id="1"]
+
+[node name="VentCrawl" type="Node2D"]
+script = ExtResource("1")

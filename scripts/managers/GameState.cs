@@ -36,6 +36,18 @@ public partial class GameState : Node
     /// <summary>Corruption at which the MEMORY meter is empty (Corruption01 = 1).</summary>
     public static int ShatterThreshold => TierThresholds[^1] + 6;
 
+    // Click discipline is now part of the memory economy. The old repeat-
+    // examine cost was one corruption point; these are the requested
+    // multipliers against that unit. The 2.3 cost is carried fractionally
+    // so it really averages 2.3 instead of silently rounding every click.
+    public const float NonInteractableClickPenalty = 2.0f;
+    public const float RepeatedNonInteractableClickPenalty = 2.3f;
+    public const float RepeatExaminePenalty = 3.0f;
+    private float _clickCorruptionDebt;
+    private string _lastLooseClickScene = string.Empty;
+    private Vector2 _lastLooseClickPosition;
+    private ulong _lastLooseClickMsec;
+
     /// <summary>Fired once when the memory shatters. GameUI plays the bad ending.</summary>
     public event Action MemoryShattered;
     private bool _shattered;
@@ -110,6 +122,9 @@ public partial class GameState : Node
         ["Room_4_puzzle.tscn"] = "Room4",
         ["room_5.tscn"] = "Room5",
         ["apartment_now.tscn"] = "Room5",
+        ["lockpick_puzzle.tscn"] = "Room5",
+        ["vent_crawl.tscn"] = "Room5",
+        ["basement.tscn"] = "Room5",
         ["room_6.tscn"] = "Room6",
         ["porch_447.tscn"] = "Room6",
         ["room_7.tscn"] = "Room7",
@@ -160,6 +175,12 @@ public partial class GameState : Node
         ["LitWindow"] = "the lit window",
         ["PorchSteps"] = "the porch steps",
         ["GardenPath"] = "the garden path",
+        ["Furnace"] = "the cold furnace",
+        ["PreserveShelves"] = "the preserve shelves",
+        ["ToyCrate"] = "the toy crate",
+        ["LockedTrunk"] = "the locked trunk",
+        ["ToolCabinet"] = "the tool cabinet",
+        ["VentDuct"] = "the vent overhead",
     };
 
     // -------------------------------------------------------------------- state
@@ -345,6 +366,21 @@ public partial class GameState : Node
         ["apartment_now"] = ("The life that continued",
             "Outside the house there is an apartment with mail unopened behind the door, a phone no one calls, and a chair worn into the shape of waiting. Mara did not stop living at twenty-two. She only stopped letting the life be witnessed.\n\n" +
             "The house is not where she lives. It is where she goes instead."),
+        ["under_house_vent"] = ("Under the house",
+            "Low in the wall of the room that will not stay one room, a ventilation grille is held by a latch rather than honest screws. Cold air moves behind it, smelling of stone and old apples.\n\n" +
+            "A latch like that wants two slender tools and patience — the kind of patience a locksmith's daughter watched at a workbench. The dark beyond it wants a light of its own."),
+        ["father_lockpicks"] = ("Father's lockpicks",
+            "An oilcloth roll of slender picks and one flat tension wrench, kept clean long after the hands that used them were gone.\n\n" +
+            "A / D rocks the pick across the pins. Hold the mouse button and drag to turn the wrench. Where the plug binds, the pick complains; where the pins are right, it travels. Force a bind and a pick can snap."),
+        ["apartment_flashlight"] = ("A light for under the house",
+            "From the present-day apartment: a heavy flashlight with a dented rim, bought for power cuts and then forgotten in a cupboard.\n\n" +
+            "Below the house its beam follows Mara's hand. Sweep it slowly; clicking at darkness she has not actually seen still strains the memory."),
+        ["iron_cellar_key"] = ("The iron cellar key",
+            "Their father kept a spare below-stairs key where a child was trusted not to look: beneath the loose stone by the garden gate.\n\n" +
+            "It fits the little tool cabinet under the house — not the trunk. Some locks in that family were meant for keys. Others were only ever opened by knowing how they felt inside."),
+        ["basement_negatives"] = ("Straight-on",
+            "In the basement trunk, a tin of photograph negatives their mother never had printed. Held to the flashlight, Ida is looking straight into the camera in every one — not half-turned, not edited gentle by the house.\n\n" +
+            "Mara cannot keep her that way. But for one breath she can know the straight-on face was real, and that the turning-away is only what twelve years have done to the remembering."),
         ["porch_447"] = ("The porch, at 4:47",
             "The light was on. The garden was empty. Between the garden and the last room there is a porch Mara has crossed a thousand times in the memory without ever stopping on it: the exact place where being late became being too late.\n\n" +
             "She called from the steps until her voice gave out. The house has been answering for Ida ever since."),
@@ -628,6 +664,16 @@ public partial class GameState : Node
             _unlockedClues.Add("apartment_now");
         if (RoomExamineTracker.HasRoomBeenFullyExamined("Porch447") && !_unlockedClues.Contains("porch_447"))
             _unlockedClues.Add("porch_447");
+        if (HasFlag("room5_vent_found") && !_unlockedClues.Contains("under_house_vent"))
+            _unlockedClues.Add("under_house_vent");
+        if (HasFlag("item_lockpick_set") && !_unlockedClues.Contains("father_lockpicks"))
+            _unlockedClues.Add("father_lockpicks");
+        if (HasFlag("item_flashlight") && !_unlockedClues.Contains("apartment_flashlight"))
+            _unlockedClues.Add("apartment_flashlight");
+        if (HasFlag("item_iron_cellar_key") && !_unlockedClues.Contains("iron_cellar_key"))
+            _unlockedClues.Add("iron_cellar_key");
+        if (HasFlag("basement_negatives_taken") && !_unlockedClues.Contains("basement_negatives"))
+            _unlockedClues.Add("basement_negatives");
 
         bool allMorning = true;
         foreach (var id in MorningClueIds)
@@ -830,6 +876,9 @@ public partial class GameState : Node
         {
             "flashback_landing.tscn" => "room_4.tscn",
             "apartment_now.tscn" => "room_5.tscn",
+            "lockpick_puzzle.tscn" => "room_5.tscn",
+            "vent_crawl.tscn" => "room_5.tscn",
+            "basement.tscn" => "room_5.tscn",
             _ => file,
         };
         return System.Array.IndexOf(MainPathSceneFiles, file);
@@ -854,6 +903,11 @@ public partial class GameState : Node
         {
             "flashback_landing.tscn" => "Room4Flashback",
             "apartment_now.tscn" => "ApartmentNow",
+            "basement.tscn" => "Basement",
+            // The lockpick close-up and vent are thresholds/puzzles, not
+            // rooms whose loose clicks should use a tracker-room penalty.
+            "lockpick_puzzle.tscn" => null,
+            "vent_crawl.tscn" => null,
             "porch_447.tscn" => "Porch447",
             // Journeys borrow the completed room for Clarity/progress, but
             // they are thresholds, not rooms that can rest/seal.
@@ -875,6 +929,7 @@ public partial class GameState : Node
         "Room4Flashback" => HasFlag("flashback_landing_seen"),
         "Room5" => IsShardRecovered(4),
         "ApartmentNow" => HasFlag("apartment_seen"),
+        "Basement" => HasFlag("basement_seen"),
         "Room6" => IsShardRecovered(5),
         "Porch447" => HasFlag("porch_passed"),
         _ => false,
@@ -938,6 +993,26 @@ public partial class GameState : Node
                 return apLeft.Count > 0
                     ? $"The life that continued, unopened ({apDone}/{apTotal})."
                     : "Nothing here is a puzzle. The door remembers the way back.";
+            case "basement.tscn":
+                RoomExamineTracker.GetRoomProgress("Basement", out int baDone, out int baTotal, out var baLeft);
+                if (baLeft.Count > 0)
+                {
+                    string left = string.Join(", ", baLeft.Select(PrettyObjectName));
+                    return $"Bring the light to what waits below: {left}. ({baDone}/{baTotal})";
+                }
+                if (!HasFlag("basement_trunk_open"))
+                    return "One locked thing below still keeps its own counsel.";
+                if (!HasFlag("basement_negatives_taken"))
+                    return "The trunk below stands open. See what was never printed.";
+                if (!HasFlag("basement_battery_taken"))
+                    return HasFlag("item_iron_cellar_key")
+                        ? "The iron key has a lock below the house."
+                        : "A little cabinet below wants an iron key from somewhere in the garden.";
+                return "Nothing below the house is still hiding. Climb back when you are ready.";
+            case "lockpick_puzzle.tscn":
+                return "A / D moves the pick. Hold and drag the mouse to turn the wrench — gently.";
+            case "vent_crawl.tscn":
+                return "Crawl toward the light at the far end.";
             case "bedroom_prologue.tscn":
                 RoomExamineTracker.GetRoomProgress("Bedroom", out int bDone, out int bTotal, out var bLeft);
                 return bLeft.Count > 0
@@ -1107,7 +1182,39 @@ public partial class GameState : Node
             return ("Nothing here can be changed — only finally seen. The photograph, the light, the runner. The end of the hall leads back when you are ready.", null);
 
         if (file == "apartment_now.tscn")
-            return ("This is not a puzzle room. It is the life that continued while she was in the house. The mail, the phone, the chair. The door leads back.", null);
+            return ("This is not a puzzle room. It is the life that continued while she was in the house. The mail, the phone, the chair — and one practical thing in a cupboard for somewhere dark. The door leads back.", null);
+
+        if (file == "lockpick_puzzle.tscn")
+        {
+            return NextHintLevel("Lockpick") switch
+            {
+                1 => ("Move the pick with A and D. Hold the mouse button and drag sideways to turn the wrench; let go the moment it starts complaining.", null),
+                2 => ("Nudge the pick, then test the wrench a little at a time. When the plug starts to travel instead of knocking, stay near that angle and use short drags.", null),
+                _ => ("Try the pick in small steps from the left, then the right. The closer pick clicks become to a clean click, the nearer the pins are. Never keep dragging through a hard stop — that is what snaps picks.", null),
+            };
+        }
+
+        if (file == "vent_crawl.tscn")
+            return ("Click through the crawl, keep the light toward the sounds, then click the lit grille when it fills the dark.", null);
+
+        if (file == "basement.tscn")
+        {
+            RoomExamineTracker.GetRoomProgress("Basement", out _, out _, out var baRemaining);
+            int baLevel = NextHintLevel("Basement");
+            if (baRemaining.Count > 0)
+                return (baLevel <= 1
+                    ? "Sweep slowly. The beam is your eyes down here."
+                    : $"The light has not rested on {string.Join(", ", baRemaining.Select(PrettyObjectName))} yet.", baLevel >= 3 ? baRemaining[0] : null);
+            if (!HasFlag("basement_trunk_open"))
+                return ("A trunk under the house keeps its own lock. The picks remember how locks feel inside.", baLevel >= 3 ? "LockedTrunk" : null);
+            if (!HasFlag("basement_negatives_taken"))
+                return ("The trunk is open now. Beneath cedar and blankets is one flat thing their mother never had printed.", baLevel >= 3 ? "LockedTrunk" : null);
+            if (!HasFlag("basement_battery_taken"))
+                return (HasFlag("item_iron_cellar_key")
+                    ? "Try the iron key on the little cabinet in the wall."
+                    : "The little cabinet wants a key. In the garden, their father trusted a loose stone by the gate more than a hook.", baLevel >= 3 ? "ToolCabinet" : null);
+            return ("Nothing below is still hiding. The vent overhead is the way back up.", null);
+        }
 
         if (file == "porch_447.tscn")
             return ("She stopped here for twelve years without ever stopping. The light, the steps, the path. The front door is the way on.", null);
@@ -1176,6 +1283,61 @@ public partial class GameState : Node
             int c = Globals.Instance?.CORRUPTION_COUNT ?? 0;
             return Mathf.Clamp(c / (float)(TierThresholds[^1] + 6), 0f, 1f);
         }
+    }
+
+    /// <summary>Add fractional click corruption, applying whole points as
+    /// soon as they accumulate. This is what lets a repeated empty click
+    /// cost 2.3 memory units without changing the integer MEMORY meter.</summary>
+    public void AddClickCorruption(float amount)
+    {
+        if (amount <= 0f || _shattered)
+            return;
+
+        _clickCorruptionDebt = Mathf.Clamp(_clickCorruptionDebt + amount, 0f, 24f);
+        int whole = Mathf.FloorToInt(_clickCorruptionDebt + 0.0001f);
+        if (whole <= 0)
+            return;
+
+        _clickCorruptionDebt -= whole;
+        AddCorruption(whole);
+    }
+
+    /// <summary>An already-faced examinable, deliberately faced again.</summary>
+    public void RegisterRepeatExaminePenalty() => AddClickCorruption(RepeatExaminePenalty);
+
+    /// <summary>Register a left click that reached the room but claimed no
+    /// interactable. The first loose click costs 2.0× the old repeat-look
+    /// unit; another click in nearly the same place, soon after, costs
+    /// 2.3×. Journeys, menus, cutscenes and sealed rooms are excluded by
+    /// the caller/scene gates here. Returns the multiplier actually used,
+    /// or 0 when the click was not punishable.</summary>
+    public float RegisterNonInteractableClick(Vector2 position)
+    {
+        if (Globals.Instance == null || _shattered || !string.IsNullOrWhiteSpace(CompletedEnding))
+            return 0f;
+
+        string scenePath = SceneManager.CurrentScenePath ?? string.Empty;
+        string trackerRoom = SceneTrackerRoomName(scenePath);
+        if (string.IsNullOrEmpty(trackerRoom) || IsRoomSealed(trackerRoom))
+            return 0f;
+        // Clicks during the first-person waking/blinking beat are not
+        // exploration clicks yet.
+        if (trackerRoom == "Bedroom" && !HasFlag("prologue_awake"))
+            return 0f;
+
+        ulong now = Time.GetTicksMsec();
+        bool repeated = scenePath == _lastLooseClickScene
+            && now - _lastLooseClickMsec <= 1400
+            && position.DistanceSquaredTo(_lastLooseClickPosition) <= 110f * 110f;
+        float penalty = repeated
+            ? RepeatedNonInteractableClickPenalty
+            : NonInteractableClickPenalty;
+
+        _lastLooseClickScene = scenePath;
+        _lastLooseClickPosition = position;
+        _lastLooseClickMsec = now;
+        AddClickCorruption(penalty);
+        return penalty;
     }
 
     public void AddCorruption(int amount)
@@ -1746,6 +1908,9 @@ public partial class GameState : Node
         ExaminesPerformed = 0;
         ClarifiesUsed = 0;
         CorruptionPeak = 0;
+        _clickCorruptionDebt = 0f;
+        _lastLooseClickScene = string.Empty;
+        _lastLooseClickMsec = 0;
         _pendingStartScene = null;
         _furthestScenePath = string.Empty;
         _fragmentDisplayOrder = ShuffledDisplayOrder();
@@ -1783,6 +1948,7 @@ public partial class GameState : Node
             ["examines"] = ExaminesPerformed,
             ["clarifies"] = ClarifiesUsed,
             ["corruption_peak"] = CorruptionPeak,
+            ["click_corruption_debt"] = _clickCorruptionDebt,
             ["progress"] = RoomExamineTracker.ExportProgress(),
         };
 
@@ -1888,6 +2054,7 @@ public partial class GameState : Node
         ExaminesPerformed = Get(data, "examines", 0).AsInt32();
         ClarifiesUsed = Get(data, "clarifies", 0).AsInt32();
         CorruptionPeak = Get(data, "corruption_peak", Globals.Instance.CORRUPTION_COUNT).AsInt32();
+        _clickCorruptionDebt = Mathf.Clamp((float)Get(data, "click_corruption_debt", 0).AsDouble(), 0f, 0.999f);
 
         ApplyBoolArray(data, "shards_collected", Globals.SHARDS_COLLECTED);
         var placedCopy = new Array<bool>(Globals.Instance.SHARDS_PLACED);
@@ -2039,6 +2206,9 @@ public partial class GameState : Node
         ExaminesPerformed = 0;
         ClarifiesUsed = 0;
         CorruptionPeak = 0;
+        _clickCorruptionDebt = 0f;
+        _lastLooseClickScene = string.Empty;
+        _lastLooseClickMsec = 0;
     }
 
     // ------------------------------------------------------------ continue flow

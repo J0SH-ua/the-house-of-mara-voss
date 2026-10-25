@@ -516,6 +516,97 @@ def build_truth_sfx():
     write_wav("truth_water_splash.wav", water, peak=0.66)
 
 
+def build_under_house_sfx():
+    """Tools and weather for the optional route beneath Room 5.
+
+    The lock sounds are close, dry and tactile, because the minigame is
+    played mostly by ear. The vent is elbows and knees against thin
+    metal; the basement loop keeps the house's furnace breath, drips
+    and small settling sounds in front of its very quiet score.
+    """
+    rng = random.Random(5117)
+
+    def local_noise(seconds):
+        return [rng.uniform(-1.0, 1.0) for _ in range(sec(seconds))]
+
+    def metal_tick(freq=2450, seconds=0.13):
+        out = env_exp(sine(freq, seconds), 0.0006, 0.025)
+        add_into(out, env_exp(sine(freq * 1.52, seconds), 0.0006, 0.017), 0, 0.45)
+        add_into(out, env_exp(
+            filt(local_noise(0.055), "bp", freq * 0.82, q=1.3),
+            0.0006, 0.011), 0, 0.55)
+        return out
+
+    # One pin worrying against steel; game pitch carries closeness.
+    tick = zeros(0.16)
+    add_into(tick, metal_tick(), 0.0, 0.9)
+    add_into(tick, thump(310, 0.08, sweep_to=0.7), 0.0, 0.18)
+    write_wav("lockpick_tick.wav", filt(tick, "lp", 5200), peak=0.34)
+
+    # Strain, a bright failure, and the broken tip finding the floor.
+    snap = zeros(0.62)
+    strain = env_ar(
+        filt(tone_wow(980, 0.13, depth=0.08, rate=7.0), "bp", 1500, q=2.2),
+        0.008, 0.035)
+    add_into(snap, strain, 0.0, 0.32)
+    add_into(snap, thump(240, 0.15, sweep_to=0.48), 0.12, 0.32)
+    add_into(snap, env_exp(
+        filt(local_noise(0.11), "bp", 2050, q=0.9),
+        0.0005, 0.020), 0.12, 1.0)
+    add_into(snap, metal_tick(3100, 0.18), 0.122, 0.7)
+    add_into(snap, metal_tick(2250, 0.12), 0.31, 0.34)
+    add_into(snap, metal_tick(2700, 0.10), 0.43, 0.22)
+    write_wav("lockpick_snap.wav", filt(snap, "lp", 5600), peak=0.52)
+
+    # A heavy old switch: contact, body knock, a tiny filament ring.
+    click = zeros(0.24)
+    add_into(click, metal_tick(1750, 0.10), 0.0, 0.62)
+    add_into(click, thump(180, 0.10, sweep_to=0.62), 0.002, 0.40)
+    add_into(click, metal_tick(2350, 0.09), 0.055, 0.35)
+    write_wav("flashlight_click.wav", filt(click, "lp", 4300), peak=0.42)
+
+    # A short cycle of duct travel, looped by varied one-shot calls.
+    crawl = zeros(3.6)
+    for at, body_hz, gain in (
+        (0.08, 82, 0.85), (0.78, 74, 0.72), (1.50, 86, 0.88),
+        (2.23, 77, 0.76), (2.94, 83, 0.84),
+    ):
+        add_into(crawl, thump(body_hz, 0.26, sweep_to=0.55), at, 0.42 * gain)
+        scrape = env_ar(
+            filt_sweep(local_noise(0.48), "bp", 420, 180, q=1.1),
+            0.055, 0.18)
+        add_into(crawl, scrape, at + 0.02, 0.50 * gain)
+        cloth = env_ar(
+            filt(local_noise(0.38), "lp", 520, passes=2),
+            0.04, 0.16)
+        add_into(crawl, cloth, at + 0.05, 0.34 * gain)
+        add_into(crawl, metal_tick(rng.uniform(1250, 1900), 0.10),
+                 at + rng.uniform(0.10, 0.28), 0.13 * gain)
+    env_ar(crawl, 0.01, 0.18)
+    write_wav("vent_crawl.wav", filt(crawl, "lp", 2400), peak=0.48)
+
+    # Below-stairs air: furnace body, water finding its way, wood above.
+    ambience = filt(brown(18.0, leak=0.99), "lp", 190, passes=2)
+    add_into(ambience, sine(49.0, 18.0), 0, 0.035)
+    add_into(ambience, sine(98.0, 18.0), 0, 0.012)
+    air = filt(local_noise(18.0), "bp", 260, q=0.45)
+    add_into(ambience, air, 0, 0.045)
+    for at, freq in ((2.15, 920), (5.85, 760), (10.30, 860), (14.75, 690)):
+        drip = env_exp(sine(freq, 0.20), 0.001, 0.038)
+        add_into(drip, env_exp(sine(freq * 0.63, 0.16), 0.001, 0.030), 0.018, 0.4)
+        add_into(ambience, drip, at, 0.16)
+        add_into(ambience, drip, at + 0.42, 0.045)
+    for at, freq in ((3.7, 118), (8.9, 104), (13.2, 126)):
+        creak = env_ar(
+            filt(tone_wow(freq, 0.62, depth=0.055, rate=1.7), "bp", 330, q=1.5),
+            0.12, 0.28)
+        add_into(ambience, creak, at, 0.10)
+    for i in range(len(ambience)):
+        ambience[i] *= 0.88 + 0.12 * math.sin(2 * math.pi * 0.045 * (i / SR))
+    ambience = seamless(ambience, 16.0, 2.0)
+    write_wav("ambience_basement.wav", ambience, peak=0.42)
+
+
 def build_room_music():
     """Six seamless, room-specific loops in the same F-minor felt/music-box world."""
     print("Generating room music ->", os.path.normpath(BG_DIR))
@@ -995,6 +1086,7 @@ def build():
     build_crack_sfx()
     build_footstep_sfx()
     build_truth_sfx()
+    build_under_house_sfx()
     build_room_music()
     build_collapse_music()
     build_ending_music()

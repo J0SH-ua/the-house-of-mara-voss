@@ -11,7 +11,9 @@ using Godot;
 /// stepping through the rain puts Mara inside the adult life the slide keeps
 /// interrupting — unopened mail, a silent phone, a chair in the corner.
 /// Facing all three writes "The life that continued" into the Journal.
-/// The entry door returns to Room 5 at any time.
+/// The entry door returns to Room 5 at any time. One practical thing
+/// also waits here: the heavy flashlight in the far-left cupboard,
+/// bought for power cuts and needed under the childhood house.
 /// </summary>
 public partial class ApartmentNow : MemoryRoomBase
 {
@@ -30,6 +32,11 @@ public partial class ApartmentNow : MemoryRoomBase
             new Rect2(620, 472, 270, 132), new Vector2(755, 538), Sfx.PageTurn, 0.9f);
         yield return new Hotspot("CornerChair", "The Chair in the Corner",
             new Rect2(905, 285, 225, 290), new Vector2(1015, 430), Sfx.Examine, 0.7f);
+        // The painted cupboard at the far-left edge. Practical, not one
+        // of the three silences this room asks Mara to face.
+        yield return new Hotspot("UtilityCupboard", "The Cupboard by the Wall",
+            new Rect2(0, 448, 112, 108), new Vector2(56, 500),
+            Sfx.DrawerOpen, 0.8f, PointerCursorPath, false);
         yield return new Hotspot("EntryDoor", "The Entry Door",
             new Rect2(640, 105, 215, 355), new Vector2(747, 282),
             Sfx.DoorCreak, 0.95f, PointerCursorPath, false);
@@ -45,6 +52,13 @@ public partial class ApartmentNow : MemoryRoomBase
     {
         if (hotspot == null || Busy)
             return;
+
+        // A cupboard is opened with hands, whatever verb happens to be armed.
+        if (hotspot.Id == "UtilityCupboard")
+        {
+            _ = OpenUtilityCupboardAsync(hotspot);
+            return;
+        }
 
         if (MemoryVerbSystem.Active != MemoryVerb.None)
         {
@@ -81,6 +95,43 @@ public partial class ApartmentNow : MemoryRoomBase
             case "EntryDoor":
                 _ = LeaveApartmentAsync();
                 break;
+        }
+    }
+
+    private async Task OpenUtilityCupboardAsync(Hotspot cupboard)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            var gs = GameState.Instance;
+            AudioManager.Play(Sfx.DrawerOpen, -8f, 0.8f);
+
+            if (gs != null && gs.HasFlag("item_flashlight"))
+            {
+                await Say("Batteries, a plunger, one brave little toolkit. The flashlight is already in my bag, doing more good there than it ever did in here.", 4.5f, 24);
+                return;
+            }
+
+            await SaySequence(
+                "The cupboard I never open. Cleaning stuff, a plunger — and the big flashlight I bought the winter the power kept going out. It still has weight. It still works.",
+                "Click. A good, stupid, practical light. The kind for cellars and other places nobody puts in photographs.");
+            if (!GodotObject.IsInstanceValid(this) || gs == null)
+                return;
+
+            AudioManager.Play(Sfx.FlashlightClick, -6f);
+            await WaitSeconds(0.2f);
+            AudioManager.Play(Sfx.FlashlightClick, -8f, 0.9f);
+            gs.SetFlag("item_flashlight", save: false);
+            gs.UnlockClue("apartment_flashlight");
+            Hotspots.SpawnRipple(cupboard.Center, new Color(1f, 0.9f, 0.6f));
+            gs.Toast("Flashlight — kept in Mara's bag (B). Somewhere under the house, the dark just got smaller.");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+                Busy = false;
         }
     }
 
