@@ -231,16 +231,24 @@ public abstract partial class MemoryRoomBase : Node2D
         else
             DrawRect(screen, new Color(0.03f, 0.025f, 0.02f));
 
-        if (_hovered != null)
-        {
-            float alpha = Settings.ReduceMotionOrDefault()
-                ? 0.72f
-                : 0.62f + 0.22f * (float)Math.Sin(Time.GetTicksMsec() / 210.0);
-            DrawRect(_hovered.Rect, new Color(1f, 0.89f, 0.58f, 0.07f));
-            DrawRect(_hovered.Rect, new Color(1f, 0.89f, 0.58f, alpha), false, 2f);
-        }
+        DrawHoveredHotspotOutline();
 
         DrawRoom();
+    }
+
+    /// <summary>The shared gold hover outline. Exposed for the one room
+    /// that replaces _Draw wholesale (Room 4's cropped door close-up), so
+    /// its custom painting still gets the ordinary hover affordance.</summary>
+    protected void DrawHoveredHotspotOutline()
+    {
+        if (_hovered == null)
+            return;
+
+        float alpha = Settings.ReduceMotionOrDefault()
+            ? 0.72f
+            : 0.62f + 0.22f * (float)Math.Sin(Time.GetTicksMsec() / 210.0);
+        DrawRect(_hovered.Rect, new Color(1f, 0.89f, 0.58f, 0.07f));
+        DrawRect(_hovered.Rect, new Color(1f, 0.89f, 0.58f, alpha), false, 2f);
     }
 
     // -------------------------------------------------------------- helpers
@@ -508,26 +516,20 @@ public abstract partial class MemoryRoomBase : Node2D
     /// </summary>
     private bool IsOverUi(Vector2 position)
     {
-        if (position.Y >= 606f)
-            return true;
+        // Ask the HUD which actual buttons are live under this point. The
+        // previous blanket regions blocked the entire expanded Memory bar
+        // even when it had collapsed to its small tab, and blocked every
+        // point below y=606; together they made most of Room 5's painted
+        // floor photographs impossible to hover or click. Empty panel
+        // space and the bottom of the room are room space again.
+        var ui = GameUI.Instance;
+        if (ui != null)
+            return ui.IsPointOverInteractiveHud(position);
 
-        if (position.X >= 1070f && position.X <= 1144f && position.Y >= 136f && position.Y <= 208f) // icon-only Bag button, top-right
-            return true;
-
-        if (position.X >= 12f && position.X <= 276f && position.Y >= 552f &&
-            SceneManager.TryGetBackTarget(SceneManager.CurrentScenePath, out _, out _))
-            return true;
-
-        // "Return to the new room" forward button, bottom-right.
-        if (position.X >= 876f && position.Y >= 552f &&
-            GameState.Instance != null && GameState.Instance.TryGetForwardScene(out _))
-            return true;
-
-        var gs = GameState.Instance;
-        bool anyVerb = gs != null &&
-                       (gs.HasVerb(MemoryVerb.Echo) || gs.HasVerb(MemoryVerb.Anchor) ||
-                        gs.HasVerb(MemoryVerb.Trace) || gs.HasVerb(MemoryVerb.Release));
-        return anyVerb && position.X >= 220f && position.X <= 932f &&
-               position.Y >= 540f && position.Y <= 604f;
+        // One-frame/standalone fallback before the autoload is available:
+        // protect only the Bag icon's familiar rectangle, never a whole
+        // strip of the room painting.
+        return position.X >= 1070f && position.X <= 1144f &&
+               position.Y >= 136f && position.Y <= 208f;
     }
 }

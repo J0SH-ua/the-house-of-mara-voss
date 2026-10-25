@@ -31,6 +31,7 @@ public partial class SceneManager : Node
 		["room_1_puzzle.tscn"] = ("res://scenes/world/room_1.tscn", "← Step Back"),
 		["room_2.tscn"] = ("res://scenes/world/room_1.tscn", "← Previous Room"),
 		["room_2_puzzle.tscn"] = ("res://scenes/world/room_2.tscn", "← Step Back"),
+		["difference_investigation.tscn"] = ("res://scenes/world/room_2_puzzle.tscn", "← Step Back"),
 		["room_3.tscn"] = ("res://scenes/world/room_2.tscn", "← Previous Room"),
 		["room_4.tscn"] = ("res://scenes/world/room_3.tscn", "← Previous Room"),
 		["Room_4_puzzle.tscn"] = ("res://scenes/world/room_4.tscn", "← Step Back"),

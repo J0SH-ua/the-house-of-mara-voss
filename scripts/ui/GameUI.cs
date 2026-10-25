@@ -41,9 +41,11 @@ public partial class GameUI : CanvasLayer
     private Label _bagDetailTitle;
     private Label _bagDetailStatus;
     private RichTextLabel _bagDetailBody;
+    private GridContainer _bagItemGrid;
     private Label _bagItemsLabel;
     private Label _bagVerbsLabel;
     private int _bagSelectedIndex = -1;
+    private string _bagSelectedItemId = string.Empty;
     private bool _openedBagFromPause;
 
     private static readonly string[] BagShortNames =
@@ -64,6 +66,39 @@ public partial class GameUI : CanvasLayer
         "res://assets/images/core/shards/fragment_letter.png",
         "res://assets/images/core/shards/fragment_apple.png",
     ];
+
+    /// <summary>One practical, non-fragment thing Mara is carrying (or
+    /// has put into the lock it belongs to), ready to draw as its own
+    /// illustrated Bag card and detail page.</summary>
+    private sealed class PracticalItemView
+    {
+        public string Id { get; }
+        public string Name { get; }
+        public string IconPath { get; }
+        public string CardStatus { get; }
+        public string DetailStatus { get; }
+        public string Body { get; }
+        public bool InBag { get; }
+
+        public PracticalItemView(
+            string id,
+            string name,
+            string iconPath,
+            string cardStatus,
+            string detailStatus,
+            string body,
+            bool inBag = true)
+        {
+            Id = id;
+            Name = name;
+            IconPath = iconPath;
+            CardStatus = cardStatus;
+            DetailStatus = detailStatus;
+            Body = body;
+            InBag = inBag;
+        }
+    }
+
     private Label _toastLabel;
     private PanelContainer _toastPanel;
     private Tween _toastTween;
@@ -355,6 +390,68 @@ public partial class GameUI : CanvasLayer
     private int _heldPhase;    // 0 = resting in her hand, 1 = held up to the light
     private bool _heldBusy;    // showing, or still flying to the bag
 
+    /// <summary>Practical pickups share the fragment moment exactly:
+    /// first the thing is in Mara's palm, then she lifts it to the
+    /// light with one line of her own, then the next click visibly
+    /// puts it into the Bag. They are detected from their item flags,
+    /// with the same first-run baseline as fragments so old saves and
+    /// silent progress backfills do not replay a pocketful of moments.</summary>
+    private sealed class HeldPracticalDefinition
+    {
+        public string Flag { get; }
+        public string Name { get; }
+        public string IconPath { get; }
+        public string Line { get; }
+
+        public HeldPracticalDefinition(string flag, string name, string iconPath, string line)
+        {
+            Flag = flag;
+            Name = name;
+            IconPath = iconPath;
+            Line = line;
+        }
+    }
+
+    private static readonly HeldPracticalDefinition[] HeldPracticalDefinitions =
+    [
+        new("item_hairpin", "Mum's bent hairpin",
+            "res://assets/images/core/items/hairpin.png",
+            "Mum's. Bent from being useful. ... Come on, then. Be useful again."),
+        new("item_hall_key_bridge", "Copper bridge key",
+            "res://assets/images/core/items/bridge_key.png",
+            "Copper. Green at the edges. A bridge small enough to carry in my hand."),
+        new("item_hall_key_door", "Little door key",
+            "res://assets/images/core/items/door_key.png",
+            "A door on a key, for a door in a door. ... Fine. I stopped expecting subtlety a while ago."),
+        new("item_hall_key_circle", "Circle key",
+            "res://assets/images/core/items/circle_key.png",
+            "No beginning. No end. Preserved under her name like it was waiting to be believed."),
+        new("item_lockpick_set", "Father's lockpick set",
+            "res://assets/images/core/items/lockpick_set.png",
+            "Dad's handwriting. Dad's tools. I held the lamp for these hands half my childhood."),
+        new("item_fine_tension_wrench", "Fine tension wrench",
+            "res://assets/images/core/items/fine_wrench.png",
+            "FOR Mara HANDS. ... He made a place for mine before I knew I'd need it."),
+        new("item_flashlight", "Flashlight",
+            "res://assets/images/core/items/flashlight.png",
+            "heavy. Dented. Real in a way this house resents. Good."),
+        new("basement_battery_taken", "Strong battery",
+            "res://assets/images/core/items/flashlight.png",
+            "A stronger battery. Even the dark gets less room to negotiate."),
+        new("item_iron_cellar_key", "Iron cellar key",
+            "res://assets/images/core/items/iron_key.png",
+            "cold from the earth under the gate stone. Dad trusted hiding places more than hooks."),
+        new("basement_negatives_taken", "Photograph negatives",
+            "res://assets/images/core/items/negatives.png",
+            "Faces reversed. Grass burning white. Some things were kept unprinted because looking straight was too much that year."),
+    ];
+
+    private readonly HashSet<string> _heldItemSeen = new();
+    private readonly List<HeldPracticalDefinition> _heldItemQueue = new();
+    private HeldPracticalDefinition _heldCurrentItem;
+    private bool _heldItemBaselineSynced;
+    private bool _heldShowingItem;
+
     // Where a fragment rests in the palm art, and the art's shape.
     private const float HeldPalmX = 0.51f;
     private const float HeldPalmY = 0.36f;
@@ -501,6 +598,7 @@ public partial class GameUI : CanvasLayer
             gs.VerbsChanged += RefreshMemoryVerbBar;
             gs.VerbsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.StoryFlagsChanged += RefreshHud;
+            gs.StoryFlagsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
             gs.CollapseStarted += OnCollapseStarted;
@@ -883,6 +981,44 @@ public partial class GameUI : CanvasLayer
             return true;
         if ((_verbPanel?.Visible ?? false) && _verbPanel.GetGlobalRect().Grow(6f).HasPoint(position))
             return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Exact live hit-test for room scripts whose _Input runs in the room
+    /// SubViewport before these root-HUD buttons can claim the same press.
+    /// Only visible, enabled buttons protect their own rectangles. The
+    /// mouse-transparent Memory Verb panel/row deliberately do not: its
+    /// empty corners sit over real floor-level room hotspots (notably Room
+    /// 5's scattered photographs), and those painted things must remain
+    /// clickable whenever no actual button is covering them.
+    /// </summary>
+    public bool IsPointOverInteractiveHud(Vector2 position)
+    {
+        if (_context != UiContext.Game)
+            return false;
+        if (IsBlockingOverlayOpen())
+            return true;
+
+        bool Over(Control control)
+        {
+            if (control == null || !control.Visible || !control.IsVisibleInTree())
+                return false;
+            if (control is Button button && button.Disabled)
+                return false;
+            return control.GetGlobalRect().Grow(2f).HasPoint(position);
+        }
+
+        if (Over(_bagButton) || Over(_backButton) || Over(_forwardButton) ||
+            Over(_rememberButton) || Over(_verbToggleButton))
+            return true;
+
+        foreach (var button in _verbButtons.Values)
+        {
+            if (Over(button))
+                return true;
+        }
+
         return false;
     }
 
@@ -1881,7 +2017,7 @@ public partial class GameUI : CanvasLayer
         _bagPanel.AddChild(center);
 
         var panel = MakePanel();
-        panel.CustomMinimumSize = new Vector2(940, 560);
+        panel.CustomMinimumSize = new Vector2(1020, 600);
         center.AddChild(panel);
 
         var vbox = new VBoxContainer();
@@ -1901,15 +2037,53 @@ public partial class GameUI : CanvasLayer
         split.AddThemeConstantOverride("separation", 16);
         vbox.AddChild(split);
 
+        // The satchel now has two visibly different kinds of contents:
+        // memory fragments above, and the ordinary things Mara's hands
+        // carry below. The left column scrolls rather than squeezing
+        // either set into unreadably small cards.
+        var bagScroll = new ScrollContainer
+        {
+            CustomMinimumSize = new Vector2(548, 0),
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            VerticalScrollMode = ScrollContainer.ScrollMode.Auto,
+        };
+        split.AddChild(bagScroll);
+
+        var bagContents = new VBoxContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        bagContents.AddThemeConstantOverride("separation", 8);
+        bagScroll.AddChild(bagContents);
+
+        var fragmentHeading = MakeLabel("MEMORY FRAGMENTS", 16, new Color(0.95f, 0.84f, 0.57f, 0.95f));
+        fragmentHeading.HorizontalAlignment = HorizontalAlignment.Left;
+        bagContents.AddChild(fragmentHeading);
+
         _bagGrid = new GridContainer
         {
             Columns = 3,
-            CustomMinimumSize = new Vector2(520, 290),
-            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(540, 284),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
         };
         _bagGrid.AddThemeConstantOverride("h_separation", 8);
         _bagGrid.AddThemeConstantOverride("v_separation", 8);
-        split.AddChild(_bagGrid);
+        bagContents.AddChild(_bagGrid);
+
+        var itemHeading = MakeLabel("THINGS Mara'S HANDS CARRY", 16, new Color(0.95f, 0.84f, 0.57f, 0.95f));
+        itemHeading.HorizontalAlignment = HorizontalAlignment.Left;
+        bagContents.AddChild(itemHeading);
+
+        _bagItemGrid = new GridContainer
+        {
+            Columns = 3,
+            CustomMinimumSize = new Vector2(540, 0),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        _bagItemGrid.AddThemeConstantOverride("h_separation", 8);
+        _bagItemGrid.AddThemeConstantOverride("v_separation", 8);
+        bagContents.AddChild(_bagItemGrid);
 
         var detail = new VBoxContainer
         {
@@ -2021,6 +2195,133 @@ public partial class GameUI : CanvasLayer
             OpenBag();
     }
 
+    private static List<PracticalItemView> BuildPracticalItemViews(GameState gs)
+    {
+        var items = new List<PracticalItemView>();
+        if (gs == null)
+            return items;
+
+        if (gs.HasFlag("item_hairpin"))
+        {
+            items.Add(new PracticalItemView(
+                "item_hairpin",
+                "Mum's bent hairpin",
+                "res://assets/images/core/items/hairpin.png",
+                "IN BAG",
+                "Taken from behind the bedroom alarm clock",
+                "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for.\n\nIt can hold the kitchen padlock's bent shackle and worry open the last preserve jar without breaking Ida's glass. Small practical things travel farther in this house than grand gestures do."));
+        }
+
+        if (gs.HasFlag("item_hall_key_bridge"))
+        {
+            bool inserted = gs.HasFlag("room4_key_bridge_inserted") || gs.HasFlag("room4_door_opened");
+            items.Add(new PracticalItemView(
+                "item_hall_key_bridge",
+                "Copper bridge key",
+                "res://assets/images/core/items/bridge_key.png",
+                inserted ? "LEFT KEYHOLE" : "IN BAG",
+                inserted ? "Standing in the hallway door's left keyhole" : "Found beside the brass key in the kitchen drawer",
+                "A smaller copper key gone green at the edges. Its bow is cut like a little bridge: two posts, one arch.\n\nIt is not a fragment. It has actual weight and actual teeth, and it belongs beneath the hallway door's bridge plate.",
+                inBag: !inserted));
+        }
+
+        if (gs.HasFlag("item_hall_key_door"))
+        {
+            bool inserted = gs.HasFlag("room4_key_door_inserted") || gs.HasFlag("room4_door_opened");
+            items.Add(new PracticalItemView(
+                "item_hall_key_door",
+                "Little door key",
+                "res://assets/images/core/items/door_key.png",
+                inserted ? "CENTRE KEYHOLE" : "IN BAG",
+                inserted ? "Standing in the hallway door's centre keyhole" : "Taped behind the sitting-room photograph",
+                "A little iron key whose bow is a miniature door, complete with its own impossible knob.\n\nMara earned it by remembering the sitting room honestly for five seconds. It belongs beneath the hallway door's little-door plate.",
+                inBag: !inserted));
+        }
+
+        if (gs.HasFlag("item_hall_key_circle"))
+        {
+            bool inserted = gs.HasFlag("room4_key_circle_inserted") || gs.HasFlag("room4_door_opened");
+            items.Add(new PracticalItemView(
+                "item_hall_key_circle",
+                "Circle key",
+                "res://assets/images/core/items/circle_key.png",
+                inserted ? "RIGHT KEYHOLE" : "IN BAG",
+                inserted ? "Standing in the hallway door's right keyhole" : "Preserved under Ida's folded name tape",
+                "A round-bowed key with no beginning and no end to its ring, kept at the bottom of the last preserve jar.\n\nIt belongs beneath the hallway door's empty brass circle.",
+                inBag: !inserted));
+        }
+
+        if (gs.HasFlag("item_lockpick_set"))
+        {
+            items.Add(new PracticalItemView(
+                "item_lockpick_set",
+                "Father's lockpick set",
+                "res://assets/images/core/items/lockpick_set.png",
+                "IN BAG",
+                "Father's oilcloth roll, carried in Mara's bag",
+                "An oilcloth roll of slender picks and a flat tension wrench, kept clean long after the hands that used them were gone.\n\nA / D moves a pick quickly; Shift makes it fine. The wrench follows mouse movement with no button held. Locks answer in layers, and forcing a bind can snap the pick in Mara's hands."));
+        }
+
+        if (gs.HasFlag("item_fine_tension_wrench"))
+        {
+            items.Add(new PracticalItemView(
+                "item_fine_tension_wrench",
+                "Fine tension wrench",
+                "res://assets/images/core/items/fine_wrench.png",
+                "FITTED",
+                "Wrapped in tissue under the apology letters",
+                "One flat strip of spring steel, thinner than anything in her father's roll. His pencil on the tissue says FOR Mara HANDS.\n\nFitted to the lockpick set, deep pins read about a degree sooner and binds bite a little less. It does not pick a lock for her. It only listens more kindly."));
+        }
+
+        if (gs.HasFlag("item_flashlight"))
+        {
+            bool strongBattery = gs.HasFlag("basement_battery_taken");
+            items.Add(new PracticalItemView(
+                "item_flashlight",
+                "Flashlight",
+                "res://assets/images/core/items/flashlight.png",
+                strongBattery ? "STRONG BATTERY" : "IN BAG",
+                strongBattery ? "The cellar cabinet's battery made its beam wider" : "Taken from the present-day apartment cupboard",
+                "A heavy flashlight with a dented rim, bought for power cuts and forgotten in a cupboard.\n\nIn the vent and under the house its beam follows the mouse on its own — no click or hold. Hold W to crawl; release W and Mara stops."));
+        }
+
+        if (gs.HasFlag("item_iron_cellar_key"))
+        {
+            items.Add(new PracticalItemView(
+                "item_iron_cellar_key",
+                "Iron cellar key",
+                "res://assets/images/core/items/iron_key.png",
+                "IN BAG",
+                "Kept beneath the loose stone by the garden gate",
+                "Their father kept the below-stairs spare where a child was trusted not to look: under a loose stone by the gate.\n\nIts plain iron teeth belong to the little tool cabinet in the basement wall."));
+        }
+
+        if (gs.HasFlag("basement_negatives_taken"))
+        {
+            items.Add(new PracticalItemView(
+                "basement_negatives_taken",
+                "Photograph negatives",
+                "res://assets/images/core/items/negatives.png",
+                "IN BAG",
+                "Taken from the locked trunk below the house",
+                "A tin of negatives their mother never had printed. Held to a light they are all reversed weather: dark faces, bright grass, two girls at the edge of an ordinary afternoon.\n\nNot everything unprinted was unloved. Some of it was only too much, that year, to look at straight."));
+        }
+
+        return items;
+    }
+
+    private static PracticalItemView FindPracticalItem(List<PracticalItemView> items, string id)
+    {
+        if (items == null || string.IsNullOrEmpty(id))
+            return null;
+        foreach (var item in items)
+        {
+            if (item.Id == id)
+                return item;
+        }
+        return null;
+    }
+
     private void RefreshBagButton()
     {
         if (_bagButton == null)
@@ -2029,9 +2330,10 @@ public partial class GameUI : CanvasLayer
         var gs = GameState.Instance;
         int carried = gs?.CountCarried() ?? 0;
         int recovered = gs?.CountRecovered() ?? 0;
+        int practical = BuildPracticalItemViews(gs).Count;
         // The button itself stays wordless (satchel icon); the count lives
         // in the tooltip and in the bag panel.
-        _bagButton.TooltipText = $"Mara's bag — {carried} carried, {recovered}/6 recovered (B or I)";
+        _bagButton.TooltipText = $"Mara's bag — {carried} fragments carried, {recovered}/6 recovered, {practical} practical thing{(practical == 1 ? "" : "s")} (B or I)";
     }
 
     private void RefreshBag(bool selectFirstUsable = false)
@@ -2053,8 +2355,12 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        if (selectFirstUsable || _bagSelectedIndex < 0 || _bagSelectedIndex >= GameState.MaxShards ||
-            !gs.IsShardRecovered(_bagSelectedIndex))
+        var practicalItems = BuildPracticalItemViews(gs);
+        var selectedItem = FindPracticalItem(practicalItems, _bagSelectedItemId);
+        if (selectedItem == null)
+            _bagSelectedItemId = string.Empty;
+
+        void SelectFirstFragment()
         {
             _bagSelectedIndex = -1;
             for (int i = 0; i < GameState.MaxShards; i++)
@@ -2078,12 +2384,44 @@ public partial class GameUI : CanvasLayer
             }
         }
 
+        if (selectFirstUsable)
+        {
+            _bagSelectedItemId = string.Empty;
+            selectedItem = null;
+            SelectFirstFragment();
+            if (_bagSelectedIndex < 0 && practicalItems.Count > 0)
+            {
+                selectedItem = practicalItems[0];
+                _bagSelectedItemId = selectedItem.Id;
+            }
+        }
+        else if (selectedItem != null)
+        {
+            _bagSelectedIndex = -1;
+        }
+        else if (_bagSelectedIndex < 0 || _bagSelectedIndex >= GameState.MaxShards ||
+                 !gs.IsShardRecovered(_bagSelectedIndex))
+        {
+            SelectFirstFragment();
+            if (_bagSelectedIndex < 0 && practicalItems.Count > 0)
+            {
+                selectedItem = practicalItems[0];
+                _bagSelectedItemId = selectedItem.Id;
+            }
+        }
+
         int placed = gs.CountPlaced();
-        _bagSummary.Text = $"Carried {gs.CountCarried()} · Recovered {gs.CountRecovered()}/{GameState.MaxShards}" +
-                           (placed > 0 ? $" · Returned {placed}" : "");
+        _bagSummary.Text = $"Fragments carried {gs.CountCarried()} · Recovered {gs.CountRecovered()}/{GameState.MaxShards}" +
+                           (placed > 0 ? $" · Returned {placed}" : "") +
+                           $" · Practical things {practicalItems.Count}";
 
         foreach (var child in _bagGrid.GetChildren())
             child.QueueFree();
+        if (_bagItemGrid != null)
+        {
+            foreach (var child in _bagItemGrid.GetChildren())
+                child.QueueFree();
+        }
 
         // The bag is a bag: the fragments lie in it jumbled, in no order
         // that means anything. Only Mara knows the order they lived.
@@ -2093,7 +2431,7 @@ public partial class GameUI : CanvasLayer
             bool carried = Globals.SHARDS_COLLECTED[index];
             int placedSlot = System.Array.IndexOf(gs.PlacedShardBySlot, index);
             bool recovered = carried || placedSlot >= 0;
-            bool selected = index == _bagSelectedIndex;
+            bool selected = selectedItem == null && index == _bagSelectedIndex;
 
             var slot = MakeButton(string.Empty, 17);
             slot.CustomMinimumSize = new Vector2(164, 138);
@@ -2102,6 +2440,7 @@ public partial class GameUI : CanvasLayer
             slot.TooltipText = recovered ? GameState.ShardTitles[index] : "Not recovered yet";
             slot.Pressed += () =>
             {
+                _bagSelectedItemId = string.Empty;
                 _bagSelectedIndex = index;
                 RefreshBag();
             };
@@ -2165,7 +2504,97 @@ public partial class GameUI : CanvasLayer
             _bagGrid.AddChild(slot);
         }
 
-        if (_bagSelectedIndex >= 0 && gs.IsShardRecovered(_bagSelectedIndex))
+        if (_bagItemGrid != null)
+        {
+            if (practicalItems.Count == 0)
+            {
+                var empty = MakeLabel("Nothing practical yet — Mara's hands are empty.", 17,
+                    new Color(0.68f, 0.62f, 0.52f, 0.72f));
+                empty.CustomMinimumSize = new Vector2(540, 48);
+                empty.HorizontalAlignment = HorizontalAlignment.Center;
+                empty.VerticalAlignment = VerticalAlignment.Center;
+                empty.MouseFilter = Control.MouseFilterEnum.Ignore;
+                _bagItemGrid.AddChild(empty);
+            }
+            else
+            {
+                foreach (var item in practicalItems)
+                {
+                    var itemView = item;
+                    bool itemSelected = selectedItem?.Id == itemView.Id;
+                    var slot = MakeButton(string.Empty, 16);
+                    slot.CustomMinimumSize = new Vector2(164, 118);
+                    slot.FocusMode = Control.FocusModeEnum.None;
+                    slot.TooltipText = $"{itemView.Name} — {itemView.DetailStatus}";
+                    slot.Pressed += () =>
+                    {
+                        _bagSelectedItemId = itemView.Id;
+                        _bagSelectedIndex = -1;
+                        RefreshBag();
+                    };
+                    ApplyBagSlotStyle(slot, itemSelected, recovered: true, carried: itemView.InBag);
+
+                    var slotBox = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+                    slotBox.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+                    slotBox.OffsetLeft = 8;
+                    slotBox.OffsetTop = 6;
+                    slotBox.OffsetRight = -8;
+                    slotBox.OffsetBottom = -6;
+                    slotBox.AddThemeConstantOverride("separation", 2);
+                    slot.AddChild(slotBox);
+
+                    Texture2D icon = GD.Load<Texture2D>(itemView.IconPath);
+                    if (icon != null)
+                    {
+                        var image = new TextureRect
+                        {
+                            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                            Texture = icon,
+                            CustomMinimumSize = new Vector2(0, 50),
+                            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                            MouseFilter = Control.MouseFilterEnum.Ignore,
+                            Modulate = itemView.InBag ? Colors.White : new Color(0.72f, 0.82f, 1f, 0.76f),
+                        };
+                        slotBox.AddChild(image);
+                    }
+                    else
+                    {
+                        var sigil = MakeLabel("\u25C6", 28, new Color(1f, 0.86f, 0.52f, 0.96f));
+                        sigil.CustomMinimumSize = new Vector2(0, 50);
+                        sigil.HorizontalAlignment = HorizontalAlignment.Center;
+                        sigil.VerticalAlignment = VerticalAlignment.Center;
+                        sigil.MouseFilter = Control.MouseFilterEnum.Ignore;
+                        slotBox.AddChild(sigil);
+                    }
+
+                    var name = MakeLabel(itemView.Name, 16, new Color(0.94f, 0.9f, 0.82f));
+                    name.CustomMinimumSize = new Vector2(0, 36);
+                    name.HorizontalAlignment = HorizontalAlignment.Center;
+                    name.VerticalAlignment = VerticalAlignment.Center;
+                    name.AutowrapMode = TextServer.AutowrapMode.Word;
+                    name.MouseFilter = Control.MouseFilterEnum.Ignore;
+                    slotBox.AddChild(name);
+
+                    var status = MakeLabel(itemView.CardStatus, 13,
+                        itemView.InBag ? new Color(1f, 0.84f, 0.5f) : new Color(0.66f, 0.8f, 1f));
+                    status.HorizontalAlignment = HorizontalAlignment.Center;
+                    status.AutowrapMode = TextServer.AutowrapMode.Word;
+                    status.MouseFilter = Control.MouseFilterEnum.Ignore;
+                    slotBox.AddChild(status);
+
+                    _bagItemGrid.AddChild(slot);
+                }
+            }
+        }
+
+        if (selectedItem != null)
+        {
+            _bagDetailTitle.Text = selectedItem.Name;
+            _bagDetailStatus.Text = selectedItem.DetailStatus;
+            _bagDetailBody.Text = selectedItem.Body;
+        }
+        else if (_bagSelectedIndex >= 0 && gs.IsShardRecovered(_bagSelectedIndex))
         {
             int index = _bagSelectedIndex;
             _bagDetailTitle.Text = GameState.ShardTitles[index];
@@ -2194,20 +2623,11 @@ public partial class GameUI : CanvasLayer
             ? "Ways of remembering: " + string.Join(" · ", learned) + " — Mara's notes are in the Journal (J)."
             : "Ways of remembering: none learned yet — the house will teach them as the story gives them to her.";
 
-        var carriedThings = new List<string>();
-        if (gs.HasFlag("item_lockpick_set"))
-            carriedThings.Add("Father's lockpick set");
-        if (gs.HasFlag("item_flashlight"))
-            carriedThings.Add(gs.HasFlag("basement_battery_taken") ? "Flashlight — strong battery" : "Flashlight");
-        if (gs.HasFlag("item_iron_cellar_key"))
-            carriedThings.Add("Iron cellar key");
-        if (gs.HasFlag("basement_negatives_taken"))
-            carriedThings.Add("Tin of photograph negatives");
         if (_bagItemsLabel != null)
         {
-            _bagItemsLabel.Text = carriedThings.Count > 0
-                ? "Also carried: " + string.Join(" · ", carriedThings)
-                : "Also carried: nothing practical yet.";
+            _bagItemsLabel.Text = practicalItems.Count > 0
+                ? $"Practical things are pictured in the bag below the fragments ({practicalItems.Count}). Click one to turn it over in Mara's hands."
+                : "Practical things Mara picks up will be pictured in the bag below the fragments.";
         }
     }
 
@@ -4513,11 +4933,33 @@ public partial class GameUI : CanvasLayer
         if (_heldRoot == null)
             return;
 
+        _heldSeen[index] = true;
+        _heldPending = -1;
+        _heldShowingItem = false;
+        _heldCurrentItem = null;
+        ShowHeldPickup(GameState.ShardTitles[index], BagIconPaths[index], HeldFragmentLines[index]);
+    }
+
+    private void ShowPracticalHeld(HeldPracticalDefinition item)
+    {
+        if (_heldRoot == null || item == null)
+            return;
+
+        _heldItemSeen.Add(item.Flag);
+        _heldItemQueue.Remove(item);
+        _heldShowingItem = true;
+        _heldCurrentItem = item;
+        ShowHeldPickup(item.Name, item.IconPath, item.Line);
+    }
+
+    private void ShowHeldPickup(string title, string iconPath, string line)
+    {
+        if (_heldRoot == null)
+            return;
+
         _heldShowing = true;
         _heldBusy = true;
         _heldPhase = 0;
-        _heldSeen[index] = true;
-        _heldPending = -1;
         _heldAge = 0f;
         Dialogue.BeginInputBlock();
 
@@ -4526,12 +4968,12 @@ public partial class GameUI : CanvasLayer
 
         // First it is simply in her hand; the words come with the second
         // beat, when she lifts it to the light (AdvanceHeldToShowcase).
-        _heldName.Text = GameState.ShardTitles[index];
+        _heldName.Text = title;
         _heldName.Position = new Vector2(cx - 380f, view.Y * 0.13f);
         _heldName.Size = new Vector2(760f, 44f);
         _heldName.Modulate = new Color(1, 1, 1, 0);
 
-        _heldLine.Text = HeldFragmentLines[index];
+        _heldLine.Text = line;
         _heldLine.Position = new Vector2(cx - 380f, view.Y * 0.68f);
         _heldLine.Size = new Vector2(760f, 96f);
         _heldLine.Modulate = new Color(1, 1, 1, 0);
@@ -4551,7 +4993,7 @@ public partial class GameUI : CanvasLayer
         _heldHand.Modulate = Colors.White;
 
         Vector2 palm = handRest + new Vector2(handW * HeldPalmX, handH * HeldPalmY);
-        _heldIcon.Texture = GD.Load<Texture2D>(BagIconPaths[index]);
+        _heldIcon.Texture = GD.Load<Texture2D>(iconPath);
         _heldIcon.Size = new Vector2(300f, 300f);
         _heldIcon.PivotOffset = new Vector2(150f, 150f);
         _heldIcon.Scale = new Vector2(0.55f, 0.55f);
@@ -4586,7 +5028,8 @@ public partial class GameUI : CanvasLayer
             return;
         _heldPhase = 1;
         _heldAge = 0f;
-        AudioManager.Play(Sfx.ShardCollect, -7f);
+        AudioManager.Play(_heldShowingItem ? Sfx.KeyType : Sfx.ShardCollect,
+            _heldShowingItem ? -10f : -7f, _heldShowingItem ? 1.05f : 1f);
 
         Vector2 view = GetViewport().GetVisibleRect().Size;
         float cx = view.X / 2f;
@@ -4616,7 +5059,8 @@ public partial class GameUI : CanvasLayer
         if (!_heldShowing || _heldRoot == null)
             return;
         _heldShowing = false;
-        AudioManager.Play(Sfx.ShardPlace, -9f);
+        AudioManager.Play(_heldShowingItem ? Sfx.DrawerClose : Sfx.ShardPlace, -9f,
+            _heldShowingItem ? 1.12f : 1f);
 
         // The icon's visual centre is Position + PivotOffset; land that
         // centre on the bag as it shrinks away into it.
@@ -4638,6 +5082,8 @@ public partial class GameUI : CanvasLayer
             if (_heldRoot != null)
                 _heldRoot.Visible = false;
             _heldBusy = false; // bagged — the house may move on now
+            _heldShowingItem = false;
+            _heldCurrentItem = null;
             Dialogue.EndInputBlock();
             SceneManager.ResumeDeferredSceneChange();
         }));
@@ -4652,10 +5098,17 @@ public partial class GameUI : CanvasLayer
         }
 
         DetectNewFragments();
-        if (_heldPending < 0 || !HeldMomentCanShow())
+        DetectNewPracticalItems();
+        if (!HeldMomentCanShow())
             return;
 
-        ShowFragmentHeld(_heldPending);
+        // A fragment and the practical thing kept with it are shown in
+        // the order Mara earned them: memory first, then the weight in
+        // her hand. Each must be clicked into the bag before the next.
+        if (_heldPending >= 0)
+            ShowFragmentHeld(_heldPending);
+        else if (_heldItemQueue.Count > 0)
+            ShowPracticalHeld(_heldItemQueue[0]);
     }
 
     private void DetectNewFragments()
@@ -4688,6 +5141,44 @@ public partial class GameUI : CanvasLayer
         }
     }
 
+    private void DetectNewPracticalItems()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || _context != UiContext.Game)
+            return;
+
+        if (!_heldItemBaselineSynced)
+        {
+            _heldItemSeen.Clear();
+            _heldItemQueue.Clear();
+            foreach (var item in HeldPracticalDefinitions)
+            {
+                if (gs.HasFlag(item.Flag))
+                    _heldItemSeen.Add(item.Flag);
+            }
+            _heldItemBaselineSynced = true;
+            return;
+        }
+
+        foreach (var item in HeldPracticalDefinitions)
+        {
+            if (!gs.HasFlag(item.Flag))
+            {
+                // A fresh run forgets with her; a moment not yet shown
+                // for a thing she no longer has is forgotten too.
+                _heldItemSeen.Remove(item.Flag);
+                _heldItemQueue.Remove(item);
+                continue;
+            }
+
+            if (_heldItemSeen.Contains(item.Flag) || _heldCurrentItem == item ||
+                _heldItemQueue.Contains(item))
+                continue;
+
+            _heldItemQueue.Add(item);
+        }
+    }
+
     private bool HeldMomentCanShow() =>
         !GetTree().Paused && !Dialogue.IsShowing && !AnyPanelOpen()
         && !_cutscenePlaying && !_endingPlaying && !_shatterPlaying;
@@ -4708,7 +5199,8 @@ public partial class GameUI : CanvasLayer
             || _cutscenePlaying || _endingPlaying || _shatterPlaying)
             return false;
         DetectNewFragments();
-        return _heldPending >= 0;
+        DetectNewPracticalItems();
+        return _heldPending >= 0 || _heldItemQueue.Count > 0;
     }
 
     private void BuildMaraAside()

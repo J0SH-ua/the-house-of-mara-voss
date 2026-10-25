@@ -88,11 +88,7 @@ public partial class BedroomPrologue : MemoryRoomBase
                 break;
 
             case "Nightstand":
-                _ = ExamineObjectAsync(hotspot, new[]
-                {
-                    "My alarm clock. The hands have stopped, and honestly? Fair enough.",
-                    "It used to ring me awake for school. She'd already be in the doorway talking before I'd even sat up.",
-                }, "Stopped. Everything here is stopped except me.");
+                _ = ExamineNightstandAsync(hotspot);
                 break;
 
             case "Drawing":
@@ -115,6 +111,80 @@ public partial class BedroomPrologue : MemoryRoomBase
                 _ = LeaveThroughDoorAsync();
                 break;
         }
+    }
+
+    /// <summary>The bedroom's first practical thing. The nightstand is one
+    /// of the five objects Mara must face before the door works, so the
+    /// hairpin is earned on the only road out — and then the kitchen
+    /// padlock and the last preserve jar can honestly refuse her without
+    /// it.</summary>
+    private async Task ExamineNightstandAsync(Hotspot hotspot)
+    {
+        if (hotspot == null || Busy)
+            return;
+
+        Busy = true;
+        try
+        {
+            bool first = RecordExamine(hotspot);
+            bool completedRequiredNow = first && AllRequiredExamined();
+            AudioManager.PlayVaried(hotspot.SfxId, -5f, hotspot.SfxPitch, 0.04f);
+
+            if (!first)
+            {
+                var existing = GameState.Instance;
+                if (existing != null && !existing.HasFlag("item_hairpin"))
+                {
+                    // A save that faced the clock before the hairpin
+                    // existed gets its one honest second look here.
+                    await Say("Behind the clock. I missed it the first time because I was looking at the hands.", 4f, 24);
+                    await TakeHairpinAsync(hotspot);
+                }
+                else
+                {
+                    GameState.Instance?.RegisterRepeatExaminePenalty();
+                    await Say("Stopped. Everything here is stopped except me.", 3.5f, 24);
+                }
+                return;
+            }
+
+            await SaySequence(new[]
+            {
+                "My alarm clock. The hands have stopped, and honestly? Fair enough.",
+                "It used to ring me awake for school. She'd already be in the doorway talking before I'd even sat up.",
+            });
+            if (!StillHere())
+                return;
+            await TakeHairpinAsync(hotspot);
+            if (completedRequiredNow && StillHere())
+                await OnRequiredExaminesCompletedAsync();
+        }
+        finally
+        {
+            if (StillHere())
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    private async Task TakeHairpinAsync(Hotspot hotspot)
+    {
+        var gs = GameState.Instance;
+        if (gs == null || gs.HasFlag("item_hairpin"))
+            return;
+
+        AudioManager.Play(Sfx.PhotoPickup, -10f, 0.9f);
+        AudioManager.Play(Sfx.KeyType, -13f, 1.35f);
+        await Say("Tucked behind it — one of Mum's hairpins. Bent, the way every hairpin in that house ended up bent: borrowed for catches, seals, little jobs it wasn't made for. I slide it into my sleeve. Old habits travel.", 5.5f, 24);
+        if (!StillHere())
+            return;
+
+        gs.SetFlag("item_hairpin", save: false);
+        gs.UnlockClue("bedroom_hairpin");
+        Hotspots.SpawnRipple(hotspot.Center, new Color(1f, 0.85f, 0.5f));
+        gs.Toast("Mum's bent hairpin — kept in Mara's bag (B).");
     }
 
     // ------------------------------------------------------------ waking

@@ -333,6 +333,22 @@ public partial class Room1Puzzle : Area2D
 			return;
 		}
 
+		// The combination is only half of this lock now. Its shackle is
+		// bent: even dialled right, it lifts and drops unless something
+		// thin holds it. That something is the hairpin Mara took from
+		// behind her childhood alarm clock, so this kitchen cannot be
+		// finished by a Mara who never faced the bedroom nightstand.
+		var gs = GameState.Instance;
+		if (gs != null && !gs.HasFlag("item_hairpin"))
+		{
+			AudioManager.Play(Sfx.LockRattle, -5f, 0.86f);
+			AudioManager.Play(Sfx.Denied, -11f, 0.92f);
+			gs.Toast("The dials are right — and the bent shackle still springs home. Something thin has to hold it. Press H; the bedroom nightstand kept such a thing.");
+			return;
+		}
+
+		AudioManager.Play(Sfx.LockpickTick, -11f, 1.18f);
+		gs?.Toast("Mum's hairpin holds the bent shackle while the lock turns.");
 		_isSolved = true;
 		IsUnlocked = true;
 		_readyToUnlock = false;

@@ -355,10 +355,12 @@ public partial class AudioManager : Node
         // The score now sits underneath the place itself. Ambience loops
         // are several dB quieter at source than the room music, so these
         // gains are low enough for rain/fire/room tone to lead the mix.
-        bool puzzle = scene.Contains("puzzle");
+        bool puzzle = scene.Contains("puzzle") || scene.Contains("difference_investigation");
         float volume = puzzle ? -28f : -25f;
 
-        if (scene.Contains("flashback"))
+        if (scene.Contains("difference_investigation"))
+            PlayMusic(MusicRoom2, -28f);
+        else if (scene.Contains("flashback"))
             PlayMusic(MusicRoom4, -28f);
         else if (scene.Contains("apartment"))
             PlayMusic(MusicRoom5, -28f);
@@ -426,7 +428,7 @@ public partial class AudioManager : Node
             : scene.Contains("porch") ? (AmbiencePorchPath, -16f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -15f)
             : scene.Contains("room_5") ? (AmbienceRainPath, -15f)
-            : scene.Contains("room_2") ? (AmbienceFirePath, puzzle ? -20f : -17f)
+            : scene.Contains("room_2") || scene.Contains("difference_investigation") ? (AmbienceFirePath, puzzle || scene.Contains("difference_investigation") ? -20f : -17f)
             : scene.Contains("room_6") ? (AmbienceGardenPath, -16f)
             : (AmbiencePath, -18f);
 

@@ -4,12 +4,13 @@ using Godot;
 /// <summary>
 /// The way under the house, at elbow height.
 ///
-/// A first-person crawl through the Room 5 vent: the vent interior
-/// slowly grows around Mara while the flashlight is pulled a little
-/// toward wherever the player's mouse is listening. Three short beats
-/// stop the crawl for her voice; the faraway lit grille eventually
-/// fills the dark and is clicked open into the basement. A first crawl
-/// takes its time. Later crawls remember the route and are brief.
+/// A first-person crawl through the Room 5 vent: holding W moves
+/// Mara forward at elbow height, releasing it stops her where she
+/// is, and the flashlight follows the mouse directly with no click or
+/// hold. Three short beats stop the crawl for her voice; the faraway
+/// lit grille eventually fills the dark and is clicked open into the
+/// basement. A first crawl takes its time. Later crawls remember the
+/// route and are brief.
 ///
 /// Stepping back is handled by the ordinary contextual navigation
 /// (SceneManager's "Back Out" to Room 5), so this scene only owns the
@@ -54,6 +55,9 @@ public partial class VentCrawl : Node2D
     private float _fade;
     private int _beatIndex;
     private bool _left;
+    private Vector2 _beamPosition = ScreenCenter;
+    private bool _beamReady;
+    private bool _crawlMoving;
 
     public override void _Ready()
     {
@@ -70,9 +74,9 @@ public partial class VentCrawl : Node2D
     {
         _promptLabel = new Label
         {
-            Text = "Click the grille",
-            Position = new Vector2(426, 468),
-            Size = new Vector2(300, 38),
+            Text = "Hold W to crawl · mouse aims the light",
+            Position = new Vector2(296, 468),
+            Size = new Vector2(560, 38),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -167,40 +171,51 @@ public partial class VentCrawl : Node2D
     public override void _Process(double delta)
     {
         float dt = (float)delta;
+        UpdateBeam(dt);
 
-        if (_stage == CrawlStage.Crawling && !Dialogue.IsShowing && !GetTree().Paused)
+        bool blocked = GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
+            (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
+        _crawlMoving = _stage == CrawlStage.Crawling && !blocked &&
+            Input.IsPhysicalKeyPressed(Key.W);
+
+        if (_stage == CrawlStage.Crawling && !blocked)
         {
-            _elapsed += dt;
-            _progress = Mathf.Clamp(_elapsed / _duration, 0f, 1f);
+            if (_crawlMoving)
+            {
+                _elapsed += dt;
+                _progress = Mathf.Clamp(_elapsed / _duration, 0f, 1f);
 
-            _crawlSoundTimer -= dt;
-            if (_crawlSoundTimer <= 0f)
-            {
-                _crawlSoundTimer = 3.8f;
-                AudioManager.PlayVaried(Sfx.VentCrawl, -8f, 0.98f, 0.05f);
-            }
+                _crawlSoundTimer -= dt;
+                if (_crawlSoundTimer <= 0f)
+                {
+                    _crawlSoundTimer = 3.8f;
+                    AudioManager.PlayVaried(Sfx.VentCrawl, -8f, 0.98f, 0.05f);
+                }
 
-            if (ShouldPlayBeat())
-            {
-                _stage = CrawlStage.Speaking;
-                _ = PlayBeatAsync();
+                if (ShouldPlayBeat())
+                {
+                    _stage = CrawlStage.Speaking;
+                    _crawlMoving = false;
+                    _ = PlayBeatAsync();
+                }
+                else if (_progress >= 1f)
+                {
+                    _stage = CrawlStage.AtGrate;
+                    _crawlMoving = false;
+                    _gratePromptTimer = 0.35f;
+                    AudioManager.Play(Sfx.LockpickTick, -9f, 0.7f);
+                }
             }
-            else if (_progress >= 1f)
+            else
             {
-                _stage = CrawlStage.AtGrate;
-                _gratePromptTimer = 0.35f;
-                AudioManager.Play(Sfx.LockpickTick, -9f, 0.7f);
+                // Releasing W is a full stop: no elapsed drift, no
+                // scrape of elbows, and the next press answers at once.
+                _crawlSoundTimer = Mathf.Min(_crawlSoundTimer, 0.18f);
             }
         }
         else if (_stage == CrawlStage.AtGrate)
         {
             _gratePromptTimer -= dt;
-            if (_promptLabel != null)
-            {
-                float target = _gratePromptTimer <= 0f ? 1f : 0f;
-                float alpha = Mathf.MoveToward(_promptLabel.Modulate.A, target, dt * 2.2f);
-                _promptLabel.Modulate = new Color(1, 1, 1, alpha);
-            }
         }
         else if (_stage == CrawlStage.Leaving && !Dialogue.IsShowing && !_left)
         {
@@ -213,7 +228,48 @@ public partial class VentCrawl : Node2D
             }
         }
 
+        UpdatePrompt(dt);
         QueueRedraw();
+    }
+
+    private void UpdateBeam(float dt)
+    {
+        Vector2 mouse = GetGlobalMousePosition();
+        mouse = new Vector2(
+            Mathf.Clamp(mouse.X, 0f, 1152f),
+            Mathf.Clamp(mouse.Y, 0f, 648f));
+        if (!_beamReady)
+        {
+            _beamPosition = mouse;
+            _beamReady = true;
+            return;
+        }
+
+        // Fast enough to read as Mara hand on the handle, with just
+        // enough travel that the beam sweeps instead of teleporting.
+        float weight = 1f - Mathf.Exp(-20f * Mathf.Max(dt, 0f));
+        _beamPosition = _beamPosition.Lerp(mouse, Mathf.Clamp(weight, 0f, 1f));
+    }
+
+    private void UpdatePrompt(float dt)
+    {
+        if (_promptLabel == null)
+            return;
+
+        string text = _stage == CrawlStage.AtGrate
+            ? "Click the grille"
+            : "Hold W to crawl · mouse aims the light";
+        if (_promptLabel.Text != text)
+            _promptLabel.Text = text;
+
+        float target = _stage switch
+        {
+            CrawlStage.Crawling => _crawlMoving ? 0.38f : 0.95f,
+            CrawlStage.AtGrate => _gratePromptTimer <= 0f ? 1f : 0f,
+            _ => 0f,
+        };
+        float alpha = Mathf.MoveToward(_promptLabel.Modulate.A, target, dt * 2.4f);
+        _promptLabel.Modulate = new Color(1, 1, 1, alpha);
     }
 
     private bool ShouldPlayBeat()
@@ -294,7 +350,7 @@ public partial class VentCrawl : Node2D
         Vector2 drawnSize = textureSize * coverScale * zoom;
 
         Vector2 sway = Vector2.Zero;
-        if (!Settings.ReduceMotionOrDefault() && _stage == CrawlStage.Crawling)
+        if (!Settings.ReduceMotionOrDefault() && _crawlMoving)
         {
             sway = new Vector2(
                 (float)System.Math.Sin(_elapsed * 0.72f) * 0.009f,
@@ -308,10 +364,7 @@ public partial class VentCrawl : Node2D
 
     private void DrawFlashlightDarkness()
     {
-        Vector2 mouse = GetGlobalMousePosition();
-        Vector2 beam = new(
-            Mathf.Clamp(ScreenCenter.X + (mouse.X - ScreenCenter.X) * 0.28f, 356f, 796f),
-            Mathf.Clamp(ScreenCenter.Y + (mouse.Y - ScreenCenter.Y) * 0.28f, 204f, 444f));
+        Vector2 beam = _beamPosition;
         float radius = GameState.Instance?.HasFlag("basement_battery_taken") == true ? 205f : 172f;
         var dark = new Color(0.004f, 0.004f, 0.006f, 0.58f);
 

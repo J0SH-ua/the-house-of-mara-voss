@@ -2,12 +2,17 @@ using Godot;
 
 /// <summary>
 /// The photograph in the sitting-room drawer — shard 1.
-/// Idempotent collection via GameState (journal fragment, sting, autosave).
+/// Before Mara may take it for the first time, the house makes her earn
+/// what lies behind it honestly: a five-second look at the sitting
+/// room, followed by a search for what memory moved. That investigation
+/// yields the little door key for Room 4. Collection itself remains
+/// idempotent via GameState (journal fragment, sting, autosave).
 /// </summary>
 public partial class Photo1Reward : Area2D
 {
 	private const string NextScenePath = "res://scenes/world/room_3.tscn";
 	private const string JourneyScenePath = "res://scenes/world/journey_to_room_3.tscn";
+	private const string DifferenceScenePath = "res://scenes/world/difference_investigation.tscn";
 	private const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
 	private const string FragmentText =
 		"She used to fall asleep in that chair and think it was the best thing in the world — " +
@@ -59,7 +64,14 @@ public partial class Photo1Reward : Area2D
 				GameState.Instance.NotifySealedInteraction();
 				return;
 			}
-			CollectAndChangeScene();
+			var gs = GameState.Instance;
+			bool needsDifference = gs != null &&
+				!gs.HasFlag("difference_room2_solved") &&
+				!gs.IsShardRecovered(1);
+			if (needsDifference)
+				EnterDifferenceInvestigation();
+			else
+				CollectAndChangeScene();
 		}
 	}
 
@@ -108,6 +120,19 @@ public partial class Photo1Reward : Area2D
 			CursorHelper.EndHover(this);
 			_isHovering = false;
 		}
+	}
+
+	private async void EnterDifferenceInvestigation()
+	{
+		_collecting = true;
+		AudioManager.Play(Sfx.PhotoPickup, -7f, 0.94f);
+		await Dialogue.ShowText(this, "It isn't fixed down. But something small has slid behind it, out of reach — and under my fingers the photograph does what this house always does. It asks whether I actually remember the room I claim to remember.", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 22);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+		await Dialogue.ShowText(this, "Five seconds, then. I can hold a room for five seconds. I have held worse for twelve years.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+		SceneManager.ChangeScene(DifferenceScenePath);
 	}
 
 	private async void CollectAndChangeScene()

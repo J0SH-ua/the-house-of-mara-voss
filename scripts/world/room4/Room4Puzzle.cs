@@ -3,14 +3,16 @@ using System.Threading.Tasks;
 using Godot;
 
 /// <summary>
-/// Room 4 close-up — the hallway door's last knock.
+/// Room 4 close-up — the hallway door's three ordinary keys.
 ///
 /// Room 4 proper teaches Echo by turning ten photographs into a sentence.
-/// This close-up gives Echo one final, smaller use before Anchor takes over
-/// in Room 5: knock each brass picture and then the keyhole beneath it,
-/// crossing the bridge, opening the little door, and closing the circle.
-/// Ordinary clicks examine the six brass pieces and teach that pairing;
-/// only Echo-armed clicks count as knocks.
+/// This door is deliberately not another pattern to knock back at the
+/// house. Its three brass plates are labels for three physical keyholes:
+/// the copper bridge key from the kitchen drawer, the little door key
+/// from behind the sitting-room photograph, and the circle key from the
+/// last preserve jar. Mara has to carry all three here and put each one
+/// into its matching hole by hand. Even then, the door will not open
+/// until the hallway sentence is whole.
 /// </summary>
 public partial class Room4Puzzle : MemoryRoomBase
 {
@@ -18,26 +20,27 @@ public partial class Room4Puzzle : MemoryRoomBase
     private const string SentenceFlag = "room4_sentence_complete";
     private const string OpenedFlag = "room4_door_opened";
 
+    private const string BridgeKeyFlag = "item_hall_key_bridge";
+    private const string DoorKeyFlag = "item_hall_key_door";
+    private const string CircleKeyFlag = "item_hall_key_circle";
+    private const string BridgeInsertedFlag = "room4_key_bridge_inserted";
+    private const string DoorInsertedFlag = "room4_key_door_inserted";
+    private const string CircleInsertedFlag = "room4_key_circle_inserted";
+
+    private const string BridgeKeyIconPath = "res://assets/images/core/items/bridge_key.png";
+    private const string DoorKeyIconPath = "res://assets/images/core/items/door_key.png";
+    private const string CircleKeyIconPath = "res://assets/images/core/items/circle_key.png";
+
     // DoorCloseup.png is a 1122x1402 portrait. This 1122x631 band has the
     // same 16:9 proportions as the room viewport and contains the three
     // brass plates plus the three keyholes without squashing the door.
     private static readonly Rect2 DoorSourceRect = new(0, 410, 1122, 631);
 
-    private static readonly string[] KnockSequence =
-    [
-        "BridgePlate",
-        "LeftKeyhole",
-        "DoorPlate",
-        "CenterKeyhole",
-        "CirclePlate",
-        "RightKeyhole",
-    ];
-
-    private static readonly float[] KnockPitches = [0.82f, 0.94f, 1.0f, 1.12f, 1.19f, 1.34f];
-
     private Texture2D _doorTexture;
+    private Texture2D _bridgeKeyTexture;
+    private Texture2D _doorKeyTexture;
+    private Texture2D _circleKeyTexture;
     private Label _statusLabel;
-    private int _knockProgress;
     private bool _opened;
 
     protected override string RoomName => "Room4";
@@ -46,13 +49,13 @@ public partial class Room4Puzzle : MemoryRoomBase
     protected override IEnumerable<Hotspot> BuildHotspots()
     {
         // Coordinates map the DoorSourceRect crop above onto 1152x648.
-        // The door body comes first, so the six brass pieces below win any
-        // overlap; once unlocked, a click anywhere on the door opens it.
+        // The door body comes first, so the six brass pieces below win
+        // any overlap; once unlocked, a click anywhere opens it.
         yield return new Hotspot("HallwayDoor", "Hallway Door",
             new Rect2(312, 70, 552, 470), new Vector2(588, 325),
             Sfx.DoorCreak, 0.9f, PointerCursorPath, false);
-        // The bridge plate starts at x=312 so the legacy BackArrow's large
-        // 220x220 click shape (x 85..305) can never steal its left edge.
+        // The bridge plate starts at x=312 so the legacy BackArrow's
+        // large click shape (x 85..305) can never steal its left edge.
         yield return new Hotspot("BridgePlate", "Bridge Plate",
             new Rect2(312, 105, 145, 210), new Vector2(382, 212),
             Sfx.DoorCreak, 0.9f, PointerCursorPath, false);
@@ -76,14 +79,16 @@ public partial class Room4Puzzle : MemoryRoomBase
     protected override void OnRoomReady()
     {
         _doorTexture = GD.Load<Texture2D>(BackgroundPath);
+        _bridgeKeyTexture = GD.Load<Texture2D>(BridgeKeyIconPath);
+        _doorKeyTexture = GD.Load<Texture2D>(DoorKeyIconPath);
+        _circleKeyTexture = GD.Load<Texture2D>(CircleKeyIconPath);
 
-        // The authored scene still carries its old full-door Sprite2D. The
-        // root now draws the correctly cropped door so the knock rings in
-        // _Draw sit above the artwork instead of underneath that sprite.
+        // The authored scene still carries its old full-door Sprite2D.
+        // The root draws the correctly cropped door so inserted keys sit
+        // above the artwork instead of underneath that sprite.
         GetNodeOrNull<CanvasItem>("DoorCloseup2")?.Hide();
 
         _opened = GameState.Instance?.HasFlag(OpenedFlag) ?? false;
-        _knockProgress = _opened ? KnockSequence.Length : 0;
 
         _statusLabel = CreateLabel(string.Empty,
             new Vector2(276, 38), 21,
@@ -92,8 +97,8 @@ public partial class Room4Puzzle : MemoryRoomBase
 
         if (!_opened)
         {
-            _ = PlayStoryLessonOnceAsync("story_lesson_room4_door_echo",
-                "Up close, it isn't locked with one key. It's listening for our knock — the one we used when one of us came home after dark.");
+            _ = PlayStoryLessonOnceAsync("story_lesson_room4_door_keys",
+                "Up close, it isn't a pattern at all. Three keyholes. Three ordinary keys, if this house has ever given me anything ordinary to carry.");
         }
     }
 
@@ -105,31 +110,35 @@ public partial class Room4Puzzle : MemoryRoomBase
         else
             DrawRect(screen, new Color(0.03f, 0.025f, 0.02f));
 
-        var answered = new Color(1f, 0.88f, 0.52f, 0.92f);
-        var answeredSoft = new Color(1f, 0.88f, 0.52f, 0.28f);
-        Vector2 previous = Vector2.Zero;
-        bool hasPrevious = false;
+        // This room replaces the base _Draw to crop the portrait door;
+        // keep the ordinary hover outline the base would have drawn.
+        DrawHoveredHotspotOutline();
+        DrawInsertedKey("LeftKeyhole", BridgeInsertedFlag, _bridgeKeyTexture);
+        DrawInsertedKey("CenterKeyhole", DoorInsertedFlag, _doorKeyTexture);
+        DrawInsertedKey("RightKeyhole", CircleInsertedFlag, _circleKeyTexture);
+    }
 
-        for (int i = 0; i < _knockProgress && i < KnockSequence.Length; i++)
+    private void DrawInsertedKey(string hotspotId, string insertedFlag, Texture2D texture)
+    {
+        if (!IsInserted(insertedFlag))
+            return;
+        var hotspot = GetHotspot(hotspotId);
+        if (hotspot == null)
+            return;
+
+        var gold = new Color(1f, 0.88f, 0.52f, 0.9f);
+        DrawArc(hotspot.Center, 48f, 0f, Mathf.Tau, 48, gold, 2.2f, true);
+        DrawArc(hotspot.Center, 40f, 0f, Mathf.Tau, 40,
+            new Color(1f, 0.88f, 0.52f, 0.24f), 1.2f, true);
+
+        if (texture != null)
         {
-            var hotspot = GetHotspot(KnockSequence[i]);
-            if (hotspot == null)
-                continue;
-
-            if (hasPrevious)
-            {
-                DrawLine(previous + new Vector2(2, 2), hotspot.Center + new Vector2(2, 2),
-                    new Color(0.03f, 0.02f, 0.01f, 0.45f), 5f, true);
-                DrawLine(previous, hotspot.Center, answeredSoft, 2.2f, true);
-            }
-
-            float radius = hotspot.Id.EndsWith("Keyhole") ? 38f : 52f;
-            DrawArc(hotspot.Center, radius, 0f, Mathf.Tau, 48, answered, 2.4f, true);
-            DrawArc(hotspot.Center, radius - 7f, 0f, Mathf.Tau, 48, answeredSoft, 1.2f, true);
-            DrawCircle(hotspot.Center, 3f, answered);
-
-            previous = hotspot.Center;
-            hasPrevious = true;
+            var rect = new Rect2(hotspot.Center - new Vector2(46, 46), new Vector2(92, 92));
+            DrawTextureRect(texture, rect, false);
+        }
+        else
+        {
+            DrawCircle(hotspot.Center, 8f, gold);
         }
     }
 
@@ -144,18 +153,22 @@ public partial class Room4Puzzle : MemoryRoomBase
             return;
         }
 
-        var activeVerb = MemoryVerbSystem.Active;
-        if (activeVerb == MemoryVerb.Echo)
+        if (IsKeyhole(hotspot.Id))
         {
-            if (!SentenceIsComplete())
-                _ = LockedDoorAsync();
-            else if (hotspot.Id == "HallwayDoor")
-                _ = WrongKnockAsync();
+            // Putting a physical key in a physical hole is ordinary-hand
+            // work. It stays available even if a Memory Verb happens to
+            // be armed, rather than making the player put the verb down
+            // before the bag is allowed to matter.
+            if (IsInserted(InsertedFlagFor(hotspot.Id)))
+                _ = ExamineDoorPartAsync(hotspot);
+            else if (HasKeyFor(hotspot.Id))
+                _ = InsertKeyAsync(hotspot);
             else
-                HandleEchoKnock(hotspot);
+                _ = MissingKeyAsync(hotspot);
             return;
         }
 
+        var activeVerb = MemoryVerbSystem.Active;
         if (activeVerb != MemoryVerb.None)
         {
             _ = WrongVerbAsync(activeVerb);
@@ -163,9 +176,16 @@ public partial class Room4Puzzle : MemoryRoomBase
         }
 
         if (hotspot.Id == "HallwayDoor")
-            _ = LockedDoorAsync();
+        {
+            if (AllKeysInserted() && SentenceIsComplete())
+                _ = CompleteDoorAsync();
+            else
+                _ = LockedDoorAsync();
+        }
         else
+        {
             _ = ExamineDoorPartAsync(hotspot);
+        }
     }
 
     private bool SentenceIsComplete()
@@ -174,56 +194,155 @@ public partial class Room4Puzzle : MemoryRoomBase
         return gs != null && (gs.HasFlag(SentenceFlag) || gs.IsShardRecovered(3));
     }
 
-    private void HandleEchoKnock(Hotspot hotspot)
-    {
-        if (_knockProgress >= KnockSequence.Length)
-            return;
+    private static bool IsKeyhole(string id) =>
+        id is "LeftKeyhole" or "CenterKeyhole" or "RightKeyhole";
 
-        string expected = KnockSequence[_knockProgress];
-        if (hotspot.Id == expected)
+    private static string KeyFlagFor(string keyholeId) => keyholeId switch
+    {
+        "LeftKeyhole" => BridgeKeyFlag,
+        "CenterKeyhole" => DoorKeyFlag,
+        "RightKeyhole" => CircleKeyFlag,
+        _ => string.Empty,
+    };
+
+    private static string InsertedFlagFor(string keyholeId) => keyholeId switch
+    {
+        "LeftKeyhole" => BridgeInsertedFlag,
+        "CenterKeyhole" => DoorInsertedFlag,
+        "RightKeyhole" => CircleInsertedFlag,
+        _ => string.Empty,
+    };
+
+    private bool HasKeyFor(string keyholeId)
+    {
+        var gs = GameState.Instance;
+        string flag = KeyFlagFor(keyholeId);
+        return gs != null && !string.IsNullOrEmpty(flag) && gs.HasFlag(flag);
+    }
+
+    private bool IsInserted(string insertedFlag)
+    {
+        if (_opened)
+            return true;
+        var gs = GameState.Instance;
+        return gs != null && !string.IsNullOrEmpty(insertedFlag) && gs.HasFlag(insertedFlag);
+    }
+
+    private int InsertedCount()
+    {
+        int count = 0;
+        if (IsInserted(BridgeInsertedFlag)) count++;
+        if (IsInserted(DoorInsertedFlag)) count++;
+        if (IsInserted(CircleInsertedFlag)) count++;
+        return count;
+    }
+
+    private bool AllKeysInserted() => InsertedCount() >= 3;
+
+    private async Task InsertKeyAsync(Hotspot hotspot)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        bool finishDoor = false;
+        try
         {
-            PlayKnock(hotspot, _knockProgress);
-            _knockProgress++;
+            var gs = GameState.Instance;
+            if (gs == null)
+                return;
+
+            RecordExamine(hotspot);
+            AudioManager.Play(Sfx.KeyType, -8f, hotspot.SfxPitch);
+            await WaitSeconds(0.18f);
+            AudioManager.Play(Sfx.LockRattle, -8f, hotspot.SfxPitch);
+            gs.SetFlag(InsertedFlagFor(hotspot.Id));
+            Hotspots.SpawnRipple(hotspot.Center, new Color(1f, 0.88f, 0.55f));
             UpdateStatusLabel();
             QueueRedraw();
 
-            if (_knockProgress >= KnockSequence.Length)
-                _ = CompleteDoorAsync();
+            await Say(InsertLine(hotspot.Id), 4.5f, 23);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+
+            if (AllKeysInserted())
+            {
+                if (SentenceIsComplete())
+                {
+                    finishDoor = true;
+                }
+                else
+                {
+                    await Say("Three keys, all turned partway — and the door still holds. Not out of cruelty. The hall behind me hasn't finished what it was saying.", 5f, 23);
+                }
+            }
             else
             {
-                GameState.Instance?.Toast($"The knock holds ({_knockProgress}/{KnockSequence.Length}).");
+                gs.Toast($"A key turns ({InsertedCount()}/3 in). It stays where Mara put it.");
             }
-            return;
         }
-
-        // A knock on the bridge always starts the pattern again, so a wrong
-        // note mid-sequence does not require an extra throwaway click.
-        if (hotspot.Id == KnockSequence[0])
+        finally
         {
-            _knockProgress = 0;
-            PlayKnock(hotspot, 0);
-            _knockProgress = 1;
-            UpdateStatusLabel();
-            QueueRedraw();
-            GameState.Instance?.Toast("The knock begins again.");
-            return;
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
         }
 
-        _ = WrongKnockAsync();
+        if (finishDoor && GodotObject.IsInstanceValid(this))
+            await CompleteDoorAsync();
     }
 
-    private void PlayKnock(Hotspot hotspot, int sequenceIndex)
+    private static string InsertLine(string id) => id switch
     {
-        float pitch = KnockPitches[sequenceIndex];
-        AudioManager.PlayVaried(Sfx.WordChime, -6f, pitch, 0.015f);
-        if (hotspot.Id.EndsWith("Keyhole"))
-            AudioManager.Play(Sfx.LockRattle, -13f, pitch);
-        else
-            AudioManager.Play(Sfx.DoorCreak, -16f, 0.75f + sequenceIndex * 0.06f);
+        "LeftKeyhole" => "The copper bridge key goes in under the bridge. It turns with a small, wet, river-mud click.",
+        "CenterKeyhole" => "The little door key goes in under the little door. For one absurd second, Mara half expects its tiny knob to turn first.",
+        "RightKeyhole" => "The circle key goes in under the circle. coldest last. It turns all the way round before it catches.",
+        _ => "The key turns.",
+    };
 
-        MemoryVerbSystem.RegisterUse(MemoryVerb.Echo);
-        Hotspots.SpawnRipple(hotspot.Center, new Color(1f, 0.88f, 0.55f));
+    private async Task MissingKeyAsync(Hotspot hotspot)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            RecordExamine(hotspot);
+            AudioManager.Play(Sfx.LockRattle, -8f, 0.82f);
+            AudioManager.Play(Sfx.Denied, -11f, 0.9f);
+            await SaySequence(MissingLines(hotspot.Id));
+            GameState.Instance?.Toast("That key is not in Mara's bag yet (B). Press H and the house will say where its keeping-place was.");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
     }
+
+    private static string[] MissingLines(string id) => id switch
+    {
+        "LeftKeyhole" =>
+        [
+            "Empty. The bridge keyhole smells faintly of river mud and green copper.",
+            "Whatever belongs here was kept with a morning, not with a memory trick.",
+        ],
+        "CenterKeyhole" =>
+        [
+            "Empty. Behind the little-door keyhole: photograph paper, old tape, somebody breathing in a quiet room.",
+            "The key for this one is hidden where a face was kept face-down.",
+        ],
+        "RightKeyhole" =>
+        [
+            "Empty, and cold all the way through. Preserves. Glass. A name folded small enough to keep.",
+            "The circle wants the key that was kept the way everything in that room was kept.",
+        ],
+        _ => ["Empty."],
+    };
 
     private async Task ExamineDoorPartAsync(Hotspot hotspot)
     {
@@ -246,45 +365,62 @@ public partial class Room4Puzzle : MemoryRoomBase
         }
         finally
         {
-            Busy = false;
-            QueueRedraw();
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
         }
     }
 
-    private static string[] FirstLines(string id) => id switch
+    private string[] FirstLines(string id)
     {
-        "BridgePlate" =>
-        [
-            "A bridge stamped in brass, water moving underneath whether anyone crosses or not.",
-            "Directly below it waits a keyhole, polished bright by thumbs.",
-        ],
-        "LeftKeyhole" =>
-        [
-            "The keyhole beneath the bridge. Its brass is polished brighter than the others.",
-            "From inside, the faintest smell of river mud.",
-        ],
-        "DoorPlate" =>
-        [
-            "A little door set into the door, complete with its own impossible knob.",
-            "Below the little door waits the middle keyhole.",
-        ],
-        "CenterKeyhole" =>
-        [
-            "The middle keyhole sits exactly beneath the little door. From inside comes the faintest smell of rain on a bedroom curtain.",
-            "Something on the other side is holding very still, listening back.",
-        ],
-        "CirclePlate" =>
-        [
-            "An empty brass circle. No face, no landscape, no way through except around again.",
-            "One keyhole remains beneath the circle.",
-        ],
-        "RightKeyhole" =>
-        [
-            "The final keyhole, under the circle. Something behind it shifts — not a lock giving way, but a room deciding which year to be.",
-            "It is the coldest of the three.",
-        ],
-        _ => ["cold brass, patient under my fingers."],
-    };
+        if (IsKeyhole(id) && IsInserted(InsertedFlagFor(id)))
+        {
+            return id switch
+            {
+                "LeftKeyhole" => ["The copper bridge key stands in its hole, green at the edges, turned as far as one lock alone will let it."],
+                "CenterKeyhole" => ["The little door key stands in the middle hole. Its tiny knob has not turned. Mara checked. Twice."],
+                "RightKeyhole" => ["The circle key stands in the final hole, its ring catching what light the hall allows."],
+                _ => ["The key stands where Mara put it."],
+            };
+        }
+
+        return id switch
+        {
+            "BridgePlate" =>
+            [
+                "A bridge stamped in brass, water moving underneath whether anyone crosses or not.",
+                "Directly below it waits a keyhole, polished bright by thumbs. Not a symbol to solve. A shape to match.",
+            ],
+            "LeftKeyhole" =>
+            [
+                "The keyhole beneath the bridge. Its brass is polished brighter than the others.",
+                "From inside, the faintest smell of river mud.",
+            ],
+            "DoorPlate" =>
+            [
+                "A little door set into the door, complete with its own impossible knob.",
+                "Below the little door waits the middle keyhole.",
+            ],
+            "CenterKeyhole" =>
+            [
+                "The middle keyhole sits exactly beneath the little door. From inside comes the faintest smell of rain on a bedroom curtain.",
+                "Something on the other side is holding very still, listening back.",
+            ],
+            "CirclePlate" =>
+            [
+                "An empty brass circle. No face, no landscape, no way through except around again.",
+                "One keyhole remains beneath the circle.",
+            ],
+            "RightKeyhole" =>
+            [
+                "The final keyhole, under the circle. Something behind it shifts — not a lock giving way, but a room deciding which year to be.",
+                "It is the coldest of the three.",
+            ],
+            _ => ["cold brass, patient under my fingers."],
+        };
+    }
 
     private static string RepeatLine(string id) => id switch
     {
@@ -297,28 +433,6 @@ public partial class Room4Puzzle : MemoryRoomBase
         _ => "cold brass.",
     };
 
-    private async Task WrongKnockAsync()
-    {
-        if (Busy)
-            return;
-        Busy = true;
-        try
-        {
-            bool hadProgress = _knockProgress > 0;
-            _knockProgress = 0;
-            UpdateStatusLabel();
-            QueueRedraw();
-            AudioManager.Play(Sfx.Denied, -8f, 0.86f);
-            await Say(hadProgress
-                ? "The note falls out of the pattern and the whole knock loosens."
-                : "No answer.", 4f, 23);
-        }
-        finally
-        {
-            Busy = false;
-        }
-    }
-
     private async Task WrongVerbAsync(MemoryVerb verb)
     {
         if (Busy)
@@ -329,16 +443,18 @@ public partial class Room4Puzzle : MemoryRoomBase
             AudioManager.Play(Sfx.Denied, -9f, 0.92f);
             string line = verb switch
             {
-                MemoryVerb.Anchor => "You could hold this door still forever and it would only become a better-kept wall. A knock is movement.",
-                MemoryVerb.Trace => "There is no chain of causes to trace in the brass — only answers waiting to sound.",
+                MemoryVerb.Echo => "Echo can make the brass sound. It cannot put a key in Mara's hand, and this door has stopped pretending otherwise.",
+                MemoryVerb.Anchor => "You could hold this door still forever and it would only become a better-kept wall. It wants metal, carried here.",
+                MemoryVerb.Trace => "There is no chain of causes to trace in the brass — only three keeping-places behind her and the keys they held.",
                 MemoryVerb.Release => "There is nothing whole enough here to release.",
-                _ => "That way of remembering does not fit a knock.",
+                _ => "That way of remembering does not fit a keyhole.",
             };
             await Say(line, 4f, 23);
         }
         finally
         {
-            Busy = false;
+            if (GodotObject.IsInstanceValid(this))
+                Busy = false;
         }
     }
 
@@ -350,29 +466,42 @@ public partial class Room4Puzzle : MemoryRoomBase
         try
         {
             AudioManager.Play(Sfx.LockRattle, -7f, 0.82f);
-            await SaySequence(
-                "The brass takes the sound and gives nothing back.",
-                SentenceIsComplete()
-                    ? "The answer is in the brass: each picture, then the keyhole under it. The wood itself gives nothing back."
-                    : "This door won't listen until the hall behind me has finished its sentence.");
+            if (AllKeysInserted())
+            {
+                await SaySequence(
+                    "All three keys turn partway and stop, together, like they are waiting for a word.",
+                    "The hall behind me hasn't finished its sentence. Metal alone won't bully this door.");
+            }
+            else if (!SentenceIsComplete())
+            {
+                await SaySequence(
+                    "The door gives back three separate rattles and nothing else.",
+                    $"It wants the sentence whole — and {3 - InsertedCount()} more of its keys actually in their holes. Patterns won't substitute for either.");
+            }
+            else
+            {
+                await SaySequence(
+                    "The sentence is whole. The door knows it. It still gives back only the rattle of empty keyholes.",
+                    "Three ordinary keys. In my bag or still in their keeping-places — that is the whole of what stands here now.");
+            }
         }
         finally
         {
-            Busy = false;
+            if (GodotObject.IsInstanceValid(this))
+                Busy = false;
         }
     }
 
     private async Task CompleteDoorAsync()
     {
-        if (Busy || _opened)
+        if (Busy || _opened || !AllKeysInserted() || !SentenceIsComplete())
             return;
         Busy = true;
         try
         {
             _opened = true;
-            _knockProgress = KnockSequence.Length;
             GameState.Instance?.SetFlag(OpenedFlag);
-            MemoryVerbSystem.ConsumeActive(MemoryVerb.Echo);
+            MemoryVerbSystem.Cancel(silent: true);
 
             AudioManager.Play(Sfx.DoorUnlock, -5f);
             AudioManager.Play(Sfx.PuzzleSolve, -8f, 1.06f);
@@ -380,14 +509,15 @@ public partial class Room4Puzzle : MemoryRoomBase
             QueueRedraw();
 
             await SaySequence(
-                "Bridge. Key. Little door. Key. Circle. Key.",
-                "Something on the other side has been knocking back, one answer at a time. At the final note, all three locks turn together — and beyond them, a bedroom cannot decide which year it is.");
+                "Bridge. Little door. Circle. Three keys I carried here in my own bag, out of three rooms that made me earn them.",
+                "At the last turn all three locks go together — no echo, no trick of memory. Just metal remembering what hands are for. Beyond them, a bedroom cannot decide which year it is.");
 
-            GameState.Instance?.Toast("The locks have answered. Click the door to open it.");
+            GameState.Instance?.Toast("All three keys have turned. Click the door to open it.");
         }
         finally
         {
-            Busy = false;
+            if (GodotObject.IsInstanceValid(this))
+                Busy = false;
         }
     }
 
@@ -407,10 +537,31 @@ public partial class Room4Puzzle : MemoryRoomBase
         if (_statusLabel == null)
             return;
 
-        _statusLabel.Text = _opened
-            ? "the locks have answered — click the door to open it"
-            : _knockProgress == 0
-                ? "the door remembers a knock"
-                : $"the knock holds — {_knockProgress} of {KnockSequence.Length}";
+        if (_opened)
+        {
+            _statusLabel.Text = "all three keys have turned — click the door to open it";
+            return;
+        }
+
+        int inserted = InsertedCount();
+        if (inserted >= 3)
+        {
+            _statusLabel.Text = SentenceIsComplete()
+                ? "three keys in — click the door"
+                : "three keys in — the sentence is not whole yet";
+            return;
+        }
+
+        int carried = 0;
+        var gs = GameState.Instance;
+        if (gs != null)
+        {
+            if (gs.HasFlag(BridgeKeyFlag)) carried++;
+            if (gs.HasFlag(DoorKeyFlag)) carried++;
+            if (gs.HasFlag(CircleKeyFlag)) carried++;
+        }
+        _statusLabel.Text = carried > inserted
+            ? $"keys in: {inserted} of 3 — Mara carries {carried}"
+            : $"keys in: {inserted} of 3";
     }
 }

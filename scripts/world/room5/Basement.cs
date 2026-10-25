@@ -4,14 +4,15 @@ using Godot;
 
 /// <summary>
 /// Under the house — reached only by putting three rooms' practical
-/// things together: her father's lockpicks from the Room 5 desk, the
+/// things together: her father's lockpicks from the hall drawer, the
 /// Apartment's flashlight, and the low vent between them.
 ///
 /// This is not a seventh fragment room. It is the house's kept-under
 /// place: a cold furnace, preserves, a crate of outgrown toys, a locked
 /// trunk that yields to the harder lockpick sitting, and a little tool
 /// cabinet whose iron key is hidden by the garden gate. The flashlight
-/// follows the mouse; outside its beam the painting is genuinely hard
+/// follows the mouse directly, with no click or hold; outside its beam
+/// the painting is genuinely hard
 /// to read, and clicking at unseen darkness still counts as a loose
 /// click against MEMORY. The cabinet's spare battery makes the beam
 /// braver for every later visit.
@@ -20,6 +21,9 @@ public partial class Basement : MemoryRoomBase
 {
     private const string Room5ScenePath = "res://scenes/world/room_5.tscn";
     private const string LockpickScenePath = "res://scenes/world/lockpick_puzzle.tscn";
+
+    private Vector2 _beamPosition = new(576, 324);
+    private bool _beamReady;
 
     protected override string RoomName => "Basement";
     protected override string BackgroundPath => "res://assets/images/bgs/Basement_BG.png";
@@ -64,10 +68,28 @@ public partial class Basement : MemoryRoomBase
 
     public override void _Process(double delta)
     {
+        UpdateBeam((float)delta);
         base._Process(delta);
         // The mouse is Mara hand on the flashlight. The room must
-        // follow it every frame.
+        // follow it every frame, with no button involved at all.
         QueueRedraw();
+    }
+
+    private void UpdateBeam(float dt)
+    {
+        Vector2 mouse = GetGlobalMousePosition();
+        mouse = new Vector2(
+            Mathf.Clamp(mouse.X, 0f, 1152f),
+            Mathf.Clamp(mouse.Y, 0f, 648f));
+        if (!_beamReady)
+        {
+            _beamPosition = mouse;
+            _beamReady = true;
+            return;
+        }
+
+        float weight = 1f - Mathf.Exp(-20f * Mathf.Max(dt, 0f));
+        _beamPosition = _beamPosition.Lerp(mouse, Mathf.Clamp(weight, 0f, 1f));
     }
 
     protected override async Task OnRequiredExaminesCompletedAsync()
@@ -425,7 +447,7 @@ public partial class Basement : MemoryRoomBase
             return;
         }
 
-        Vector2 beam = GetGlobalMousePosition();
+        Vector2 beam = _beamPosition;
         float radius = gs.HasFlag("basement_battery_taken") ? 208f : 158f;
 
         // Two square-edged darkness passes: a broad penumbra, then the

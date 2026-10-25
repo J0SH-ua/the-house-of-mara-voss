@@ -83,6 +83,7 @@ public partial class Room4 : Node2D
 	private Area2D _pic12Area;
 	private bool _mirrorBusy;
 	private bool _framesBusy;
+	private bool _drawerBusy;
 
 	private const string FlashbackScenePath = "res://scenes/world/flashback_landing.tscn";
 	private bool _doorAnimationStarted = false;
@@ -309,15 +310,60 @@ public partial class Room4 : Node2D
 
 	private async void OnDrawerCollisionPressed()
 	{
-		bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "HallDrawer");
-		RoomExamineTracker.RecordExamine("Room4", "HallDrawer");
-		if (facedBefore)
-			GameState.Instance?.RegisterRepeatExaminePenalty();
-		AudioManager.Play(Sfx.DrawerOpen, -7f);
-		var globalPosition = _drawerCollisionArea.GlobalPosition;
-		await Dialogue.ShowText(this, "The hall drawer. Old wood, a bit sticky. I've opened it a hundred times in here and never once seen inside. The house is gentle like that. I've let it be.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
-		await Dialogue.ShowText(this, "Inside — blank keys on a ring, bright as new pennies. Dad cut keys for half of Eldfen at this table. He kept the uncut ones here, ready.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
-		await Dialogue.ShowText(this, "One has a string tag, in a kid's careful letters: FOR WHEN I'M TALLER. He never got to cut hers. The house keeps them bright so I won't have to see them dull.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+		if (_drawerBusy)
+			return;
+		_drawerBusy = true;
+		try
+		{
+			bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "HallDrawer");
+			var gs = GameState.Instance;
+			bool needsLockpickSet = gs != null && !gs.HasFlag("item_lockpick_set");
+			RoomExamineTracker.RecordExamine("Room4", "HallDrawer");
+			AudioManager.Play(Sfx.DrawerOpen, -7f);
+			var globalPosition = _drawerCollisionArea.GlobalPosition;
+
+			if (facedBefore && !needsLockpickSet)
+			{
+				gs?.RegisterRepeatExaminePenalty();
+				await Dialogue.ShowText(this, "Blank keys, still bright. The practical thing underneath them is already in Mara's hands now.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				return;
+			}
+
+			if (!facedBefore)
+			{
+				await Dialogue.ShowText(this, "The hall drawer. Old wood, a bit sticky. I've opened it a hundred times in here and never once seen inside. The house is gentle like that. I've let it be.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "Inside — blank keys on a ring, bright as new pennies. Dad cut keys for half of Eldfen at this table. He kept the uncut ones here, ready.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "One has a string tag, in a kid's careful letters: FOR WHEN I'M TALLER. He never got to cut hers. The house keeps them bright so I won't have to see them dull.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+			}
+			else
+			{
+				// A drawer faced before the roll existed gets this one
+				// honest second look without a repeat-examine penalty.
+				await Dialogue.ShowText(this, "Under the blank keys. I saw the bright ring every time and let the house stop my eyes there. Not this time.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+			}
+
+			if (gs == null || gs.HasFlag("item_lockpick_set"))
+				return;
+
+			AudioManager.Play(Sfx.PhotoPickup, -9f, 0.92f);
+			AudioManager.Play(Sfx.KeyType, -12f, 1.2f);
+			await Dialogue.ShowText(this, "Under the keys is an oilcloth roll, tied twice. Dad's handwriting on the cloth: MARA DO NOT — and then, in smaller letters, — lose these.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+			if (!GodotObject.IsInstanceValid(this)) return;
+			await Dialogue.ShowText(this, "His proper lockpicks. Slender steel, oiled and clean, each one in its pocket. I held the lamp while he opened half the street's doors with these. I was listening, even when I pretended I was only holding the light.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+			if (!GodotObject.IsInstanceValid(this)) return;
+
+			gs.SetFlag("item_lockpick_set", save: false);
+			gs.UnlockClue("father_lockpicks");
+			gs.Toast("Father's lockpick set — kept in Mara's bag (B). The Journal (J) remembers how he taught her to listen.");
+		}
+		finally
+		{
+			_drawerBusy = false;
+		}
 	}
 
 	private async void OnTurnedFramesPressed(Area2D frameArea)
@@ -488,6 +534,12 @@ public partial class Room4 : Node2D
 			if (@event is InputEventMouseButton sealedClick && sealedClick.Pressed
 				&& sealedClick.ButtonIndex == MouseButton.Left)
 			{
+				// One practical retrieval survives sealing: a save that
+				// faced this drawer before Father's roll lived under
+				// its keys may still come back and look underneath.
+				if (GameState.Instance.HasFlag("item_lockpick_set") == false &&
+					TryHandleDrawerCollision(sealedClick))
+					return;
 				GameState.Instance.NotifySealedInteraction();
 				GetTree().Root.SetInputAsHandled();
 			}

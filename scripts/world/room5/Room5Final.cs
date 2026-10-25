@@ -22,11 +22,15 @@ using Godot;
 /// raincoat — stops being a wardrobe and becomes the garden, waiting to be
 /// clicked through.
 ///
-/// The room also keeps something practical. Beneath the apology letters
-/// are her father's lockpicks; low in the wall beneath the writing desk
-/// is a latched ventilation grille. Together with a light from Mara's
-/// present-day apartment, they open a way under the house that the main
-/// remembering never required her to find.
+/// The room also keeps something practical. Her father's proper lockpick
+/// set is earned earlier, in the hallway drawer's keeping; beneath the
+/// apology letters here is either that same set (for a Mara who reached
+/// this room before she ever saw inside the hall drawer, including older
+/// saves) or the finer tension wrench that makes the set kinder in a
+/// hard lock. Low in the wall beneath the writing desk is a latched
+/// ventilation grille. Together with a light from Mara's present-day
+/// apartment, they open a way under the house that the main remembering
+/// never required her to find.
 /// </summary>
 public partial class Room5Final : MemoryRoomBase
 {
@@ -71,12 +75,17 @@ public partial class Room5Final : MemoryRoomBase
     /// than on one broad patch of empty floor.</summary>
     private static readonly Rect2[] FloorPhotographRects =
     [
-        new Rect2(708, 520, 100, 36),
-        new Rect2(522, 554, 106, 40),
-        new Rect2(788, 555, 100, 40),
-        new Rect2(612, 579, 96, 40),
-        new Rect2(697, 579, 100, 42),
-        new Rect2(722, 618, 118, 30),
+        // The same six painted centres as before, with a modest pad on
+        // every side. MemoryRoomBase now asks GameUI for the live rects
+        // of its actual buttons instead of treating the whole lower
+        // room as HUD, so each of these can be hovered and clicked on
+        // its own; if one print is awkward, another will answer.
+        new Rect2(704, 517, 108, 42),
+        new Rect2(518, 551, 114, 46),
+        new Rect2(784, 552, 108, 46),
+        new Rect2(608, 576, 104, 46),
+        new Rect2(693, 576, 108, 48),
+        new Rect2(718, 616, 126, 32),
     ];
 
     private int _lampRefusalCount;
@@ -491,40 +500,73 @@ public partial class Room5Final : MemoryRoomBase
         }
     }
 
-    /// <summary>The practical thing under the apology: her father's
-    /// oilcloth roll. Granted once, whether the drawer was opened in this
-    /// version of the game or in a save that predates it.</summary>
+    /// <summary>The practical thing under the apology. The main road now
+    /// earns Father's oilcloth roll in Room 4's hall drawer, so this desk
+    /// has two honest jobs: it is still the fallback grant for a save (old
+    /// or new) that somehow reached the letters without the set, and for
+    /// everyone who already carries the set it holds the one tool the
+    /// roll was missing — a finer tension wrench for Mara's hands.</summary>
     private async Task TakeLockpicksAsync(Hotspot drawer, bool foundUnderLetters)
     {
         var gs = GameState.Instance;
-        if (gs == null || gs.HasFlag("item_lockpick_set"))
+        if (gs == null)
+            return;
+
+        bool needsSet = !gs.HasFlag("item_lockpick_set");
+        bool needsFineWrench = !needsSet && !gs.HasFlag("item_fine_tension_wrench");
+        if (!needsSet && !needsFineWrench)
             return;
 
         AudioManager.Play(Sfx.PhotoPickup, -9f, 0.92f);
         AudioManager.Play(Sfx.KeyType, -13f, 1.25f);
+        if (needsSet)
+        {
+            if (foundUnderLetters)
+            {
+                await SaySequence(
+                    "Under the last envelope is an oilcloth roll, tied twice. My father's handwriting on the cloth: MARA DO NOT — and then, in smaller letters, — lose these.",
+                    "Lockpicks. A whole roll of them, oiled and clean. I watched him open our neighbours' doors with these when they locked themselves out, one knee on the step, telling me to listen for the little sounds.");
+            }
+            else
+            {
+                await SaySequence(
+                    "One pale rectangle is longer than an envelope. At the back of the drawer, an oilcloth roll is wedged where the letters used to hide it.",
+                    "My father's lockpicks. Tied twice, the way he tied everything. I held the lamp for him often enough to know what each one is for.");
+            }
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+
+            gs.SetFlag("item_lockpick_set", save: false);
+            gs.UnlockClue("father_lockpicks");
+            Hotspots.SpawnRipple(drawer.Center, new Color(1f, 0.85f, 0.5f));
+            gs.Toast("Father's lockpick set — kept in Mara's bag (B). The Journal (J) remembers how he taught her to listen.");
+            return;
+        }
+
         if (foundUnderLetters)
         {
             await SaySequence(
-                "Under the last envelope is an oilcloth roll, tied twice. My father's handwriting on the cloth: MARA DO NOT — and then, in smaller letters, — lose these.",
-                "Lockpicks. A whole roll of them, oiled and clean. I watched him open our neighbours' doors with these when they locked themselves out, one knee on the step, telling me to listen for the little sounds.");
+                "Under the last envelope, wrapped in tissue gone soft as cloth, is one flat strip of spring steel — thinner than anything in Dad's roll. His pencil on the tissue: FOR MARA HANDS.",
+                "A fine tension wrench. He must have filed it down the summer he started letting me hold more than the lamp. The picks will tell the truth a little sooner with this under them — and forgive a little more when my wrist gets eager.");
         }
         else
         {
             await SaySequence(
-                "One pale rectangle is longer than an envelope. At the back of the drawer, an oilcloth roll is wedged where the letters used to hide it.",
-                "My father's lockpicks. Tied twice, the way he tied everything. I held the lamp for him often enough to know what each one is for.");
+                "One pale rectangle is longer than an envelope. At the back of the drawer, tissue gone soft as cloth wraps a single flat strip of spring steel.",
+                "FOR MARA HANDS, in Dad's pencil. A fine tension wrench, filed down for mine. It belongs in the roll with the rest of his patience.");
         }
         if (!GodotObject.IsInstanceValid(this))
             return;
 
-        gs.SetFlag("item_lockpick_set", save: false);
-        gs.UnlockClue("father_lockpicks");
+        gs.SetFlag("item_fine_tension_wrench", save: false);
+        gs.UnlockClue("fine_tension_wrench");
         Hotspots.SpawnRipple(drawer.Center, new Color(1f, 0.85f, 0.5f));
-        gs.Toast("Father's lockpick set — kept in Mara's bag (B). The Journal (J) remembers how he taught her to listen.");
+        gs.Toast("Fine tension wrench — added to Father's lockpick set in Mara's bag (B). Deep pins will read a touch clearer, and binds will bite a touch less.");
     }
 
-    /// <summary>The low vent: a latched grille, a tool earned in this
-    /// room, and a dark that also wants the apartment's flashlight.</summary>
+    /// <summary>The low vent: a latched grille, a proper tool earned in
+    /// another room, and a dark that also wants the apartment's
+    /// flashlight.</summary>
     private async Task UseVentAsync(Hotspot vent)
     {
         if (Busy)

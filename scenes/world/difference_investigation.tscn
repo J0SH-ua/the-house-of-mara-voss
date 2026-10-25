@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cmaradiffscn"]
+
+[ext_resource type="Script" uid="uid://cmaradiff001" path="res://scripts/world/room2/Puzzle/DifferenceInvestigation.cs" id="1"]
+
+[node name="DifferenceInvestigation" type="Node2D"]
+script = ExtResource("1")

@@ -5,13 +5,19 @@ using Godot;
 /// <summary>
 /// Her father's trade, remembered with Mara hands.
 ///
-/// A / D rocks the pick across the pins. Holding the left mouse button
-/// and dragging sideways turns the tension wrench and the plug with it.
-/// Near the hidden sweet spot the plug travels; away from it the plug
-/// binds early, the pick starts to complain, and forcing the drag can
-/// snap a pick. Four picks (the one in the lock and three spares) are
-/// allowed per sitting — running out only sends Mara back to breathe
-/// and begin again; the set itself is never lost.
+/// A / D rocks the pick quickly across the pins (Shift slows it for a
+/// fine final nudge). The tension wrench simply follows horizontal
+/// mouse movement — no mouse button is pressed or held. Moving right
+/// applies pressure, moving left eases it, and holding the mouse still
+/// lets the unset part of the plug spring back to the last set layer.
+/// Each lock is a sequence of pin layers. A layer has its own hidden
+/// sweet spot; once its gate is reached with the pick in the right
+/// place, that layer stays set and the next one sits deeper, with a
+/// narrower tolerance and less patience for force. Away from a layer's
+/// sweet spot the plug binds early, the pick complains, and forcing it
+/// can snap a pick. Four picks (the one in the lock and three spares)
+/// are allowed per sitting — running out only sends Mara back to
+/// breathe and begin again; the set itself is never lost.
 ///
 /// The scene serves both locks in the under-house chain. Choice of
 /// target arrives through saved transient flags (with a progress-based
@@ -29,6 +35,8 @@ public partial class LockpickPuzzle : Node2D
     private const string BasementScenePath = "res://scenes/world/basement.tscn";
     private const float MaxPickDegrees = 78f;
     private const float PlugOpenDegrees = 90f;
+    private const float PickSpeedDegreesPerSecond = 245f;
+    private const float FinePickSpeedDegreesPerSecond = 95f;
     private const int PicksPerSitting = 4;
 
     private enum PickState
@@ -56,17 +64,23 @@ public partial class LockpickPuzzle : Node2D
     private Label _leaveLabel;
 
     private bool _targetTrunk;
-    private float _sweetDegrees;
-    private float _toleranceDegrees;
-    private float _stressScale;
+    private bool _hasFineWrench;
+    private float[] _layerSweetDegrees = System.Array.Empty<float>();
+    private float[] _layerEnds = System.Array.Empty<float>();
+    private float[] _layerTolerances = System.Array.Empty<float>();
+    private float[] _layerStressScales = System.Array.Empty<float>();
+    private int _layerIndex;
     private float _pickDegrees;
     private float _plugDegrees;
     private float _stress;
     private int _picksLeft = PicksPerSitting;
     private int _lastPickTickBand;
     private int _lastPlugTickStep;
-    private bool _dragging;
-    private bool _nearLineSaid;
+    private int _nearLineLayer = -1;
+    private Vector2 _lastMousePosition;
+    private bool _mouseSampleReady;
+    private ulong _lastTorqueMsec;
+    private ulong _lastBindSoundMsec;
     private bool _leaveCursorOwned;
     private PickState _state = PickState.Intro;
 
@@ -79,13 +93,9 @@ public partial class LockpickPuzzle : Node2D
         _targetTrunk = gs != null &&
             (gs.HasFlag("lockpick_target_trunk") ||
              (!gs.HasFlag("lockpick_target_vent") && gs.HasFlag("room5_vent_open")));
-        _toleranceDegrees = _targetTrunk ? 7f : 11f;
-        _stressScale = _targetTrunk ? 1.3f : 1f;
-
-        var rng = new RandomNumberGenerator();
-        rng.Randomize();
-        _sweetDegrees = rng.RandfRange(-58f, 58f);
-        _lastPickTickBand = Mathf.RoundToInt(_pickDegrees / 6f);
+        _hasFineWrench = gs?.HasFlag("item_fine_tension_wrench") ?? false;
+        BuildLayers();
+        _lastPickTickBand = Mathf.RoundToInt(_pickDegrees / 4f);
 
         // A is also Anchor elsewhere in the house. Here it belongs to the
         // pick alone; verb/clarity modes do not enter the lock with her.
@@ -97,6 +107,70 @@ public partial class LockpickPuzzle : Node2D
         _ = PlayIntroAsync();
     }
 
+    private void BuildLayers()
+    {
+        if (_targetTrunk)
+        {
+            _layerEnds = [18f, 36f, 54f, 72f, PlugOpenDegrees];
+            _layerTolerances = [11f, 9f, 7.5f, 6f, 5f];
+            _layerStressScales = [1f, 1.08f, 1.16f, 1.24f, 1.34f];
+        }
+        else
+        {
+            _layerEnds = [30f, 60f, PlugOpenDegrees];
+            _layerTolerances = [13f, 10f, 8f];
+            _layerStressScales = [0.9f, 1f, 1.12f];
+        }
+
+        _layerSweetDegrees = new float[_layerEnds.Length];
+        var rng = new RandomNumberGenerator();
+        rng.Randomize();
+        float previousSweet = 0f;
+        for (int i = 0; i < _layerSweetDegrees.Length; i++)
+        {
+            float candidate = rng.RandfRange(-58f, 58f);
+            int attempts = 0;
+            // Consecutive layers should feel like different pins, not the
+            // same fortunate wrist angle wearing a new number.
+            while (i > 0 && Mathf.Abs(candidate - previousSweet) < 24f && attempts < 24)
+            {
+                candidate = rng.RandfRange(-58f, 58f);
+                attempts++;
+            }
+            _layerSweetDegrees[i] = candidate;
+            previousSweet = candidate;
+        }
+    }
+
+    private int LayerCount => _layerEnds.Length;
+    private float CurrentLayerStart => _layerIndex <= 0 ? 0f : _layerEnds[_layerIndex - 1];
+    private float CurrentLayerEnd => _layerIndex < LayerCount ? _layerEnds[_layerIndex] : PlugOpenDegrees;
+    private float CurrentSweetDegrees => _layerIndex < _layerSweetDegrees.Length
+        ? _layerSweetDegrees[_layerIndex]
+        : 0f;
+    private float CurrentToleranceDegrees
+    {
+        get
+        {
+            float tolerance = _layerIndex < _layerTolerances.Length
+                ? _layerTolerances[_layerIndex]
+                : 5f;
+            // The Room 5 upgrade is deliberately modest: pins read about
+            // a degree sooner, it does not pick the lock for her.
+            return tolerance + (_hasFineWrench ? 1f : 0f);
+        }
+    }
+    private float CurrentStressScale
+    {
+        get
+        {
+            float scale = _layerIndex < _layerStressScales.Length
+                ? _layerStressScales[_layerIndex]
+                : 1.2f;
+            return scale * (_hasFineWrench ? 0.82f : 1f);
+        }
+    }
+
     private void BuildLabels()
     {
         _titleLabel = MakeLabel(
@@ -104,7 +178,7 @@ public partial class LockpickPuzzle : Node2D
             new Vector2(326, 18), new Vector2(500, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(
-            "A / D — rock the pick      Hold + drag mouse — turn the wrench\nLet go when it complains. Force breaks picks.",
+            "A / D — move the pick (Shift = fine)      Move mouse — turn the wrench\nNo click to hold. Set one layer at a time; force breaks picks.",
             new Vector2(276, 58), new Vector2(600, 62), 20,
             new Color(0.9f, 0.86f, 0.76f, 0.94f));
         _statusLabel = MakeLabel(string.Empty,
@@ -159,14 +233,17 @@ public partial class LockpickPuzzle : Node2D
 
             if (_targetTrunk)
             {
-                await Say("Small lock. Old lock. The kind Dad called honest — which meant it would tell you exactly where you were wrong.");
+                await Say("Small lock. Old lock. Five layers deep, if my fingers are reading it right. The kind Dad called honest — which meant it would tell you exactly where you were wrong, one pin at a time.");
             }
             else
             {
-                await Say("Pick across the pins. Wrench under it. Dad's voice, from over my shoulder: don't push a sound you don't like.");
+                await Say("Pick across the pins. Wrench under it. Three layers in this latch, each deeper than the last. Dad's voice, from over my shoulder: don't push a sound you don't like.");
             }
             if (!StillHere())
                 return;
+            _lastMousePosition = GetGlobalMousePosition();
+            _mouseSampleReady = true;
+            _lastTorqueMsec = Time.GetTicksMsec();
             _state = PickState.Picking;
             UpdateStatus();
         }
@@ -188,35 +265,20 @@ public partial class LockpickPuzzle : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        // Mouse work waits for HUD/GUI first, so Bag, Journal, Pause and
-        // navigation remain ordinary buttons over the lock close-up.
+        // The wrench itself needs no button at all: _Process samples the
+        // mouse position every frame and follows its horizontal movement.
+        // This handler exists only for the drawn "put the tools away"
+        // control. Waiting for unhandled input keeps Bag, Journal, Pause
+        // and navigation ordinary buttons over the lock close-up.
         if (_state != PickState.Picking || GetTree().Paused || Dialogue.IsShowing)
             return;
 
-        if (@event is InputEventMouseButton mouseButton && mouseButton.ButtonIndex == MouseButton.Left)
-        {
-            if (mouseButton.Pressed)
-            {
-                GetViewport().SetInputAsHandled();
-                if (LeaveRect.HasPoint(mouseButton.Position))
-                {
-                    _ = LeaveAsync();
-                    return;
-                }
-                _dragging = true;
-            }
-            else if (_dragging)
-            {
-                _dragging = false;
-                GetViewport().SetInputAsHandled();
-            }
-            return;
-        }
-
-        if (_dragging && @event is InputEventMouseMotion motion)
+        if (@event is InputEventMouseButton mouseButton &&
+            mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed &&
+            LeaveRect.HasPoint(mouseButton.Position))
         {
             GetViewport().SetInputAsHandled();
-            DragWrench(motion.Relative.X);
+            _ = LeaveAsync();
         }
     }
 
@@ -225,16 +287,23 @@ public partial class LockpickPuzzle : Node2D
         float dt = (float)delta;
         UpdateCursor();
 
-        if (_state != PickState.Picking)
+        // Sample in every state so returning from dialogue, pause, a panel
+        // or a snapped pick never turns one accumulated mouse jump into
+        // a sudden wrench movement.
+        Vector2 mouse = GetGlobalMousePosition();
+        float mouseDeltaX = 0f;
+        if (_mouseSampleReady)
+            mouseDeltaX = mouse.X - _lastMousePosition.X;
+        _lastMousePosition = mouse;
+        _mouseSampleReady = true;
+
+        bool blocked = GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
+            (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
+        if (_state != PickState.Picking || blocked)
         {
             QueueRedraw();
             return;
         }
-
-        // If a pause/panel swallowed the physical release, do not let a
-        // later bare mouse-move keep turning the wrench.
-        if (_dragging && !Input.IsMouseButtonPressed(MouseButton.Left))
-            _dragging = false;
 
         float direction = 0f;
         if (Input.IsPhysicalKeyPressed(Key.A))
@@ -242,12 +311,15 @@ public partial class LockpickPuzzle : Node2D
         if (Input.IsPhysicalKeyPressed(Key.D))
             direction += 1f;
 
-        if (direction != 0f && !Dialogue.IsShowing && !GetTree().Paused)
+        if (direction != 0f)
         {
+            float speed = Input.IsPhysicalKeyPressed(Key.Shift)
+                ? FinePickSpeedDegreesPerSecond
+                : PickSpeedDegreesPerSecond;
             _pickDegrees = Mathf.Clamp(
-                _pickDegrees + direction * 105f * dt,
+                _pickDegrees + direction * speed * dt,
                 -MaxPickDegrees, MaxPickDegrees);
-            int band = Mathf.RoundToInt(_pickDegrees / 6f);
+            int band = Mathf.RoundToInt(_pickDegrees / 4f);
             if (band != _lastPickTickBand)
             {
                 _lastPickTickBand = band;
@@ -255,28 +327,44 @@ public partial class LockpickPuzzle : Node2D
             }
         }
 
-        if (!_dragging)
+        // No button state is consulted: ordinary horizontal mouse motion
+        // is the wrench. Moving towards the drawn leave control does not
+        // keep twisting the lock underneath the player's hand.
+        if (!LeaveRect.HasPoint(mouse) && Mathf.Abs(mouseDeltaX) > 0.05f)
+            TurnWrench(mouseDeltaX);
+
+        if (_state != PickState.Picking)
         {
-            // Released, the plug springs home and the pick forgives her.
-            _plugDegrees = Mathf.MoveToward(_plugDegrees, 0f, 85f * dt);
+            QueueRedraw();
+            return;
+        }
+
+        ulong now = Time.GetTicksMsec();
+        if (now - _lastTorqueMsec > 100)
+        {
+            // A still mouse applies no new pressure. The unset part of
+            // the current layer springs back, but set layers stay set.
+            _plugDegrees = Mathf.MoveToward(_plugDegrees, CurrentLayerStart, 65f * dt);
             _stress = Mathf.MoveToward(_stress, 0f, 0.5f * dt);
         }
-        else if (PickError() <= _toleranceDegrees)
+        else if (PickError() <= CurrentToleranceDegrees)
         {
             _stress = Mathf.MoveToward(_stress, 0f, 0.16f * dt);
-            if (!_nearLineSaid && _plugDegrees > 22f)
+            float layerSpan = Mathf.Max(1f, CurrentLayerEnd - CurrentLayerStart);
+            float layerProgress = (_plugDegrees - CurrentLayerStart) / layerSpan;
+            if (_nearLineLayer != _layerIndex && layerProgress > 0.45f)
             {
-                _nearLineSaid = true;
+                _nearLineLayer = _layerIndex;
                 GameState.Instance?.Toast(NearLines[_targetTrunk ? 1 : 0]);
             }
         }
 
-        int plugStep = Mathf.FloorToInt(_plugDegrees / 12f);
+        int plugStep = Mathf.FloorToInt(_plugDegrees / 6f);
         if (plugStep != _lastPlugTickStep)
         {
             _lastPlugTickStep = plugStep;
-            if (_dragging)
-                AudioManager.Play(Sfx.LockpickTick, -15f, 0.82f + plugStep * 0.045f);
+            if (now - _lastTorqueMsec <= 100)
+                AudioManager.Play(Sfx.LockpickTick, -15f, 0.82f + plugStep * 0.025f);
         }
 
         if (_stress >= 1f)
@@ -286,44 +374,94 @@ public partial class LockpickPuzzle : Node2D
         QueueRedraw();
     }
 
-    private void DragWrench(float mouseDeltaX)
+    private void TurnWrench(float mouseDeltaX)
     {
-        if (_state != PickState.Picking || mouseDeltaX == 0f)
+        if (_state != PickState.Picking || mouseDeltaX == 0f || _layerIndex >= LayerCount)
             return;
 
-        float requested = Mathf.Clamp(mouseDeltaX * 0.24f, -3.2f, 3.2f);
+        _lastTorqueMsec = Time.GetTicksMsec();
+        float requested = Mathf.Clamp(mouseDeltaX * 0.18f, -3.4f, 3.4f);
+        float layerStart = CurrentLayerStart;
+        float layerEnd = CurrentLayerEnd;
+
         if (requested < 0f)
         {
-            _plugDegrees = Mathf.Max(0f, _plugDegrees + requested);
+            _plugDegrees = Mathf.Max(layerStart, _plugDegrees + requested);
             _stress = Mathf.MoveToward(_stress, 0f, 0.05f);
             return;
         }
 
         float error = PickError();
-        if (error <= _toleranceDegrees)
+        float tolerance = CurrentToleranceDegrees;
+        if (error <= tolerance)
         {
-            _plugDegrees = Mathf.Min(PlugOpenDegrees, _plugDegrees + requested);
+            _plugDegrees = Mathf.Min(layerEnd, _plugDegrees + requested);
             _stress = Mathf.MoveToward(_stress, 0f, 0.035f);
         }
         else
         {
-            // The closer the pick, the farther the plug can travel before
-            // the wrong pins catch it. This travel is the readable clue.
-            float bindLimit = Mathf.Clamp(68f - error * 0.68f, 17f, 62f);
+            // The closer the pick, the farther this layer can travel
+            // before its wrong pins catch it. That travel is the clue:
+            // nearly-right almost reaches the gate, far-wrong knocks
+            // almost at once. A bind never crosses an unset gate.
+            float layerSpan = layerEnd - layerStart;
+            float travelFraction = 1f - Mathf.Clamp((error - tolerance) / 62f, 0f, 1f);
+            float bindLimit = layerStart + Mathf.Clamp(
+                layerSpan * travelFraction, 4f, Mathf.Max(4f, layerSpan - 3f));
             float before = _plugDegrees;
             _plugDegrees = Mathf.Min(bindLimit, _plugDegrees + requested);
             float travelled = Mathf.Max(0f, _plugDegrees - before);
             float forced = Mathf.Max(0f, requested - travelled);
-            _stress += (travelled * 0.006f + forced * 0.055f) * _stressScale;
-            if (forced > 0.2f)
+            _stress += (travelled * 0.004f + forced * 0.05f) * CurrentStressScale;
+
+            ulong now = Time.GetTicksMsec();
+            if (forced > 0.2f && now - _lastBindSoundMsec > 110)
+            {
+                _lastBindSoundMsec = now;
                 AudioManager.Play(Sfx.LockpickTick, -13f, 0.62f);
+            }
         }
 
-        if (_plugDegrees >= PlugOpenDegrees - 0.5f)
-            _ = SucceedAsync();
+        if (_plugDegrees >= layerEnd - 0.25f && PickError() <= CurrentToleranceDegrees)
+            SetCurrentLayer();
     }
 
-    private float PickError() => Mathf.Abs(_pickDegrees - _sweetDegrees);
+    private void SetCurrentLayer()
+    {
+        if (_state != PickState.Picking || _layerIndex >= LayerCount)
+            return;
+
+        int completed = _layerIndex + 1;
+        _plugDegrees = CurrentLayerEnd;
+        _stress = 0f;
+        _lastPlugTickStep = Mathf.FloorToInt(_plugDegrees / 6f);
+        AudioManager.Play(Sfx.LockpickTick, -9f, 0.96f + completed * 0.08f);
+        AudioManager.Play(Sfx.WordChime, -14f, 0.9f + completed * 0.06f);
+
+        if (completed >= LayerCount)
+        {
+            _ = SucceedAsync();
+            return;
+        }
+
+        _layerIndex = completed;
+        GameState.Instance?.Toast(
+            $"{Ordinal(completed)} layer set. The next pins sit deeper.");
+        UpdateStatus();
+        QueueRedraw();
+    }
+
+    private static string Ordinal(int value) => value switch
+    {
+        1 => "First",
+        2 => "Second",
+        3 => "Third",
+        4 => "Fourth",
+        5 => "Fifth",
+        _ => value.ToString(),
+    };
+
+    private float PickError() => Mathf.Abs(_pickDegrees - CurrentSweetDegrees);
 
     private void PlayPickTick()
     {
@@ -340,9 +478,10 @@ public partial class LockpickPuzzle : Node2D
             return;
 
         _state = PickState.Broken;
-        _dragging = false;
         _picksLeft = Mathf.Max(0, _picksLeft - 1);
-        _plugDegrees = 0f;
+        // Set layers belong to the lock now; only the layer being forced
+        // gives up its unset travel when a pick snaps.
+        _plugDegrees = CurrentLayerStart;
         _stress = 0f;
         AudioManager.Play(Sfx.LockpickSnap, -5f);
         Dialogue.BeginInputBlock();
@@ -381,7 +520,6 @@ public partial class LockpickPuzzle : Node2D
             return;
 
         _state = PickState.Success;
-        _dragging = false;
         _plugDegrees = PlugOpenDegrees;
         _stress = 0f;
         AudioManager.Play(Sfx.LockpickTick, -9f, 1.22f);
@@ -436,7 +574,6 @@ public partial class LockpickPuzzle : Node2D
         if (_state != PickState.Picking)
             return;
         _state = PickState.Leaving;
-        _dragging = false;
         AudioManager.Play(Sfx.PageTurn, -10f, 0.82f);
         Dialogue.BeginInputBlock();
         try
@@ -471,12 +608,13 @@ public partial class LockpickPuzzle : Node2D
         if (_statusLabel == null)
             return;
         string pickWord = _picksLeft == 1 ? "pick" : "picks";
+        string toolNote = _hasFineWrench ? " · fine wrench" : string.Empty;
         _statusLabel.Text = _state switch
         {
             PickState.Success => "It turns.",
             PickState.Broken when _picksLeft > 0 => $"A pick snapped — {_picksLeft} {pickWord} left.",
             PickState.Broken => "No picks left for this sitting.",
-            _ => $"{_picksLeft} {pickWord} in the roll",
+            _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set · {_picksLeft} {pickWord}{toolNote}",
         };
     }
 
@@ -533,6 +671,7 @@ public partial class LockpickPuzzle : Node2D
         DrawLeaveControl();
         DrawPlugAndTools();
         DrawStress();
+        DrawLayerPips();
 
         // A held-breath vignette, in plain strips so it stays in the
         // game's chunky visual language.
@@ -639,6 +778,48 @@ public partial class LockpickPuzzle : Node2D
             Vector2 p = shaftEnd + direction * (12f + i * 17f);
             DrawLine(p - side * 7f, p + side * 7f,
                 new Color(0.55f, 0.43f, 0.28f, 0.95f), 3f, true);
+        }
+    }
+
+    private void DrawLayerPips()
+    {
+        if (LayerCount <= 0)
+            return;
+
+        const float spacing = 30f;
+        float startX = LockCenter.X - (LayerCount - 1) * spacing * 0.5f;
+        float y = 512f;
+        float pulse = Settings.ReduceMotionOrDefault()
+            ? 0.75f
+            : 0.62f + 0.22f * (float)Math.Sin(Time.GetTicksMsec() / 220.0);
+
+        for (int i = 0; i < LayerCount; i++)
+        {
+            var center = new Vector2(startX + i * spacing, y);
+            bool set = _state == PickState.Success || i < _layerIndex;
+            bool current = i == _layerIndex && _state == PickState.Picking;
+            if (set)
+            {
+                DrawCircle(center, 8f, new Color(1f, 0.82f, 0.42f, 0.96f));
+                DrawArc(center, 10f, 0f, Mathf.Tau, 28,
+                    new Color(0.55f, 0.39f, 0.18f, 0.9f), 1.5f, true);
+            }
+            else
+            {
+                DrawCircle(center, 6f, new Color(0.08f, 0.07f, 0.05f, 0.9f));
+                DrawArc(center, current ? 10f : 8f, 0f, Mathf.Tau, 28,
+                    new Color(1f, 0.86f, 0.52f, current ? pulse : 0.42f),
+                    current ? 2f : 1.2f, true);
+            }
+
+            // Gate ticks around the plug: gold once that layer has set,
+            // pale while it is still the depth Mara is trying to reach.
+            Vector2 direction = DirectionFromDegrees(_layerEnds[i]);
+            Color tick = set
+                ? new Color(1f, 0.82f, 0.42f, 0.95f)
+                : new Color(0.9f, 0.82f, 0.64f, current ? pulse : 0.38f);
+            DrawLine(LockCenter + direction * 79f, LockCenter + direction * 91f,
+                tick, set || current ? 3f : 2f, true);
         }
     }
 
