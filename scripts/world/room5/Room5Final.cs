@@ -100,6 +100,7 @@ public partial class Room5Final : MemoryRoomBase
     ];
 
     private int _lampRefusalCount;
+    private readonly RandomNumberGenerator _rng = new();
 
     /// <summary>Every thing in this room that slides has been faced at
     /// least once. Only then will the lamp let itself be touched.</summary>
@@ -746,7 +747,7 @@ public partial class Room5Final : MemoryRoomBase
             for (int i = 0; i < 5; i++)
             {
                 AudioManager.Play(Sfx.UiHover, -16f, 1.7f);
-                await WaitSeconds((float)GD.RandfRange(0.09, 0.30));
+                await WaitSeconds(_rng.RandfRange(0.09f, 0.30f));
                 if (!GodotObject.IsInstanceValid(this))
                     return;
             }
