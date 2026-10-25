@@ -117,8 +117,6 @@ public partial class Room5Final : MemoryRoomBase
         _gardenLabel.Visible = GameState.Instance?.IsShardRecovered(4) ?? false;
 
         var gs = GameState.Instance;
-        if (gs != null && !gs.HasFlag(AnchoredFlag) && !WasExamined("Lamp") && AllShiftersTouched())
-            GameUI.Instance?.QueueIdaIllusion("room5_lamp");
         if (gs == null || !gs.IsShardRecovered(4))
         {
             _ = PlayStoryLessonOnceAsync("story_lesson_room5_anchor_room",
@@ -537,15 +535,6 @@ public partial class Room5Final : MemoryRoomBase
             // The noticing lives in the lamp's own first lines now; this
             // only remembers that she has said it.
             gs?.SetFlag(LampNoticeFlag);
-        }
-        else if (gs != null && !gs.HasFlag(AnchoredFlag)
-            && !WasExamined("Lamp") && AllShiftersTouched())
-        {
-            // Everything that slides has just been faced, and the lamp
-            // still waits untouched. Before Mara can talk herself out of
-            // it, someone small is already at the nightstand, looking at
-            // the light. (A tell, not a word of instruction.)
-            GameUI.Instance?.QueueIdaIllusion("room5_lamp");
         }
     }
 
