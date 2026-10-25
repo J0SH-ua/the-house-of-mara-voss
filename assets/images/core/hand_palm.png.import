@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cmarahandp01x"
-path="res://.godot/imported/hand_palm.png-737f0b08a271e74b1307b9c7ea7d8084.ctex"
+path="res://.godot/imported/hand_palm.png-bb5981da4bd5651d1eed75d6a6f2c848.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/core/hand_palm.png"
-dest_files=["res://.godot/imported/hand_palm.png-737f0b08a271e74b1307b9c7ea7d8084.ctex"]
+dest_files=["res://.godot/imported/hand_palm.png-bb5981da4bd5651d1eed75d6a6f2c848.ctex"]
 
 [params]
 
