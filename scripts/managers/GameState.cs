@@ -997,7 +997,7 @@ public partial class GameState : Node
                 RoomExamineTracker.GetRoomProgress("Basement", out int baDone, out int baTotal, out var baLeft);
                 if (baLeft.Count > 0)
                 {
-                    string left = string.Join(", ", baLeft.Select(PrettyObjectName));
+                    string left = string.Join(", ", baLeft.ConvertAll(PrettyObjectName));
                     return $"Bring the light to what waits below: {left}. ({baDone}/{baTotal})";
                 }
                 if (!HasFlag("basement_trunk_open"))
@@ -1204,7 +1204,7 @@ public partial class GameState : Node
             if (baRemaining.Count > 0)
                 return (baLevel <= 1
                     ? "Sweep slowly. The beam is your eyes down here."
-                    : $"The light has not rested on {string.Join(", ", baRemaining.Select(PrettyObjectName))} yet.", baLevel >= 3 ? baRemaining[0] : null);
+                    : $"The light has not rested on {string.Join(", ", baRemaining.ConvertAll(PrettyObjectName))} yet.", baLevel >= 3 ? baRemaining[0] : null);
             if (!HasFlag("basement_trunk_open"))
                 return ("A trunk under the house keeps its own lock. The picks remember how locks feel inside.", baLevel >= 3 ? "LockedTrunk" : null);
             if (!HasFlag("basement_negatives_taken"))
