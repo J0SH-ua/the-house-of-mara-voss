@@ -115,8 +115,7 @@ the house is meant to be figured out.
 7. The Room 4 door close-up: with **Echo** armed, knock brass plate →
    keyhole beneath it, three pairs left-to-right (ordinary clicks examine).
    Room 5: inspect things and watch them — everything examined starts
-   **shifting** between its childhood and adult selves, except the lamp,
-   which never changes; nobody explains this. **Anchor (A)** the lamp (the
+   **shifting** between its childhood and adult selves, except the lamp, which never changes — after the third thing starts sliding, Mara notices exactly that out loud herself (she never says what to do about it). **Anchor (A)** the lamp (the
    shifting stops), open the desk drawer for the apology; click the rain
    window again to step into the **Apartment, Now**, face its three looks,
    and leave by the entry door. With the letters in hand, the wardrobe's

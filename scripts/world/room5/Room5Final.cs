@@ -9,8 +9,10 @@ using Godot;
 /// and it shows. Everything Mara inspects starts to shift in appearance,
 /// sliding between its childhood and adult selves (double-exposed, torn,
 /// tinted by two years at once). Everything except the bedside lamp, which
-/// simply stays itself. Nobody says so; the player is meant to notice, and
-/// to understand that the still thing is the one Anchor wants. Anchoring it
+/// simply stays itself. At first nobody says so; once three things have
+/// gone sliding, Mara notices it out loud, the way a person would — "that
+/// lamp is the only thing in here that isn't weird." What to do about a
+/// still thing stays the player's to put together. Anchoring it
 /// settles every shifted object back into one year, holds the writing desk
 /// still long enough to recover the unsent apology, and once the letters
 /// are Mara's, the inside of the wardrobe — past the coats and the yellow
@@ -21,6 +23,7 @@ public partial class Room5Final : MemoryRoomBase
 {
     private const string AnchoredFlag = "room5_anchored_lamp";
     private const string DrawerOpenedFlag = "room5_drawer_opened";
+    private const string LampNoticeFlag = "story_monologue_room5_lamp_still";
 
     private Label _anchorLabel;
     private Label _gardenLabel;
@@ -28,7 +31,8 @@ public partial class Room5Final : MemoryRoomBase
 
     /// <summary>Everything that starts sliding once inspected. The lamp is
     /// deliberately absent: it is the only thing in the room that does not
-    /// change, and that stillness — not any line of dialogue — is the clue.</summary>
+    /// change. Its stillness is the clue — pointed at, eventually, only by
+    /// Mara noticing it herself.</summary>
     private static readonly string[] ShiftingIds =
     [
         "RainWindow", "Bed", "Desk", "RotaryPhone", "Wardrobe", "AlarmClock", "FloorPhotographs",
@@ -475,6 +479,48 @@ public partial class Room5Final : MemoryRoomBase
             AudioManager.Play(Sfx.CorruptionGlitch, -9f, 0.85f);
             Hotspots.SpawnRipple(hotspot.Center, new Color(0.65f, 0.8f, 1f));
             QueueRedraw();
+        }
+
+        await MaybeNoticeLampStillAsync(gs);
+    }
+
+    /// <summary>Once three things in this room have started sliding between
+    /// years, Mara says the quiet part out loud — to herself, thinking, the
+    /// way a person would. She names the observation only: the lamp is the
+    /// one thing here that isn't weird. That a still thing is what Anchor
+    /// wants remains the player's own step to take.</summary>
+    private async Task MaybeNoticeLampStillAsync(GameState gs)
+    {
+        if (gs == null || gs.HasFlag(AnchoredFlag) || gs.HasFlag(LampNoticeFlag))
+            return;
+
+        int shifted = 0;
+        foreach (var id in ShiftingIds)
+        {
+            if (WasExamined(id))
+                shifted++;
+        }
+        if (shifted < 3)
+            return;
+
+        Busy = true;
+        try
+        {
+            var lamp = GetHotspot("Lamp");
+            if (lamp != null)
+                Hotspots.SpawnRipple(lamp.Center, new Color(1f, 0.88f, 0.55f));
+
+            await SayStoryLessonOnceAsync(LampNoticeFlag,
+                "Everything I look at properly in this room starts sliding — one year, then the other. Everything except...",
+                "That lamp. It's the only thing in here that isn't weird. It doesn't slide. It doesn't change. It just stays on — same as it always did.");
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
         }
     }
 
