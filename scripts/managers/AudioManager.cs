@@ -38,6 +38,10 @@ public static class Sfx
     public const string PuzzleSolve = "puzzle_solve";
     public const string RoomComplete = "room_complete";
     public const string ClockTick = "clock_tick";
+    public const string FootstepCarpetA = "footstep_carpet_a";
+    public const string FootstepCarpetB = "footstep_carpet_b";
+    public const string FootstepDirtA = "footstep_dirt_a";
+    public const string FootstepDirtB = "footstep_dirt_b";
 }
 
 /// <summary>
@@ -225,6 +229,12 @@ public partial class AudioManager : Node
 
     public void PlaySfx(string sfxId, float volumeDb = 0f, float pitchScale = 1f)
     {
+        // Journey scenes are a held breath: let any walking monologue type
+        // silently so the surface under Mara feet is the only sound.
+        if ((sfxId == Sfx.DialogueBlip || sfxId == Sfx.DialogueAdvance) &&
+            SceneManager.CurrentScenePath.Contains("/journey_to_"))
+            return;
+
         var stream = LoadStream(SfxPathFor(sfxId));
         if (stream == null)
             return;
@@ -296,14 +306,23 @@ public partial class AudioManager : Node
     public void StopMusic(float fadeSeconds = 0.8f)
     {
         _currentMusicPath = string.Empty;
-        var outgoing = ActiveMusic;
-        if (!outgoing.Playing)
+        _musicTween?.Kill();
+        if (!_musicA.Playing && !_musicB.Playing)
             return;
 
-        _musicTween?.Kill();
+        // Fade both crossfade voices: a journey should not inherit the
+        // tail of whichever room score happened to be leaving.
         _musicTween = CreateTween();
-        _musicTween.TweenProperty(outgoing, "volume_db", -60f, fadeSeconds);
-        _musicTween.TweenCallback(Callable.From(() => outgoing.Stop()));
+        _musicTween.SetParallel(true);
+        if (_musicA.Playing)
+            _musicTween.TweenProperty(_musicA, "volume_db", -60f, fadeSeconds);
+        if (_musicB.Playing)
+            _musicTween.TweenProperty(_musicB, "volume_db", -60f, fadeSeconds);
+        _musicTween.Chain().TweenCallback(Callable.From(() =>
+        {
+            _musicA.Stop();
+            _musicB.Stop();
+        }));
     }
 
     /// <summary>Music + ambience policy for scenes loaded through SceneManager.</summary>
@@ -312,17 +331,24 @@ public partial class AudioManager : Node
         if (string.IsNullOrWhiteSpace(scenePath) || !scenePath.Contains("scenes/world/"))
             return;
 
+        string scene = scenePath.ToLowerInvariant();
+
+        // Walking between rooms is deliberately bare: no borrowed room
+        // score, room tone, garden loop, or heartbeat — only Mara
+        // footsteps supplied by the journey itself.
+        if (scene.Contains("/journey_to_"))
+        {
+            StopMusic(0.3f);
+            StopAmbience(0.3f);
+            return;
+        }
+
         PlayAmbienceForScene(scenePath);
 
-        string scene = scenePath.ToLowerInvariant();
         bool puzzle = scene.Contains("puzzle");
         float volume = puzzle ? -15f : -11f;
 
-        if (scene.Contains("journey_to_porch"))
-            PlayMusic(MusicRoom6, -15f);
-        else if (scene.Contains("journey_to_room"))
-            PlayMusic(MusicRoom, -15f);
-        else if (scene.Contains("flashback"))
+        if (scene.Contains("flashback"))
             PlayMusic(MusicRoom4, -16f);
         else if (scene.Contains("apartment"))
             PlayMusic(MusicRoom5, -16f);
@@ -371,15 +397,19 @@ public partial class AudioManager : Node
     /// the plain room tone everywhere else. Crossfaded like the music.</summary>
     public void PlayAmbienceForScene(string scenePath)
     {
+        string scene = (scenePath ?? string.Empty).ToLowerInvariant();
+        if (scene.Contains("/journey_to_"))
+        {
+            StopAmbience(0.3f);
+            return;
+        }
+
         _ambienceWanted = true;
         EnsureHeartbeat();
 
-        string scene = (scenePath ?? string.Empty).ToLowerInvariant();
         bool puzzle = scene.Contains("puzzle");
         (string path, float volume) ambience =
-            scene.Contains("journey_to_porch") ? (AmbienceGardenPath, -24f)
-            : scene.Contains("journey_to_room") ? (AmbiencePath, -24f)
-            : scene.Contains("porch") ? (AmbiencePorchPath, -24f)
+            scene.Contains("porch") ? (AmbiencePorchPath, -24f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -23f)
             : scene.Contains("room_5") ? (AmbienceRainPath, -23f)
             : scene.Contains("room_2") ? (AmbienceFirePath, puzzle ? -28f : -25f)
@@ -417,14 +447,33 @@ public partial class AudioManager : Node
         }
     }
 
-    public void StopAmbience()
+    public void StopAmbience(float fadeSeconds = 0f)
     {
         _ambienceWanted = false;
         _ambienceTween?.Kill();
         _currentAmbiencePath = string.Empty;
-        _ambiencePlayer.Stop();
-        _ambiencePlayerB?.Stop();
-        _heartbeatPlayer.Stop();
+        _heartbeatPlayer.Stop(); // no body loop under the footsteps
+
+        if (fadeSeconds <= 0.01f || (!_ambiencePlayer.Playing && !_ambiencePlayerB.Playing))
+        {
+            _ambiencePlayer.Stop();
+            _ambiencePlayerB?.Stop();
+            return;
+        }
+
+        _ambienceTween = CreateTween();
+        _ambienceTween.SetParallel(true);
+        if (_ambiencePlayer.Playing)
+            _ambienceTween.TweenProperty(_ambiencePlayer, "volume_db", -60f, fadeSeconds);
+        if (_ambiencePlayerB.Playing)
+            _ambienceTween.TweenProperty(_ambiencePlayerB, "volume_db", -60f, fadeSeconds);
+        _ambienceTween.Chain().TweenCallback(Callable.From(() =>
+        {
+            if (_ambienceWanted)
+                return;
+            _ambiencePlayer.Stop();
+            _ambiencePlayerB?.Stop();
+        }));
     }
 
     /// <summary>Swap the room score for the countdown bed (collapse).</summary>

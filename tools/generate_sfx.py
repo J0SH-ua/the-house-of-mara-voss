@@ -335,6 +335,73 @@ def build_crack_sfx():
     crack("screen_crack_3.wav", 1103, 1.35, [(0.00, 0.62), (0.09, 0.52), (0.24, 0.72), (0.48, 0.38)], 11, 0.62)
 
 
+def build_footstep_sfx():
+    """Journey footsteps, voiced for the exact painted floors.
+
+    All three hallway paintings carry a carpet runner down the middle:
+    each indoor step is therefore a soft textile thud with only a hint
+    of the boards working underneath. The road is unpaved and autumnal,
+    so its steps are loose dirt/grit grains with a dry-leaf tail.
+    Two alternating samples per surface keep the cadence human.
+    """
+
+    def local_noise(rng, seconds):
+        return [rng.uniform(-1.0, 1.0) for _ in range(sec(seconds))]
+
+    def carpet_step(name, seed, body_hz, board_hz, creak_gain):
+        rng = random.Random(seed)
+        out = zeros(0.26)
+
+        # The weight of the step, swallowed first by carpet pile.
+        add_into(out, thump(body_hz, 0.20, sweep_to=0.62), 0.0, 0.58)
+        pile = env_exp(filt(local_noise(rng, 0.11), "lp", 620, passes=2),
+                       0.002, 0.026)
+        add_into(out, pile, 0.0, 1.0)
+
+        # A much quieter board knock and hairline creak under the runner.
+        knock = env_exp(filt(local_noise(rng, 0.055), "bp", board_hz, q=1.1),
+                        0.001, 0.014)
+        add_into(out, knock, 0.012, 0.30)
+        creak = env_exp(filt(tone_wow(board_hz * 0.52, 0.10, depth=0.055, rate=2.4),
+                             "bp", board_hz * 0.9, q=2.0), 0.012, 0.035)
+        add_into(out, creak, 0.028, creak_gain)
+
+        env_ar(out, 0.0015, 0.055)
+        write_wav(name, filt(out, "lp", 900, passes=1), peak=0.48)
+
+    def dirt_step(name, seed, body_hz, leaf_gain):
+        rng = random.Random(seed)
+        out = zeros(0.34)
+
+        # Packed earth takes the weight; loose grit gives way around it.
+        add_into(out, thump(body_hz, 0.22, sweep_to=0.58), 0.0, 0.40)
+        base = env_exp(filt(local_noise(rng, 0.16), "bp", 1050, q=0.55),
+                       0.001, 0.042)
+        add_into(out, base, 0.0, 0.86)
+
+        # Individual grains and tiny stones shifting after first contact.
+        for _ in range(17):
+            at = rng.uniform(0.003, 0.125)
+            grain = env_exp(
+                filt(local_noise(rng, rng.uniform(0.012, 0.030)),
+                     "bp", rng.uniform(900, 3300), q=rng.uniform(0.8, 1.7)),
+                0.0006, rng.uniform(0.005, 0.013))
+            add_into(out, grain, at, rng.uniform(0.12, 0.34))
+
+        # Brittle leaves drag for a fraction after the heel lands.
+        leaves = env_ar(filt(local_noise(rng, 0.23), "bp", 2100, q=0.45),
+                        0.018, 0.13)
+        add_into(out, leaves, 0.018, leaf_gain)
+
+        env_ar(out, 0.001, 0.075)
+        write_wav(name, filt(out, "lp", 4300, passes=1), peak=0.50)
+
+    carpet_step("footstep_carpet_a.wav", 2401, 84, 330, 0.10)
+    carpet_step("footstep_carpet_b.wav", 2402, 76, 285, 0.16)
+    dirt_step("footstep_dirt_a.wav", 2411, 72, 0.22)
+    dirt_step("footstep_dirt_b.wav", 2412, 66, 0.28)
+
+
 def build_room_music():
     """Six seamless, room-specific loops in the same F-minor felt/music-box world."""
     print("Generating room music ->", os.path.normpath(BG_DIR))
@@ -812,6 +879,7 @@ def build():
     write_wav("memory_shatter.wav", filt(sh, "lp", 5200), peak=0.6)
 
     build_crack_sfx()
+    build_footstep_sfx()
     build_room_music()
     build_collapse_music()
     build_ending_music()

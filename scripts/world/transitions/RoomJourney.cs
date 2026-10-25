@@ -8,7 +8,9 @@ using Godot;
 ///
 /// The camera visibly travels: straight down one memory hallway, left at
 /// the bent runner, right past the photographs, or along the empty road
-/// until the lit porch is close enough to name. The walks are long enough
+/// until the lit porch is close enough to name. No score or ambience
+/// follows her between rooms — only carpeted boards indoors or the dirt
+/// road underfoot. The walks are long enough
 /// that Mara sometimes thinks aloud on the way. On some first arrivals —
 /// not every one — she stops with the newly recovered fragment in her hand,
 /// tries to remember what it could be for, is briefly pulled into the room
@@ -63,6 +65,9 @@ public partial class RoomJourney : Node2D
         public Rect2 TargetRect { get; init; }
         public string Prompt { get; init; }
         public float CameraSeconds { get; init; }
+        public string[] FootstepSfx { get; init; } = [];
+        public float FootstepVolumeDb { get; init; } = -12f;
+        public float FootstepIntervalSeconds { get; init; } = 0.68f;
         public int FragmentIndex { get; init; } = -1;
         public string MemoryTexturePath { get; init; } = string.Empty;
         public string[] FragmentLines { get; init; } = [];
@@ -104,6 +109,9 @@ public partial class RoomJourney : Node2D
             TargetRect = new Rect2(372f, 12f, 410f, 620f),
             Prompt = "Click the door to open it",
             CameraSeconds = 5.2f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.68f,
         },
         ["Room2ToRoom3"] = new JourneySpec
         {
@@ -137,6 +145,9 @@ public partial class RoomJourney : Node2D
             TargetRect = new Rect2(450f, 80f, 250f, 490f),
             Prompt = "Click the door to open it",
             CameraSeconds = 5.8f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.68f,
         },
         ["Room3ToRoom4"] = new JourneySpec
         {
@@ -170,6 +181,9 @@ public partial class RoomJourney : Node2D
             TargetRect = new Rect2(430f, 80f, 290f, 490f),
             Prompt = "Click the door to open it",
             CameraSeconds = 5.8f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.68f,
         },
         ["Room6ToPorch"] = new JourneySpec
         {
@@ -208,6 +222,9 @@ public partial class RoomJourney : Node2D
             TargetRect = new Rect2(490f, 215f, 220f, 155f),
             Prompt = "Click the porch light to arrive",
             CameraSeconds = 8.0f,
+            FootstepSfx = [Sfx.FootstepDirtA, Sfx.FootstepDirtB],
+            FootstepVolumeDb = -11f,
+            FootstepIntervalSeconds = 0.74f,
             OpenSfx = Sfx.DoorCreak,
             OpenPitch = 0.82f,
         },
@@ -236,6 +253,8 @@ public partial class RoomJourney : Node2D
     private float _cameraSeconds = 3.4f;
     private float _elapsed;
     private float _progress;
+    private float _nextFootstepElapsed = 0.38f;
+    private int _footstepIndex;
     private bool _heldSettled;
     private bool _migraineActive;
     private float _migraineTime;
@@ -358,6 +377,7 @@ public partial class RoomJourney : Node2D
         {
             _elapsed += (float)delta;
             _progress = Mathf.Clamp(_elapsed / Math.Max(_cameraSeconds, 0.01f), 0f, 1f);
+            UpdateFootsteps();
             QueueRedraw();
         }
 
@@ -448,6 +468,30 @@ public partial class RoomJourney : Node2D
             DrawRect(_spec.TargetRect, new Color(1f, 0.89f, 0.58f, _hovering ? 0.10f : 0.05f));
             DrawRect(_spec.TargetRect, new Color(1f, 0.89f, 0.58f, _hovering ? 0.95f : pulse), false, 2f);
         }
+    }
+
+    /// <summary>Footfalls are the journey's whole soundscape. Their cadence
+    /// follows the camera's smoothstep speed, and alternating samples keep
+    /// the carpet runner (or dirt road) from sounding like a metronome.</summary>
+    private void UpdateFootsteps()
+    {
+        if (_progress >= 0.995f || _spec?.FootstepSfx is not { Length: > 0 } ||
+            _elapsed < _nextFootstepElapsed)
+            return;
+
+        string sfx = _spec.FootstepSfx[_footstepIndex++ % _spec.FootstepSfx.Length];
+        float volume = _spec.FootstepVolumeDb
+            + Mathf.Lerp(-1.1f, 0.35f, _progress)
+            + _rng.RandfRange(-0.55f, 0.35f);
+        AudioManager.PlayVaried(sfx, volume, _rng.RandfRange(0.94f, 1.05f), 0.025f);
+
+        // Smoothstep's derivative peaks mid-journey: steps gather a little
+        // there and spread out again as Mara reaches the threshold.
+        float speed01 = Mathf.Clamp(6f * _progress * (1f - _progress) / 1.5f, 0f, 1f);
+        float interval = _spec.FootstepIntervalSeconds
+            * Mathf.Lerp(1.1f, 0.88f, speed01)
+            * _rng.RandfRange(0.94f, 1.07f);
+        _nextFootstepElapsed = _elapsed + interval;
     }
 
     private async Task RunJourneyAsync()

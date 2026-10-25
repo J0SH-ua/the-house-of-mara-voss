@@ -4946,8 +4946,11 @@ public partial class GameUI : CanvasLayer
                 ? 0.96f
                 : 0.82f + 0.16f * (float)Math.Sin(Time.GetTicksMsec() / 520.0))
             : 0f;
+        // The words themselves drift in slowly after the still and caption
+        // are already there; once clicked, they clear promptly with the shot.
+        float rate = _cutsceneWaitingForContinue ? 0.55f : 2.4f;
         var modulate = _cutsceneContinueLabel.Modulate;
-        modulate.A = Mathf.MoveToward(modulate.A, target, (float)delta * 1.8f);
+        modulate.A = Mathf.MoveToward(modulate.A, target, (float)delta * rate);
         _cutsceneContinueLabel.Modulate = modulate;
         _cutsceneContinueLabel.Visible = modulate.A > 0.01f;
     }
@@ -4976,7 +4979,12 @@ public partial class GameUI : CanvasLayer
         _cutsceneAdvanceRequested = false;
         _cutsceneWaitingForContinue = true;
         if (_cutsceneContinueLabel != null)
+        {
+            var modulate = _cutsceneContinueLabel.Modulate;
+            modulate.A = 0f;
+            _cutsceneContinueLabel.Modulate = modulate;
             _cutsceneContinueLabel.Visible = true;
+        }
 
         await _cutsceneContinueSource.Task;
         _cutsceneWaitingForContinue = false;
@@ -5074,15 +5082,8 @@ public partial class GameUI : CanvasLayer
         _cutsceneContinueLabel.OffsetBottom = -10;
         _cutsceneContinueLabel.Visible = false;
         _cutsceneContinueLabel.Modulate = new Color(1, 1, 1, 0);
-        var continueChip = new StyleBoxFlat
-        {
-            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.78f),
-            BorderColor = new Color(0.78f, 0.66f, 0.46f, 0.55f),
-        };
-        continueChip.SetBorderWidthAll(1);
-        continueChip.SetCornerRadiusAll(4);
-        continueChip.SetContentMarginAll(6);
-        _cutsceneContinueLabel.AddThemeStyleboxOverride("normal", continueChip);
+        // Just the words on the image: no panel, border, or background chip.
+        _cutsceneContinueLabel.AddThemeStyleboxOverride("normal", new StyleBoxEmpty());
         _cutsceneRoot.AddChild(_cutsceneContinueLabel);
 
         var skip = MakeButton("Skip", 20);
@@ -5276,10 +5277,11 @@ public partial class GameUI : CanvasLayer
 
                 if (_cutsceneClickOnly)
                 {
-                    // Let the still finish fading in, then keep it there
-                    // until the player clicks. HoldSeconds no longer acts
+                    // Let the still and caption finish fading in and sit
+                    // quietly for a beat before the bare continue words
+                    // begin their own slow fade. HoldSeconds no longer acts
                     // as a reading deadline for the post-Start introduction.
-                    await WaitForCutsceneSeconds(0.95f);
+                    await WaitForCutsceneSeconds(1.75f);
                     if (!_cutsceneSkipRequested)
                         await WaitForCutsceneContinue();
                 }
