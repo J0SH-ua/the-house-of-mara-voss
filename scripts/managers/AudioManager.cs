@@ -72,6 +72,10 @@ public partial class AudioManager : Node
 
     private const string SfxDir = "res://assets/Music/SFX/";
     private const string AmbiencePath = SfxDir + "ambience_room_tone.wav";
+    private const string AmbienceRainPath = SfxDir + "ambience_rain.wav";
+    private const string AmbienceFirePath = SfxDir + "ambience_fire.wav";
+    private const string AmbienceGardenPath = SfxDir + "ambience_garden.wav";
+    private const string AmbiencePorchPath = SfxDir + "ambience_porch.wav";
     private const string HeartbeatPath = SfxDir + "heartbeat.wav";
 
     private static readonly Dictionary<string, string> LegacySfxPaths = new()
@@ -92,6 +96,10 @@ public partial class AudioManager : Node
     private Tween _musicTween;
 
     private AudioStreamPlayer _ambiencePlayer;
+    private AudioStreamPlayer _ambiencePlayerB;
+    private bool _ambienceAIsActive = true;
+    private string _currentAmbiencePath = string.Empty;
+    private Tween _ambienceTween;
     private AudioStreamPlayer _heartbeatPlayer;
     private bool _ambienceWanted;
 
@@ -107,6 +115,8 @@ public partial class AudioManager : Node
 
     private AudioStreamPlayer ActiveMusic => _musicAIsActive ? _musicA : _musicB;
     private AudioStreamPlayer InactiveMusic => _musicAIsActive ? _musicB : _musicA;
+    private AudioStreamPlayer ActiveAmbience => _ambienceAIsActive ? _ambiencePlayer : _ambiencePlayerB;
+    private AudioStreamPlayer InactiveAmbience => _ambienceAIsActive ? _ambiencePlayerB : _ambiencePlayer;
 
     // -------------------------------------------------------------------- init
 
@@ -121,6 +131,7 @@ public partial class AudioManager : Node
         _musicA = MakePlayer("Music");
         _musicB = MakePlayer("Music");
         _ambiencePlayer = MakePlayer("Ambience");
+        _ambiencePlayerB = MakePlayer("Ambience");
         _heartbeatPlayer = MakePlayer("Ambience");
         _heartbeatPlayer.VolumeDb = -80f;
 
@@ -301,7 +312,7 @@ public partial class AudioManager : Node
         if (string.IsNullOrWhiteSpace(scenePath) || !scenePath.Contains("scenes/world/"))
             return;
 
-        StartAmbience();
+        PlayAmbienceForScene(scenePath);
 
         string scene = scenePath.ToLowerInvariant();
         bool puzzle = scene.Contains("puzzle");
@@ -333,17 +344,11 @@ public partial class AudioManager : Node
 
     public void StartAmbience()
     {
-        _ambienceWanted = true;
+        PlayAmbienceForScene(SceneManager.CurrentScenePath);
+    }
 
-        var amb = LoadStream(AmbiencePath);
-        if (amb != null && !_ambiencePlayer.Playing)
-        {
-            MakeLooping(amb);
-            _ambiencePlayer.Stream = amb;
-            _ambiencePlayer.VolumeDb = -22f;
-            _ambiencePlayer.Play();
-        }
-
+    private void EnsureHeartbeat()
+    {
         var hb = LoadStream(HeartbeatPath);
         if (hb != null && !_heartbeatPlayer.Playing)
         {
@@ -353,10 +358,64 @@ public partial class AudioManager : Node
         }
     }
 
+    /// <summary>Each place sounds like itself, mixed well under the score
+    /// (rooms play at −11 dB; these sit 12–17 dB below that): rain where
+    /// the windows are wet (Room 5, the Apartment), the fire in Room 2,
+    /// wind and leaves in the garden, crickets at dusk on the porch, and
+    /// the plain room tone everywhere else. Crossfaded like the music.</summary>
+    public void PlayAmbienceForScene(string scenePath)
+    {
+        _ambienceWanted = true;
+        EnsureHeartbeat();
+
+        string scene = (scenePath ?? string.Empty).ToLowerInvariant();
+        bool puzzle = scene.Contains("puzzle");
+        (string path, float volume) ambience =
+            scene.Contains("porch") ? (AmbiencePorchPath, -24f)
+            : scene.Contains("apartment") ? (AmbienceRainPath, -23f)
+            : scene.Contains("room_5") ? (AmbienceRainPath, -23f)
+            : scene.Contains("room_2") ? (AmbienceFirePath, puzzle ? -28f : -25f)
+            : scene.Contains("room_6") ? (AmbienceGardenPath, -24f)
+            : (AmbiencePath, -22f);
+
+        if (ambience.path == _currentAmbiencePath && ActiveAmbience.Playing)
+        {
+            ActiveAmbience.VolumeDb = ambience.volume;
+            return;
+        }
+
+        var stream = LoadStream(ambience.path);
+        if (stream == null)
+            return;
+        MakeLooping(stream);
+        _currentAmbiencePath = ambience.path;
+
+        var incoming = InactiveAmbience;
+        var outgoing = ActiveAmbience;
+        _ambienceAIsActive = !_ambienceAIsActive;
+
+        incoming.Stream = stream;
+        incoming.VolumeDb = -60f;
+        incoming.Play();
+
+        _ambienceTween?.Kill();
+        _ambienceTween = CreateTween();
+        _ambienceTween.SetParallel(true);
+        _ambienceTween.TweenProperty(incoming, "volume_db", ambience.volume, 1.8f);
+        if (outgoing.Playing)
+        {
+            _ambienceTween.TweenProperty(outgoing, "volume_db", -60f, 1.8f);
+            _ambienceTween.Chain().TweenCallback(Callable.From(() => outgoing.Stop()));
+        }
+    }
+
     public void StopAmbience()
     {
         _ambienceWanted = false;
+        _ambienceTween?.Kill();
+        _currentAmbiencePath = string.Empty;
         _ambiencePlayer.Stop();
+        _ambiencePlayerB?.Stop();
         _heartbeatPlayer.Stop();
     }
 

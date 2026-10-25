@@ -166,20 +166,25 @@ public partial class GameUI : CanvasLayer
         public Color Tint = Colors.White;
         public float SwayDegrees, SwaySpeed = 0.5f, PivotX = 0.5f;
         public float Pulse;     // glows breathe by this much alpha
+        public float OrbitRx, OrbitRy;  // moths: flutter ellipse, px at 1152x648
+        public bool HideDuringDialogue; // for weather the dialogue bubble would cover
     }
 
     private static readonly Dictionary<string, AmbientSpec[]> AmbientByScene = new()
     {
         ["room_1.tscn"] =
         [
-            // steam off the stove, where the kettle lives
-            new() { Effect = "steam", Cx = 0.255f, Cy = 0.262f, H = 110f, Fps = 5f, Alpha = 0.85f },
+            // steam off the two cups on the table (tile data: cup clusters
+            // at cells x14-16 and x21-23, y10-12, 40px cells); both duck
+            // under the dialogue bubble while it covers the table
+            new() { Effect = "steam", Cx = 0.538f, Cy = 0.596f, H = 86f, Fps = 5f, Alpha = 0.8f, HideDuringDialogue = true },
+            new() { Effect = "steam", Cx = 0.781f, Cy = 0.596f, H = 86f, Fps = 5f, Alpha = 0.8f, Phase = 1.3f, HideDuringDialogue = true },
         ],
         ["room_2.tscn"] =
         [
             // the sitting-room fire, lit and breathing
-            new() { Effect = "glow", Cx = 0.135f, Cy = 0.60f, W = 280f, H = 280f, Alpha = 0.17f, Tint = new Color(1f, 0.69f, 0.36f), Pulse = 0.05f },
-            new() { Effect = "flame", Cx = 0.135f, Cy = 0.645f, W = 78f, Fps = 7f, Alpha = 0.92f },
+            new() { Effect = "glow", Cx = 0.148f, Cy = 0.67f, W = 260f, H = 260f, Alpha = 0.17f, Tint = new Color(1f, 0.69f, 0.36f), Pulse = 0.05f },
+            new() { Effect = "flame", Cx = 0.148f, Cy = 0.71f, W = 58f, H = 140f, Fps = 7f, Alpha = 0.9f },
         ],
         ["room_3.tscn"] =
         [
@@ -198,6 +203,10 @@ public partial class GameUI : CanvasLayer
             // rain crossing the window; the lamp's light, breathing
             new() { Effect = "rain", Cx = 0.145f, Cy = 0.33f, W = 250f, H = 380f, Fps = 6f, Alpha = 0.55f, Tint = new Color(0.75f, 0.83f, 0.93f) },
             new() { Effect = "glow", Cx = 0.485f, Cy = 0.47f, W = 300f, H = 300f, Alpha = 0.14f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.04f },
+            // three small moths, worrying at the only still light
+            new() { Effect = "moth", Cx = 0.485f, Cy = 0.465f, H = 17f, Fps = 10f, Alpha = 0.9f, Tint = new Color(1f, 0.95f, 0.84f), OrbitRx = 48f, OrbitRy = 34f },
+            new() { Effect = "moth", Cx = 0.485f, Cy = 0.465f, H = 14f, Fps = 10f, Alpha = 0.8f, Tint = new Color(1f, 0.95f, 0.84f), Phase = 2.2f, OrbitRx = 60f, OrbitRy = 40f },
+            new() { Effect = "moth", Cx = 0.485f, Cy = 0.465f, H = 12f, Fps = 10f, Alpha = 0.7f, Tint = new Color(1f, 0.95f, 0.84f), Phase = 4.1f, OrbitRx = 36f, OrbitRy = 26f },
         ],
         ["apartment_now.tscn"] =
         [
@@ -206,8 +215,8 @@ public partial class GameUI : CanvasLayer
         ["room_6.tscn"] =
         [
             // leaves coming down past both trees; a near branch swaying
-            new() { Effect = "leaves", Cx = 0.24f, Cy = 0.42f, W = 220f, Fps = 3f, Alpha = 0.95f, SwayDegrees = 0.7f, SwaySpeed = 0.6f },
-            new() { Effect = "leaves", Cx = 0.50f, Cy = 0.36f, W = 180f, Fps = 3f, Alpha = 0.9f, Phase = 1.7f, SwayDegrees = 0.7f, SwaySpeed = 0.5f },
+            new() { Effect = "leaves", Cx = 0.24f, Cy = 0.42f, W = 110f, Fps = 3f, Alpha = 0.95f, SwayDegrees = 0.7f, SwaySpeed = 0.6f },
+            new() { Effect = "leaves", Cx = 0.50f, Cy = 0.36f, W = 90f, Fps = 3f, Alpha = 0.9f, Phase = 1.7f, SwayDegrees = 0.7f, SwaySpeed = 0.5f },
             new() { Effect = "branch", Cx = 0.835f, Cy = 0.155f, W = 400f, Alpha = 1f, SwayDegrees = 1.1f, SwaySpeed = 0.45f, PivotX = 0.85f },
         ],
         ["porch_447.tscn"] =
@@ -215,7 +224,7 @@ public partial class GameUI : CanvasLayer
             // chimney smoke (the kettle's wisp, greyer), a lit window, leaves
             new() { Effect = "steam", Cx = 0.10f, Cy = 0.02f, H = 120f, Fps = 4f, Alpha = 0.5f, Tint = new Color(0.8f, 0.82f, 0.85f) },
             new() { Effect = "glow", Cx = 0.16f, Cy = 0.36f, W = 170f, H = 170f, Alpha = 0.13f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.04f },
-            new() { Effect = "leaves", Cx = 0.62f, Cy = 0.50f, W = 165f, Fps = 3f, Alpha = 0.9f, Phase = 0.9f, SwayDegrees = 0.7f, SwaySpeed = 0.55f },
+            new() { Effect = "leaves", Cx = 0.62f, Cy = 0.50f, W = 82f, Fps = 3f, Alpha = 0.9f, Phase = 0.9f, SwayDegrees = 0.7f, SwaySpeed = 0.55f },
         ],
         ["room_7.tscn"] =
         [
@@ -3981,6 +3990,7 @@ public partial class GameUI : CanvasLayer
             "leaves" => ["res://assets/images/bgs/amb_leaves_0.png", "res://assets/images/bgs/amb_leaves_1.png", "res://assets/images/bgs/amb_leaves_2.png"],
             "rain" => ["res://assets/images/bgs/amb_rain_0.png", "res://assets/images/bgs/amb_rain_1.png", "res://assets/images/bgs/amb_rain_2.png"],
             "dust" => ["res://assets/images/bgs/amb_dust_0.png", "res://assets/images/bgs/amb_dust_1.png", "res://assets/images/bgs/amb_dust_2.png"],
+            "moth" => ["res://assets/images/bgs/amb_moth_0.png", "res://assets/images/bgs/amb_moth_1.png", "res://assets/images/bgs/amb_moth_2.png"],
             "branch" => ["res://assets/images/bgs/amb_branch.png"],
             _ => ["res://assets/images/bgs/amb_glow.png"],
         };
@@ -4057,6 +4067,11 @@ public partial class GameUI : CanvasLayer
             }
 
             var spec = _ambientActive[i];
+            if (spec.HideDuringDialogue && Dialogue.IsShowing)
+            {
+                rect.Visible = false;
+                continue;
+            }
             var frames = AmbientFrames(spec.Effect);
             int frame = 0;
             if (frames.Length > 1 && !frozen)
@@ -4084,8 +4099,18 @@ public partial class GameUI : CanvasLayer
                 : CanvasItem.TextureFilterEnum.Nearest;
             rect.Size = new Vector2(w, h);
             rect.PivotOffset = new Vector2(w * spec.PivotX, 0f);
-            rect.Position = new Vector2(
+            var pos = new Vector2(
                 spec.Cx * view.X - w / 2f, spec.Cy * view.Y - h / 2f);
+            if (spec.OrbitRx > 0f && !frozen)
+            {
+                // A moth's errand: two sines arguing, never a clean circle.
+                float t = _ambientTime;
+                pos.X += (spec.OrbitRx * Mathf.Sin(t * 1.9f + spec.Phase)
+                    + spec.OrbitRx * 0.35f * Mathf.Sin(t * 4.7f + spec.Phase * 2.1f)) * scale;
+                pos.Y += (spec.OrbitRy * Mathf.Sin(t * 2.6f + spec.Phase * 1.3f)
+                    + spec.OrbitRy * 0.4f * Mathf.Cos(t * 5.3f + spec.Phase)) * scale;
+            }
+            rect.Position = pos;
 
             float alpha = spec.Alpha;
             if (spec.Pulse > 0f && !frozen)

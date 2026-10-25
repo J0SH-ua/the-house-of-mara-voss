@@ -28,11 +28,11 @@ public partial class Porch447 : MemoryRoomBase
         yield return new Hotspot("GardenPath", "The Garden Path",
             new Rect2(690, 290, 440, 320), new Vector2(905, 455), Sfx.Examine, 0.75f);
         yield return new Hotspot("LitWindow", "The Lit Window",
-            new Rect2(40, 105, 300, 240), new Vector2(190, 225), Sfx.WordChime, 0.92f);
+            new Rect2(345, 100, 195, 310), new Vector2(375, 272), Sfx.WordChime, 0.92f);
         yield return new Hotspot("PorchSteps", "The Porch Steps",
             new Rect2(285, 385, 300, 185), new Vector2(435, 478), Sfx.Examine, 0.68f);
         yield return new Hotspot("FrontDoor", "The Front Door",
-            new Rect2(345, 100, 195, 310), new Vector2(442, 255),
+            new Rect2(40, 105, 300, 240), new Vector2(210, 268),
             Sfx.DoorCreak, 0.9f, PointerCursorPath, false);
     }
 
