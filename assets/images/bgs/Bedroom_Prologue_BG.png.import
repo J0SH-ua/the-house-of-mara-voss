@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmarabedrmbg01"
-path="res://.godot/imported/Bedroom_Prologue_BG.png-bff11b5804623d57ba310bc8566fb22a.ctex"
+uid="uid://cyluh8yqb8xuq"
+path="res://.godot/imported/Bedroom_Prologue_BG.png-a12baf06550d604e121c1943b4a8fc65.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/bgs/Bedroom_Prologue_BG.png"
-dest_files=["res://.godot/imported/Bedroom_Prologue_BG.png-bff11b5804623d57ba310bc8566fb22a.ctex"]
+dest_files=["res://.godot/imported/Bedroom_Prologue_BG.png-a12baf06550d604e121c1943b4a8fc65.ctex"]
 
 [params]
 
