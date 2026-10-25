@@ -166,24 +166,30 @@ public partial class GameUI : CanvasLayer
         public Color Tint = Colors.White;
         public float SwayDegrees, SwaySpeed = 0.5f, PivotX = 0.5f;
         public float Pulse;     // glows breathe by this much alpha
+        public float PulseSpeed = 1.35f;
         public float OrbitRx, OrbitRy;  // moths: flutter ellipse, px at 1152x648
-        public bool HideDuringDialogue; // for weather the dialogue bubble would cover
+        public string CupNodePath;      // steam only while this cup layer is the one showing
+        public int WindowCrown = -1;    // 0/1: kitchen-window tree; art follows the window's layer
     }
 
     private static readonly Dictionary<string, AmbientSpec[]> AmbientByScene = new()
     {
         ["room_1.tscn"] =
         [
-            // steam off the two cups on the table (tile data: cup clusters
-            // at cells x14-16 and x21-23, y10-12, 40px cells); both duck
-            // under the dialogue bubble while it covers the table
-            new() { Effect = "steam", Cx = 0.538f, Cy = 0.596f, H = 86f, Fps = 5f, Alpha = 0.8f, HideDuringDialogue = true },
-            new() { Effect = "steam", Cx = 0.781f, Cy = 0.596f, H = 86f, Fps = 5f, Alpha = 0.8f, Phase = 1.3f, HideDuringDialogue = true },
+            // steam off the two cups — only while each cup's first layer is
+            // the one showing: turn it over, empty it, or clarify it, and
+            // the steam is gone, exactly as the tile art itself insists
+            new() { Effect = "steam", Cx = 0.534f, Cy = 0.636f, H = 86f, Fps = 5f, Alpha = 0.8f, CupNodePath = "Objects/CupExclude/Examine1" },
+            new() { Effect = "steam", Cx = 0.777f, Cy = 0.636f, H = 86f, Fps = 5f, Alpha = 0.8f, Phase = 1.3f, CupNodePath = "Objects/Cup2/Examine1" },
+            // the two trees behind the kitchen window, stirring — patches
+            // of the window's own tiles, in whichever light its layer wears
+            new() { Effect = "crownL0", Cx = 0.399f, Cy = 0.185f, W = 120f, H = 160f, Fps = 2f, Alpha = 1f, WindowCrown = 0 },
+            new() { Effect = "crownR0", Cx = 0.538f, Cy = 0.185f, W = 120f, H = 160f, Fps = 2f, Alpha = 1f, Phase = 1.4f, WindowCrown = 1 },
         ],
         ["room_2.tscn"] =
         [
             // the sitting-room fire, lit and breathing
-            new() { Effect = "glow", Cx = 0.148f, Cy = 0.67f, W = 260f, H = 260f, Alpha = 0.17f, Tint = new Color(1f, 0.69f, 0.36f), Pulse = 0.05f },
+            new() { Effect = "glow", Cx = 0.148f, Cy = 0.67f, W = 260f, H = 260f, Alpha = 0.17f, Tint = new Color(1f, 0.69f, 0.36f), Pulse = 0.05f, PulseSpeed = 2.3f },
             new() { Effect = "flame", Cx = 0.148f, Cy = 0.71f, W = 58f, H = 140f, Fps = 7f, Alpha = 0.9f },
         ],
         ["room_3.tscn"] =
@@ -202,7 +208,7 @@ public partial class GameUI : CanvasLayer
         [
             // rain crossing the window; the lamp's light, breathing
             new() { Effect = "rain", Cx = 0.145f, Cy = 0.33f, W = 250f, H = 380f, Fps = 6f, Alpha = 0.55f, Tint = new Color(0.75f, 0.83f, 0.93f) },
-            new() { Effect = "glow", Cx = 0.485f, Cy = 0.47f, W = 300f, H = 300f, Alpha = 0.14f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.04f },
+            new() { Effect = "glow", Cx = 0.485f, Cy = 0.47f, W = 300f, H = 300f, Alpha = 0.15f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.05f, PulseSpeed = 0.5f },
             // three small moths, worrying at the only still light
             new() { Effect = "moth", Cx = 0.485f, Cy = 0.465f, H = 17f, Fps = 10f, Alpha = 0.9f, Tint = new Color(1f, 0.95f, 0.84f), OrbitRx = 48f, OrbitRy = 34f },
             new() { Effect = "moth", Cx = 0.485f, Cy = 0.465f, H = 14f, Fps = 10f, Alpha = 0.8f, Tint = new Color(1f, 0.95f, 0.84f), Phase = 2.2f, OrbitRx = 60f, OrbitRy = 40f },
@@ -221,10 +227,14 @@ public partial class GameUI : CanvasLayer
         ],
         ["porch_447.tscn"] =
         [
-            // chimney smoke (the kettle's wisp, greyer), a lit window, leaves
+            // chimney smoke (the kettle's wisp, greyer); the lit panes;
+            // and Room 5's moths, come down to bother the porch lantern
             new() { Effect = "steam", Cx = 0.10f, Cy = 0.02f, H = 120f, Fps = 4f, Alpha = 0.5f, Tint = new Color(0.8f, 0.82f, 0.85f) },
-            new() { Effect = "glow", Cx = 0.16f, Cy = 0.36f, W = 170f, H = 170f, Alpha = 0.13f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.04f },
-            new() { Effect = "leaves", Cx = 0.62f, Cy = 0.50f, W = 82f, Fps = 3f, Alpha = 0.9f, Phase = 0.9f, SwayDegrees = 0.7f, SwaySpeed = 0.55f },
+            new() { Effect = "glow", Cx = 0.326f, Cy = 0.42f, W = 170f, H = 170f, Alpha = 0.12f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.035f, PulseSpeed = 0.6f },
+            new() { Effect = "glow", Cx = 0.402f, Cy = 0.39f, W = 150f, H = 150f, Alpha = 0.16f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.05f, PulseSpeed = 0.8f },
+            new() { Effect = "moth", Cx = 0.402f, Cy = 0.39f, H = 15f, Fps = 10f, Alpha = 0.9f, Tint = new Color(1f, 0.95f, 0.84f), OrbitRx = 40f, OrbitRy = 28f },
+            new() { Effect = "moth", Cx = 0.402f, Cy = 0.39f, H = 13f, Fps = 10f, Alpha = 0.8f, Tint = new Color(1f, 0.95f, 0.84f), Phase = 2.4f, OrbitRx = 52f, OrbitRy = 34f },
+            new() { Effect = "moth", Cx = 0.402f, Cy = 0.39f, H = 11f, Fps = 10f, Alpha = 0.7f, Tint = new Color(1f, 0.95f, 0.84f), Phase = 4.4f, OrbitRx = 30f, OrbitRy = 22f },
         ],
         ["room_7.tscn"] =
         [
@@ -233,12 +243,42 @@ public partial class GameUI : CanvasLayer
     };
 
     private const int AmbientPoolSize = 6;
+    private CanvasLayer _ambientLayer;
     private TextureRect[] _ambientRects;
     private AmbientSpec[] _ambientActive = System.Array.Empty<AmbientSpec>();
     private string _ambientSceneFile = string.Empty;
     private float _ambientTime;
     private readonly Dictionary<string, Texture2D[]> _ambientFrameCache = new();
     private static readonly int[] AmbientPingPong = [0, 1, 2, 1];
+
+    // ------------------------------------------------- held fragment beat
+    //
+    // Every fragment, once it's hers, is held up in first person for a
+    // breath — the thing itself, big; one line of Mara; then click, and
+    // it flies to the bag. Getting a fragment should feel like getting it.
+
+    private static readonly string[] HeldFragmentLines =
+    [
+        "Every morning started with her already talking. ... I'd give anything to be woken up like that one more time.",
+        "She could sleep anywhere, as long as someone was in the room. I used to turn the pages quietly. I remember turning them quietly.",
+        "She named the spiders so she wouldn't be afraid of them. Me, I kept the jars. That's what I did instead.",
+        "\"She would have loved to see how far you've come.\" Mum said it in this hall, years too late. ... I finally heard her.",
+        "Every October I write it. Every October I don't send it. It's still mine to carry. Just carried different, now.",
+        "She waited by the trees until waiting became walking. The swing was still moving when I remembered. ... I know the rest now.",
+    ];
+
+    private Control _heldRoot;
+    private TextureRect _heldGlow;
+    private TextureRect _heldIcon;
+    private Label _heldName;
+    private Label _heldLine;
+    private Label _heldHint;
+    private Tween _heldTween;
+    private readonly bool[] _heldSeen = new bool[6];
+    private bool _heldBaselineSynced;
+    private int _heldPending = -1;
+    private bool _heldShowing;
+    private float _heldAge;
 
     private static readonly string[] GenericAsideLines =
     [
@@ -356,6 +396,7 @@ public partial class GameUI : CanvasLayer
         BuildBagButton();
         BuildRememberButton();
         BuildMemoryVerbBar();
+        BuildFragmentHeld();
         BuildPausePanel();
         BuildSettingsPanel();
         BuildJournalPanel();
@@ -431,6 +472,7 @@ public partial class GameUI : CanvasLayer
         UpdateCollapsePulse();
         UpdateMaraAsides(delta);
         UpdateAmbientLife(delta);
+        UpdateFragmentHeld(delta);
 
         // "Remember it all": offered once per Clarity arming — but retried
         // every frame until the moment is actually free (no dialogue, no
@@ -523,6 +565,22 @@ public partial class GameUI : CanvasLayer
 
     public override void _Input(InputEvent @event)
     {
+        // The held-fragment moment takes the click for itself: admire,
+        // then click, and it goes in the bag.
+        if (_heldShowing && !GetTree().Paused)
+        {
+            bool advance = (@event is InputEventMouseButton heldClick
+                    && heldClick.Pressed && heldClick.ButtonIndex == MouseButton.Left)
+                || @event.IsActionPressed(InputSetup.AdvanceDialogue);
+            if (advance)
+            {
+                if (_heldAge > 0.45f)
+                    DismissFragmentHeld();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+        }
+
         // Forward dialogue advance/skip (guaranteed path; see Dialogue docs).
         if (Dialogue.IsShowing)
         {
@@ -3960,8 +4018,12 @@ public partial class GameUI : CanvasLayer
 
     private void BuildAmbientLife()
     {
-        // First children of all: the weather sits over the room but under
-        // every scrap of interface built after it.
+        // Canvas layer 1: over the room (0), under the speech bubble (2)
+        // and under every scrap of GameUI proper (90). By default, no
+        // animated sprite ever clips across somebody's words.
+        _ambientLayer = new CanvasLayer { Name = "AmbientLife", Layer = 1 };
+        AddChild(_ambientLayer);
+
         _ambientRects = new TextureRect[AmbientPoolSize];
         for (int i = 0; i < AmbientPoolSize; i++)
         {
@@ -3974,7 +4036,7 @@ public partial class GameUI : CanvasLayer
                 Visible = false,
             };
             _ambientRects[i] = rect;
-            AddChild(rect);
+            _ambientLayer.AddChild(rect);
         }
     }
 
@@ -3983,8 +4045,21 @@ public partial class GameUI : CanvasLayer
         if (_ambientFrameCache.TryGetValue(effect, out var cached))
             return cached;
 
-        string[] paths = effect switch
+        string[] paths;
+        if (effect.StartsWith("crown"))
         {
+            // kitchen-window tree patches: amb_crown{L|R}{variant}_{frame}
+            paths =
+            [
+                $"res://assets/images/bgs/amb_{effect}_0.png",
+                $"res://assets/images/bgs/amb_{effect}_1.png",
+                $"res://assets/images/bgs/amb_{effect}_2.png",
+            ];
+        }
+        else
+        {
+            paths = effect switch
+            {
             "steam" => ["res://assets/images/bgs/amb_steam_0.png", "res://assets/images/bgs/amb_steam_1.png", "res://assets/images/bgs/amb_steam_2.png"],
             "flame" => ["res://assets/images/bgs/amb_flame_0.png", "res://assets/images/bgs/amb_flame_1.png", "res://assets/images/bgs/amb_flame_2.png"],
             "leaves" => ["res://assets/images/bgs/amb_leaves_0.png", "res://assets/images/bgs/amb_leaves_1.png", "res://assets/images/bgs/amb_leaves_2.png"],
@@ -3992,8 +4067,9 @@ public partial class GameUI : CanvasLayer
             "dust" => ["res://assets/images/bgs/amb_dust_0.png", "res://assets/images/bgs/amb_dust_1.png", "res://assets/images/bgs/amb_dust_2.png"],
             "moth" => ["res://assets/images/bgs/amb_moth_0.png", "res://assets/images/bgs/amb_moth_1.png", "res://assets/images/bgs/amb_moth_2.png"],
             "branch" => ["res://assets/images/bgs/amb_branch.png"],
-            _ => ["res://assets/images/bgs/amb_glow.png"],
-        };
+                _ => ["res://assets/images/bgs/amb_glow.png"],
+            };
+        }
         var frames = new Texture2D[paths.Length];
         for (int i = 0; i < paths.Length; i++)
             frames[i] = ResourceLoader.Exists(paths[i]) ? GD.Load<Texture2D>(paths[i]) : null;
@@ -4007,6 +4083,39 @@ public partial class GameUI : CanvasLayer
             return string.Empty;
         int slash = path.LastIndexOf('/');
         return slash >= 0 ? path.Substring(slash + 1) : path;
+    }
+
+    private readonly Dictionary<string, CanvasItem> _roomNodeCache = new();
+
+    private CanvasItem FindRoomCanvasItem(string path)
+    {
+        if (_roomNodeCache.TryGetValue(path, out var cached)
+            && GodotObject.IsInstanceValid(cached))
+            return cached;
+        var node = SceneManager.Instance?.CurrentScene?.GetNodeOrNull<CanvasItem>(path);
+        if (node != null)
+            _roomNodeCache[path] = node;
+        return node;
+    }
+
+    /// <summary>Is this TileMap examine layer the one currently showing?
+    /// ExamineHelper shows/hides by modulate alpha, and layers advanced
+    /// past are freed outright — both read as "not showing" here.</summary>
+    private bool RoomLayerShowing(string path)
+    {
+        var item = FindRoomCanvasItem(path);
+        return item != null && item.Modulate.A > 0.5f && item.SelfModulate.A > 0.5f;
+    }
+
+    /// <summary>Which painting the kitchen window currently wears:
+    /// 0 first look, 1 deeper, 2 the clarified truth (a tree gone).</summary>
+    private int CurrentWindowVariant()
+    {
+        if (RoomLayerShowing("Objects/Window/Clarify1"))
+            return 2;
+        if (RoomLayerShowing("Objects/Window/Examine2"))
+            return 1;
+        return 0;
     }
 
     /// <summary>Polled scene watch (a UI-context lag on the exact frame of
@@ -4067,12 +4176,15 @@ public partial class GameUI : CanvasLayer
             }
 
             var spec = _ambientActive[i];
-            if (spec.HideDuringDialogue && Dialogue.IsShowing)
+            if (spec.CupNodePath != null && !RoomLayerShowing(spec.CupNodePath))
             {
                 rect.Visible = false;
                 continue;
             }
-            var frames = AmbientFrames(spec.Effect);
+            string effect = spec.Effect;
+            if (spec.WindowCrown >= 0)
+                effect = (spec.WindowCrown == 0 ? "crownL" : "crownR") + CurrentWindowVariant();
+            var frames = AmbientFrames(effect);
             int frame = 0;
             if (frames.Length > 1 && !frozen)
             {
@@ -4094,7 +4206,7 @@ public partial class GameUI : CanvasLayer
             h *= scale;
 
             rect.Texture = tex;
-            rect.TextureFilter = spec.Effect == "glow"
+            rect.TextureFilter = effect == "glow"
                 ? CanvasItem.TextureFilterEnum.Linear
                 : CanvasItem.TextureFilterEnum.Nearest;
             rect.Size = new Vector2(w, h);
@@ -4114,13 +4226,181 @@ public partial class GameUI : CanvasLayer
 
             float alpha = spec.Alpha;
             if (spec.Pulse > 0f && !frozen)
-                alpha += spec.Pulse * Mathf.Sin(_ambientTime * 1.35f + spec.Phase);
+                alpha += spec.Pulse * Mathf.Sin(_ambientTime * spec.PulseSpeed + spec.Phase);
             rect.Modulate = new Color(spec.Tint, Mathf.Clamp(alpha, 0f, 1f));
             rect.Rotation = spec.SwayDegrees > 0f && !frozen
                 ? Mathf.DegToRad(spec.SwayDegrees * Mathf.Sin(_ambientTime * spec.SwaySpeed + spec.Phase))
                 : 0f;
             rect.Visible = true;
         }
+    }
+
+    private void BuildFragmentHeld()
+    {
+        _heldRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _heldRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+
+        var dim = new ColorRect
+        {
+            Color = new Color(0.02f, 0.015f, 0.01f, 0.62f),
+            MouseFilter = Control.MouseFilterEnum.Stop,
+        };
+        dim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _heldRoot.AddChild(dim);
+
+        _heldGlow = new TextureRect
+        {
+            Texture = GD.Load<Texture2D>("res://assets/images/bgs/amb_glow.png"),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale,
+            TextureFilter = CanvasItem.TextureFilterEnum.Linear,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Modulate = new Color(1f, 0.82f, 0.5f, 0.4f),
+        };
+        _heldRoot.AddChild(_heldGlow);
+
+        _heldIcon = new TextureRect
+        {
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspect,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _heldRoot.AddChild(_heldIcon);
+
+        _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
+        _heldName.HorizontalAlignment = HorizontalAlignment.Center;
+        _heldName.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _heldRoot.AddChild(_heldName);
+
+        _heldLine = MakeLabel(string.Empty, 24, new Color(0.93f, 0.88f, 0.79f));
+        _heldLine.HorizontalAlignment = HorizontalAlignment.Center;
+        _heldLine.AutowrapMode = TextServer.AutowrapMode.Word;
+        _heldLine.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _heldRoot.AddChild(_heldLine);
+
+        _heldHint = MakeLabel("click — put it in the bag", 17, new Color(0.85f, 0.79f, 0.68f, 0.75f));
+        _heldHint.HorizontalAlignment = HorizontalAlignment.Center;
+        _heldHint.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _heldRoot.AddChild(_heldHint);
+
+        AddChild(_heldRoot);
+    }
+
+    private void ShowFragmentHeld(int index)
+    {
+        if (_heldRoot == null)
+            return;
+
+        _heldShowing = true;
+        _heldSeen[index] = true;
+        _heldPending = -1;
+        _heldAge = 0f;
+        Dialogue.BeginInputBlock();
+
+        Vector2 view = GetViewport().GetVisibleRect().Size;
+        float cx = view.X / 2f;
+
+        _heldName.Text = GameState.ShardTitles[index];
+        _heldName.Position = new Vector2(cx - 380f, view.Y * 0.13f);
+        _heldName.Size = new Vector2(760f, 44f);
+
+        _heldGlow.Size = new Vector2(430f, 430f);
+        _heldGlow.Position = new Vector2(cx - 215f, view.Y * 0.42f - 215f);
+
+        _heldIcon.Texture = GD.Load<Texture2D>(BagIconPaths[index]);
+        _heldIcon.Size = new Vector2(300f, 300f);
+        _heldIcon.PivotOffset = new Vector2(150f, 150f);
+        _heldIcon.Position = new Vector2(cx - 150f, view.Y * 0.42f - 150f);
+        _heldIcon.Scale = new Vector2(0.8f, 0.8f);
+
+        _heldLine.Text = HeldFragmentLines[index];
+        _heldLine.Position = new Vector2(cx - 380f, view.Y * 0.68f);
+        _heldLine.Size = new Vector2(760f, 96f);
+
+        _heldHint.Position = new Vector2(cx - 380f, view.Y * 0.86f);
+        _heldHint.Size = new Vector2(760f, 30f);
+
+        _heldRoot.Modulate = new Color(1, 1, 1, 0);
+        _heldRoot.Visible = true;
+        AudioManager.Play(Sfx.ShardCollect, -7f);
+
+        _heldTween?.Kill();
+        _heldTween = CreateTween();
+        _heldTween.SetParallel(true);
+        _heldTween.TweenProperty(_heldRoot, "modulate:a", 1f, 0.4f);
+        _heldTween.TweenProperty(_heldIcon, "scale", Vector2.One, 0.45f)
+            .SetTrans(Tween.TransitionType.Back).SetEase(Tween.EaseType.Out);
+    }
+
+    private void DismissFragmentHeld()
+    {
+        if (!_heldShowing || _heldRoot == null)
+            return;
+        _heldShowing = false;
+        AudioManager.Play(Sfx.ShardPlace, -9f);
+
+        // The icon's visual centre is Position + PivotOffset; land that
+        // centre on the bag as it shrinks away into it.
+        Vector2 bagCenter = _bagButton != null
+            ? _bagButton.GetGlobalRect().GetCenter()
+            : new Vector2(GetViewport().GetVisibleRect().Size.X - 60f, 60f);
+
+        _heldTween?.Kill();
+        _heldTween = CreateTween();
+        _heldTween.SetParallel(true);
+        _heldTween.TweenProperty(_heldIcon, "position",
+                bagCenter - _heldIcon.PivotOffset, 0.55f)
+            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.In);
+        _heldTween.TweenProperty(_heldIcon, "scale", new Vector2(0.12f, 0.12f), 0.55f)
+            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.In);
+        _heldTween.TweenProperty(_heldRoot, "modulate:a", 0f, 0.55f);
+        _heldTween.Chain().TweenCallback(Callable.From(() =>
+        {
+            if (_heldRoot != null)
+                _heldRoot.Visible = false;
+            Dialogue.EndInputBlock();
+        }));
+    }
+
+    private void UpdateFragmentHeld(double delta)
+    {
+        if (_heldShowing)
+        {
+            _heldAge += (float)delta;
+            return;
+        }
+
+        var gs = GameState.Instance;
+        if (gs == null || _context != UiContext.Game)
+            return;
+
+        // First sight of a (re)started run: whatever she already carries
+        // is old news — only fragments earned from here get the moment.
+        if (!_heldBaselineSynced)
+        {
+            for (int i = 0; i < _heldSeen.Length; i++)
+                _heldSeen[i] = gs.IsShardRecovered(i);
+            _heldBaselineSynced = true;
+            return;
+        }
+
+        for (int i = 0; i < _heldSeen.Length; i++)
+        {
+            bool recovered = gs.IsShardRecovered(i);
+            if (!recovered)
+                _heldSeen[i] = false; // a fresh run forgets with her
+            else if (!_heldSeen[i] && _heldPending < 0)
+                _heldPending = i;
+        }
+
+        if (_heldPending < 0)
+            return;
+        if (GetTree().Paused || Dialogue.IsShowing || AnyPanelOpen()
+            || _cutscenePlaying || _endingPlaying || _shatterPlaying)
+            return;
+
+        ShowFragmentHeld(_heldPending);
     }
 
     private void BuildMaraAside()

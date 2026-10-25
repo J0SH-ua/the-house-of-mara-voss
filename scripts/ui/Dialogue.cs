@@ -278,7 +278,17 @@ public partial class Dialogue : Control
 
         dialogue.Initialize();
         subViewport.AddChild(dialogue);
-        root.AddChild(container);
+        // Canvas layer 2: above GameUI's ambient-life weather (layer 1),
+        // so no animated sprite ever clips over the speech bubble — and
+        // still below GameUI itself (90), whose menus must win.
+        var layer = new CanvasLayer
+        {
+            Name = "DialogueLayer",
+            Layer = 2,
+            ProcessMode = ProcessModeEnum.Pausable,
+        };
+        layer.AddChild(container);
+        root.AddChild(layer);
 
         _lineStartedMsec = Time.GetTicksMsec();
         _mouseReleasedSinceLineStart = false;
@@ -305,7 +315,7 @@ public partial class Dialogue : Control
         }
         finally
         {
-            container.QueueFree();
+            layer.QueueFree();
             _activeCount = Math.Max(0, _activeCount - 1);
             EndInputBlock();
         }
