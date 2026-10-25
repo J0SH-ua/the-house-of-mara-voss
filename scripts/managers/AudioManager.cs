@@ -326,6 +326,8 @@ public partial class AudioManager : Node
             PlayMusic(MusicRoom6, -14f);
         else if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
             PlayMusic(MusicFinale, -6f);
+        else if (scene.Contains("bedroom"))
+            PlayMusic(MusicRoom1, -14f);
         else if (scene.Contains("room_1"))
             PlayMusic(MusicRoom1, volume);
         else if (scene.Contains("room_2"))

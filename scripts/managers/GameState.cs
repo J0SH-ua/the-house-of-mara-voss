@@ -95,6 +95,7 @@ public partial class GameState : Node
     /// <summary>Scene path (file name) → tracker room name.</summary>
     private static readonly System.Collections.Generic.Dictionary<string, string> SceneToRoom = new()
     {
+        ["bedroom_prologue.tscn"] = "Bedroom",
         ["room_1.tscn"] = "Room1",
         ["room_1_puzzle.tscn"] = "Room1",
         ["room_2.tscn"] = "Room2",
@@ -800,6 +801,7 @@ public partial class GameState : Node
     // present-day apartment) borrow their parent room's place in line.
     private static readonly string[] MainPathSceneFiles =
     [
+        "bedroom_prologue.tscn",
         "room_1.tscn", "room_1_puzzle.tscn",
         "room_2.tscn", "room_2_puzzle.tscn",
         "room_3.tscn",
@@ -855,6 +857,7 @@ public partial class GameState : Node
 
     private bool RoomFullyDone(string trackerRoom) => trackerRoom switch
     {
+        "Bedroom" => HasFlag("prologue_from_bedroom"),
         "Room1" => IsShardRecovered(0),
         "Room2" => IsShardRecovered(1),
         "Room3" => IsShardRecovered(2),
@@ -925,6 +928,11 @@ public partial class GameState : Node
                 return apLeft.Count > 0
                     ? $"The life that continued, unopened ({apDone}/{apTotal})."
                     : "Nothing here is a puzzle. The door remembers the way back.";
+            case "bedroom_prologue.tscn":
+                RoomExamineTracker.GetRoomProgress("Bedroom", out int bDone, out int bTotal, out var bLeft);
+                return bLeft.Count > 0
+                    ? $"Just woke up somewhere impossible — look around ({bDone}/{bTotal})."
+                    : "There's a door. Beyond it, whatever this is.";
             case "porch_447.tscn":
                 RoomExamineTracker.GetRoomProgress("Porch447", out int pDone, out int pTotal, out var pLeft);
                 return pLeft.Count > 0

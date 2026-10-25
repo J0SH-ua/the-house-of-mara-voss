@@ -18,6 +18,7 @@ public partial class RoomExamineTracker : Node
     public static readonly IReadOnlyDictionary<string, string[]> RequiredObjectsByRoom =
         new System.Collections.Generic.Dictionary<string, string[]>
         {
+            ["Bedroom"] = ["Bed", "Window", "Nightstand", "Drawing", "Wardrobe"],
             ["Room1"] = ["Window", "Cup2", "Toast", "Note", "Clock", "Calendar", "Drawing"],
             ["Room2"] = ["Bookshelf", "Phone", "RightChair", "LeftChair", "Painting", "Globe", "Letter"],
             ["Room3"] = ["Painting", "Bag", "Bed", "Note"],

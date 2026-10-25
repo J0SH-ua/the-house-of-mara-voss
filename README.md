@@ -99,7 +99,7 @@ the house is meant to be figured out.
 2. Build the C# solution; fix anything the compiler flags (this pass was
    written and syntax-checked outside Godot).
 3. Play: intro (click to skip) → menu music + Settings button → Start.
-4. Room 1: HUD objective counts up as you examine; drawer explains its
+4. A New Game now wakes in Mara's childhood bedroom — first-person, blinking up at a ceiling crack she knows by heart; look around (bed, window, nightstand, her own childhood drawing, wardrobe), then take the door and land straight in the kitchen with no hallway in between (she has something to say about that), after which the usual memory cutscene and tutorial question follow. Room 1: HUD objective counts up as you examine; drawer explains its
    lock; hold Tab; press H three times; arm Clarity (C), right-click to
    release, then clarify the toast; press B to open/close the empty bag; over-examine to hear corruption rise.
 5. Padlock: dials tick; Esc backs out; **Unlock** is visible from the start — press it with a wrong code first (rattle + “check your Journal”), then dial `71483` → Unlock → drawer opens → **click the key** → open the satchel (top-right): the brass key is in the bag → Room 2. (Physics picking is switched on in GameManager — SubViewports default it off, which kills `_InputEvent` targets like the key/arrows.) Stepping back to the kitchen afterwards shows the cabinet still open.

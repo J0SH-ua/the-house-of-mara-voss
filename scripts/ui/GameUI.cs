@@ -173,6 +173,12 @@ public partial class GameUI : CanvasLayer
 
     private static readonly Dictionary<string, AmbientSpec[]> AmbientByScene = new()
     {
+        ["bedroom_prologue.tscn"] =
+        [
+            // morning light in the childhood window, and the dust in it
+            new() { Effect = "glow", Cx = 0.395f, Cy = 0.36f, W = 240f, H = 300f, Alpha = 0.10f, Tint = new Color(1f, 0.85f, 0.55f), Pulse = 0.03f, PulseSpeed = 0.5f },
+            new() { Effect = "dust", Cx = 0.42f, Cy = 0.42f, W = 380f, Fps = 2f, Alpha = 0.5f },
+        ],
         ["room_1.tscn"] =
         [
             // steam off the two cups — only while each cup's first layer is
@@ -1104,6 +1110,7 @@ public partial class GameUI : CanvasLayer
             file = file.Substring(slash + 1);
         return file switch
         {
+            "bedroom_prologue.tscn" => "the bedroom",
             "room_1.tscn" => "the kitchen",
             "room_1_puzzle.tscn" => "the kitchen drawer",
             "room_2.tscn" => "the sitting room",
@@ -4136,7 +4143,10 @@ public partial class GameUI : CanvasLayer
 
         bool show = _context == UiContext.Game
             && !_cutscenePlaying && !_endingPlaying && !_shatterPlaying
-            && _ambientActive.Length > 0;
+            && _ambientActive.Length > 0
+            // While her eyes are still closed, no weather over the black.
+            && !(_ambientSceneFile == "bedroom_prologue.tscn"
+                && GameState.Instance?.HasFlag("prologue_awake") != true);
         if (!show)
         {
             HideAmbientRects();
@@ -4722,6 +4732,17 @@ public partial class GameUI : CanvasLayer
     private void MaybePlayCutsceneThenTutorial(string scenePath)
     {
         var gs = GameState.Instance;
+
+        // Just walked out of a bedroom straight into the kitchen: that
+        // deserves a word before anything else the opening has to say.
+        if (gs != null && scenePath != null && scenePath.EndsWith("/room_1.tscn")
+            && gs.HasFlag("prologue_from_bedroom") && !gs.HasFlag("prologue_kitchen_confused"))
+        {
+            gs.SetFlag("prologue_kitchen_confused");
+            PlayKitchenConfusionThenOpening(scenePath);
+            return;
+        }
+
         if (gs != null && gs.CutscenePending && scenePath != null && scenePath.EndsWith("/room_1.tscn"))
         {
             gs.ConsumeCutscenePending();
@@ -4730,6 +4751,27 @@ public partial class GameUI : CanvasLayer
         }
 
         MaybeAutoShowTutorial(scenePath);
+    }
+
+    /// <summary>"…The kitchen?" — Mara names the wrongness out loud, then
+    /// the opening proceeds exactly as it always has (memory cutscene,
+    /// tutorial question) by re-entering the same funnel.</summary>
+    private async void PlayKitchenConfusionThenOpening(string scenePath)
+    {
+        Dialogue.BeginInputBlock();
+        try
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await Dialogue.ShowText(this, "…The kitchen?", 2.6f, 576f, 324f, fontSize: 28);
+            await Dialogue.ShowText(this, "I was in bed. I was just in bed — in my room, upstairs. There was a whole hallway between that door and here.", 5.5f, 576f, 324f, fontSize: 24);
+            await Dialogue.ShowText(this, "No hallway. No upstairs. Just this. …Okay. Okay. One room at a time, Mara.", 5f, 576f, 324f, fontSize: 24);
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+
+        MaybePlayCutsceneThenTutorial(scenePath);
     }
 
     private async void PlayCutsceneAsync()
