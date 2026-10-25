@@ -54,6 +54,13 @@ public partial class MainMenu : Control
 	private BaseButton _quitButton;
 	private InfoModal _fullStoryModal;
 	private InfoModal _aboutModal;
+	private TextureRect _menuRainLeft;
+	private TextureRect _menuRainRight;
+	private TextureRect _menuSteam;
+	private readonly Texture2D[] _menuRainTextures = new Texture2D[3];
+	private readonly Texture2D[] _menuSteamTextures = new Texture2D[3];
+	private double _menuFxTime;
+	private static readonly int[] MenuFxPingPong = { 0, 1, 2, 1 };
 
 	public override void _Ready()
 	{
@@ -110,7 +117,11 @@ public partial class MainMenu : Control
 			_quitButton.Pressed += OnQuitPressed;
 
 		foreach (var b in new[] { _startButton, _continueButton, _fullStoryButton, _aboutButton, _quitButton })
+		{
+			TightenMenuButton(b);
 			HookButtonSounds(b);
+		}
+		BuildMenuAtmosphere();
 
 		if (_continueButton?.Visible == true && _startButton != null)
 			_startButton.TooltipText = "Begin again (lets go of the preserved memory)";
@@ -121,6 +132,103 @@ public partial class MainMenu : Control
 		// crossfades) instead of a throwaway per-scene player.
 		AudioManager.Instance?.StopAmbience();
 		AudioManager.Instance?.PlayMusic(AudioManager.MusicMenu, -7f, 1.4f);
+	}
+
+	public override void _Process(double delta)
+	{
+		if (_menuRainLeft == null || _menuRainRight == null || _menuSteam == null)
+			return;
+
+		if (!Settings.ReduceMotionOrDefault())
+			_menuFxTime += delta;
+
+		int rainFrame = MenuFxPingPong[(int)(_menuFxTime * 7.0) % MenuFxPingPong.Length];
+		Texture2D rainTexture = _menuRainTextures[rainFrame];
+		if (rainTexture != null)
+		{
+			_menuRainLeft.Texture = rainTexture;
+			_menuRainRight.Texture = rainTexture;
+		}
+
+		int steamFrame = MenuFxPingPong[(int)((_menuFxTime + 0.37) * 4.0) % MenuFxPingPong.Length];
+		Texture2D steamTexture = _menuSteamTextures[steamFrame];
+		if (steamTexture != null)
+			_menuSteam.Texture = steamTexture;
+
+		float steamAlpha = 0.52f + 0.08f * Mathf.Sin((float)_menuFxTime * 1.3f);
+		_menuSteam.Modulate = new Color(1f, 1f, 1f, steamAlpha);
+	}
+
+	private void BuildMenuAtmosphere()
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			_menuRainTextures[i] = GD.Load<Texture2D>($"res://assets/images/bgs/amb_rain_{i}.png");
+			_menuSteamTextures[i] = GD.Load<Texture2D>($"res://assets/images/bgs/amb_steam_{i}.png");
+		}
+
+		var background = GetNodeOrNull<TextureRect>("SubViewportContainer/SubViewport/Background");
+		Node parent = background?.GetParent();
+		if (background == null || parent == null)
+		{
+			Logger.Warning("[MainMenu] Background not found; menu rain/steam skipped.");
+			return;
+		}
+
+		int insertIndex = background.GetIndex() + 1;
+		// Window glass measured from the 1677x938 source and mapped into the
+		// 1152x648 menu viewport. Rain stops above the desk/books.
+		_menuRainLeft = MakeMenuFxRect(parent, insertIndex++, "MenuRainLeft", _menuRainTextures[0],
+			new Rect2(323f, 73f, 244f, 337f), new Color(1f, 1f, 1f, 0.68f));
+		_menuRainRight = MakeMenuFxRect(parent, insertIndex++, "MenuRainRight", _menuRainTextures[0],
+			new Rect2(587f, 73f, 330f, 337f), new Color(1f, 1f, 1f, 0.68f));
+		// Coffee surface maps to about (979,448) in the menu viewport.
+		_menuSteam = MakeMenuFxRect(parent, insertIndex, "MenuSteam", _menuSteamTextures[0],
+			new Rect2(959f, 338f, 55f, 110f), new Color(1f, 1f, 1f, 0.52f));
+	}
+
+	private static TextureRect MakeMenuFxRect(Node parent, int insertIndex, string name,
+		Texture2D texture, Rect2 rect, Color modulate)
+	{
+		var fx = new TextureRect
+		{
+			Name = name,
+			Texture = texture,
+			Position = rect.Position,
+			Size = rect.Size,
+			ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+			StretchMode = TextureRect.StretchModeEnum.Scale,
+			TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			Modulate = modulate,
+		};
+		parent.AddChild(fx);
+		parent.MoveChild(fx, Mathf.Clamp(insertIndex, 0, parent.GetChildCount() - 1));
+		return fx;
+	}
+
+	private static void TightenMenuButton(BaseButton button)
+	{
+		// The scene's buttons previously used horizontal Expand/Fill inside
+		// the 420 px menu column, so hover fired far beyond the painted
+		// button. Use the *resting* label as the hitbox: the hover art is
+		// wider because a key appears beside the words, and that not-yet-
+		// visible key must not be hoverable empty space. KeepCentered still
+		// lets the hover/pressed art draw at its native size once active.
+		if (button is not TextureButton textureButton)
+			return;
+
+		textureButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		textureButton.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		// IgnoreTextureSize stops the wider hover texture from enlarging
+		// the control's own minimum size; CustomMinimumSize below supplies
+		// the resting label's exact bounds instead.
+		textureButton.IgnoreTextureSize = true;
+		textureButton.StretchMode = TextureButton.StretchModeEnum.KeepCentered;
+
+		Vector2 minSize = textureButton.TextureNormal?.GetSize() ?? Vector2.Zero;
+		if (minSize != Vector2.Zero)
+			textureButton.CustomMinimumSize = minSize;
 	}
 
 	private static void HookButtonSounds(BaseButton button)

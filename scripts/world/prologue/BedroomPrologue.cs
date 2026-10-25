@@ -1,16 +1,17 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Godot;
 
 /// <summary>
 /// The prologue: Mara's childhood bedroom, first thing in the morning.
 ///
-/// A New Game wakes here — first person, eyelids and all — staring at a
-/// ceiling she has not seen in twenty years. She looks around the room
-/// (five ordinary things, each with something to say), and when she opens
-/// the bedroom door expecting the hallway, the house gives her the kitchen
-/// instead. That wrongness is the game's first sentence; Room 1 is where
-/// the existing opening cutscene and tutorial take over, unchanged.
+/// The original post-Play memory cutscene plays over this room first; then
+/// a New Game wakes here — first person, eyelids and all — staring at a
+/// ceiling she has not seen in twenty years. The bedroom is also the live
+/// tutorial: all five ordinary things must be examined before Mara will
+/// open the door. Beyond it she expects the hallway; the house gives her
+/// the kitchen instead. Room 1 then offers the existing tutorial cards.
 ///
 /// One-way by design: there is no Step Back from the kitchen, because the
 /// house has already moved the hallway. Reaching the kitchen sets
@@ -54,6 +55,13 @@ public partial class BedroomPrologue : MemoryRoomBase
         var gs = GameState.Instance;
         if (gs != null && !gs.HasFlag(AwakeFlag))
             _ = PlayWakingAsync();
+    }
+
+    protected override async Task OnRequiredExaminesCompletedAsync()
+    {
+        AudioManager.Play(Sfx.RoomComplete, -8f);
+        await Say("There. Bed, window, clock, drawing, wardrobe. I've looked at the room I woke in. Now I can face whatever put me here.", 5.5f, 24);
+        GameState.Instance?.Toast("Everything in the bedroom has been explored. The door is ready.");
     }
 
     protected override void OnHotspotClicked(Hotspot hotspot)
@@ -118,6 +126,16 @@ public partial class BedroomPrologue : MemoryRoomBase
         Busy = true;
         try
         {
+            // The original memory intro has first claim on a New Game. It
+            // consumes CutscenePending and pauses the tree; Mara's eyelids
+            // wait until both the pending flag and that pause are gone.
+            while (GameState.Instance?.CutscenePending == true || GetTree().Paused)
+            {
+                await WaitSeconds(0.1f);
+                if (!StillHere())
+                    return;
+            }
+
             BuildWakingOverlay();
 
             if (Settings.ReduceMotionOrDefault())
@@ -168,8 +186,12 @@ public partial class BedroomPrologue : MemoryRoomBase
             await Say("I rent one room in the city now, with a ceiling I've never looked at once. So this is a dream, or it's… Breathe, Mara. Look around first. Answers after.", 6f, 24);
             if (!StillHere())
                 return;
+            await Say("Start where I am. Bed, window, clock, drawing, wardrobe — look at all of it properly. Then the door.", 5.5f, 24);
+            if (!StillHere())
+                return;
 
             GameState.Instance?.SetFlag(AwakeFlag);
+            GameState.Instance?.Toast("Click each object to examine it. Hold Tab to reveal what still waits; the objective keeps count.");
         }
         finally
         {
@@ -254,6 +276,18 @@ public partial class BedroomPrologue : MemoryRoomBase
         Busy = true;
         try
         {
+            if (!AllRequiredExamined())
+            {
+                RoomExamineTracker.GetRoomProgress(RoomName, out int done, out int total, out var remaining);
+                AudioManager.Play(Sfx.LockRattle, -8f, 0.9f);
+                await Say("No. Not before I've even looked at where I woke up. If I start by running from one room, I'll run from all of them.", 5.5f, 24);
+                if (!StillHere())
+                    return;
+                await Say($"Still waiting for an honest look: {string.Join(", ", remaining.Select(BedroomObjectName))}. ({done}/{total} explored.)", 4.5f, 23);
+                GameState.Instance?.Toast("Explore every bedroom object first — hold Tab to reveal what still waits.");
+                return;
+            }
+
             await Say("Hallway, then. Stairs down. Kitchen. Mum at the stove saying I'd sleep through my own funeral—", 5f, 24);
             if (!StillHere())
                 return;
@@ -271,4 +305,14 @@ public partial class BedroomPrologue : MemoryRoomBase
                 Busy = false;
         }
     }
+
+    private static string BedroomObjectName(string id) => id switch
+    {
+        "Bed" => "the bed",
+        "Window" => "the window",
+        "Nightstand" => "the nightstand clock",
+        "Drawing" => "the drawing",
+        "Wardrobe" => "the wardrobe",
+        _ => "the " + (id ?? "room").ToLowerInvariant(),
+    };
 }

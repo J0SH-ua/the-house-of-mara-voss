@@ -325,10 +325,10 @@ public partial class Room6Final : MemoryRoomBase
         try
         {
             AudioManager.Play(Sfx.DoorCreak, -8f, 0.82f);
-            await SaySequence(
-                "You take the road Ida took, but in the opposite tense: not leaving a person behind, only carrying what is known back toward her sister.",
-                "At the bend, the fields give way to the front of the house. The porch. The light is on.");
-            SceneManager.ChangeScene("res://scenes/world/porch_447.tscn");
+            await WaitSeconds(0.25f);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            SceneManager.ChangeScene("res://scenes/world/journey_to_porch.tscn");
         }
         finally
         {

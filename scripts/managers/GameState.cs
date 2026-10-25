@@ -96,6 +96,10 @@ public partial class GameState : Node
     private static readonly System.Collections.Generic.Dictionary<string, string> SceneToRoom = new()
     {
         ["bedroom_prologue.tscn"] = "Bedroom",
+        ["journey_to_room_2.tscn"] = "Room1",
+        ["journey_to_room_3.tscn"] = "Room2",
+        ["journey_to_room_4.tscn"] = "Room3",
+        ["journey_to_porch.tscn"] = "Room6",
         ["room_1.tscn"] = "Room1",
         ["room_1_puzzle.tscn"] = "Room1",
         ["room_2.tscn"] = "Room2",
@@ -802,12 +806,12 @@ public partial class GameState : Node
     private static readonly string[] MainPathSceneFiles =
     [
         "bedroom_prologue.tscn",
-        "room_1.tscn", "room_1_puzzle.tscn",
-        "room_2.tscn", "room_2_puzzle.tscn",
-        "room_3.tscn",
+        "room_1.tscn", "room_1_puzzle.tscn", "journey_to_room_2.tscn",
+        "room_2.tscn", "room_2_puzzle.tscn", "journey_to_room_3.tscn",
+        "room_3.tscn", "journey_to_room_4.tscn",
         "room_4.tscn", "Room_4_puzzle.tscn",
         "room_5.tscn",
-        "room_6.tscn", "porch_447.tscn",
+        "room_6.tscn", "journey_to_porch.tscn", "porch_447.tscn",
         "room_7.tscn",
     ];
 
@@ -851,6 +855,12 @@ public partial class GameState : Node
             "flashback_landing.tscn" => "Room4Flashback",
             "apartment_now.tscn" => "ApartmentNow",
             "porch_447.tscn" => "Porch447",
+            // Journeys borrow the completed room for Clarity/progress, but
+            // they are thresholds, not rooms that can rest/seal.
+            "journey_to_room_2.tscn" => null,
+            "journey_to_room_3.tscn" => null,
+            "journey_to_room_4.tscn" => null,
+            "journey_to_porch.tscn" => null,
             _ => SceneToRoom.TryGetValue(file, out var room) ? room : null,
         };
     }
@@ -938,9 +948,17 @@ public partial class GameState : Node
                 return pLeft.Count > 0
                     ? $"The porch, at 4:47 ({pDone}/{pTotal})."
                     : "The front door. The last room is through it.";
+            case "journey_to_room_2.tscn":
+                return "Walk to the next door. Open it when you're ready.";
+            case "journey_to_room_3.tscn":
+                return "Walk to the next door. Open it when you're ready.";
+            case "journey_to_room_4.tscn":
+                return "Walk to the next door. Open it when you're ready.";
+            case "journey_to_porch.tscn":
+                return "Walk the empty road to the lit porch.";
             case "Room_4_puzzle.tscn":
                 return HasFlag("room4_door_opened")
-                    ? "The way through stands open."
+                    ? "The way through stands open. Click the door."
                     : "The door is listening for an old knock.";
             case "room_7.tscn":
                 if (!string.IsNullOrEmpty(CompletedEnding))
@@ -1071,6 +1089,11 @@ public partial class GameState : Node
                 _ => ("Put them in the order Mara lived them: a morning in the kitchen; a quiet room; a childhood kept and labelled; a sentence in a hall; Octobers at a writing desk; one last afternoon. Your journal (J) keeps each fragment's words.", null),
             };
         }
+
+        if (file.StartsWith("journey_"))
+            return (file == "journey_to_porch.tscn"
+                ? "Let Mara walk until the porch light is close, then click the light to arrive."
+                : "Let Mara reach the door, then click the door itself to open it.", null);
 
         if (file == "flashback_landing.tscn")
             return ("Nothing here can be changed — only finally seen. The photograph, the light, the runner. The end of the hall leads back when you are ready.", null);

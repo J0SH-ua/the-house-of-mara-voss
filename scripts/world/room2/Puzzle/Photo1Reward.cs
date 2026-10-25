@@ -7,6 +7,7 @@ using Godot;
 public partial class Photo1Reward : Area2D
 {
 	private const string NextScenePath = "res://scenes/world/room_3.tscn";
+	private const string JourneyScenePath = "res://scenes/world/journey_to_room_3.tscn";
 	private const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
 	private const string FragmentText =
 		"She used to fall asleep in that chair and think it was the best thing in the world — " +
@@ -144,6 +145,6 @@ public partial class Photo1Reward : Area2D
 		}
 
 
-		SceneManager.ChangeScene(NextScenePath);
+		SceneManager.ChangeScene(firstTime ? JourneyScenePath : NextScenePath);
 	}
 }

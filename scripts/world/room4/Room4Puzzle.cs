@@ -46,6 +46,11 @@ public partial class Room4Puzzle : MemoryRoomBase
     protected override IEnumerable<Hotspot> BuildHotspots()
     {
         // Coordinates map the DoorSourceRect crop above onto 1152x648.
+        // The door body comes first, so the six brass pieces below win any
+        // overlap; once unlocked, a click anywhere on the door opens it.
+        yield return new Hotspot("HallwayDoor", "Hallway Door",
+            new Rect2(312, 70, 552, 470), new Vector2(588, 325),
+            Sfx.DoorCreak, 0.9f, PointerCursorPath, false);
         // The bridge plate starts at x=312 so the legacy BackArrow's large
         // 220x220 click shape (x 85..305) can never steal its left edge.
         yield return new Hotspot("BridgePlate", "Bridge Plate",
@@ -144,6 +149,8 @@ public partial class Room4Puzzle : MemoryRoomBase
         {
             if (!SentenceIsComplete())
                 _ = LockedDoorAsync();
+            else if (hotspot.Id == "HallwayDoor")
+                _ = WrongKnockAsync();
             else
                 HandleEchoKnock(hotspot);
             return;
@@ -155,7 +162,10 @@ public partial class Room4Puzzle : MemoryRoomBase
             return;
         }
 
-        _ = ExamineDoorPartAsync(hotspot);
+        if (hotspot.Id == "HallwayDoor")
+            _ = LockedDoorAsync();
+        else
+            _ = ExamineDoorPartAsync(hotspot);
     }
 
     private bool SentenceIsComplete()
@@ -339,7 +349,9 @@ public partial class Room4Puzzle : MemoryRoomBase
             AudioManager.Play(Sfx.LockRattle, -7f, 0.82f);
             await SaySequence(
                 "The brass takes the sound and gives nothing back.",
-                "This door won't listen until the hall behind me has finished its sentence.");
+                SentenceIsComplete()
+                    ? "The answer is in the brass: each picture, then the keyhole under it. The wood itself gives nothing back."
+                    : "This door won't listen until the hall behind me has finished its sentence.");
         }
         finally
         {
@@ -368,9 +380,7 @@ public partial class Room4Puzzle : MemoryRoomBase
                 "Bridge. Key. Little door. Key. Circle. Key.",
                 "Something on the other side has been knocking back, one answer at a time. At the final note, all three locks turn together — and beyond them, a bedroom cannot decide which year it is.");
 
-            AudioManager.Play(Sfx.DoorCreak, -5f, 0.94f);
-            await WaitSeconds(0.35f);
-            SceneManager.ChangeScene(Room5ScenePath);
+            GameState.Instance?.Toast("The locks have answered. Click the door to open it.");
         }
         finally
         {
@@ -395,7 +405,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             return;
 
         _statusLabel.Text = _opened
-            ? "the way through stands open"
+            ? "the locks have answered — click the door to open it"
             : _knockProgress == 0
                 ? "the door remembers a knock"
                 : $"the knock holds — {_knockProgress} of {KnockSequence.Length}";
