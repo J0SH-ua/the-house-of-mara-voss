@@ -400,7 +400,6 @@ public partial class GameUI : CanvasLayer
         BuildRememberButton();
         BuildMemoryVerbBar();
         BuildFragmentHeld();
-        SceneManager.ChangeGate = AwaitHeldFragmentMoment;
         BuildPausePanel();
         BuildSettingsPanel();
         BuildJournalPanel();
@@ -4112,6 +4111,7 @@ public partial class GameUI : CanvasLayer
         if (_context != UiContext.Game)
             return; // unspent — retried next frame, once we're in the game
         _ambientSceneFile = file;
+        _roomNodeCache.Clear(); // last room's layers are freed; drop their wrappers
         _ambientActive = AmbientByScene.TryGetValue(file, out var specs)
             ? specs
             : System.Array.Empty<AmbientSpec>();
@@ -4410,6 +4410,7 @@ public partial class GameUI : CanvasLayer
                 _heldRoot.Visible = false;
             _heldBusy = false; // bagged — the house may move on now
             Dialogue.EndInputBlock();
+            SceneManager.ResumeDeferredSceneChange();
         }));
     }
 
@@ -4448,7 +4449,11 @@ public partial class GameUI : CanvasLayer
         {
             bool recovered = gs.IsShardRecovered(i);
             if (!recovered)
+            {
                 _heldSeen[i] = false; // a fresh run forgets with her
+                if (_heldPending == i)
+                    _heldPending = -1;
+            }
             else if (!_heldSeen[i] && _heldPending < 0)
                 _heldPending = i;
         }
@@ -4458,27 +4463,23 @@ public partial class GameUI : CanvasLayer
         !GetTree().Paused && !Dialogue.IsShowing && !AnyPanelOpen()
         && !_cutscenePlaying && !_endingPlaying && !_shatterPlaying;
 
-    /// <summary>SceneManager's ChangeGate: a room change asked for while a
-    /// fragment is still owed its moment waits here — hand, showcase,
-    /// click, bag — and only then does the house move on. Detection runs
-    /// on entry too, so a fragment collected and left behind in the very
-    /// same breath (Room 4's door) is still caught.</summary>
-    private async System.Threading.Tasks.Task AwaitHeldFragmentMoment()
+    /// <summary>Asked by SceneManager before it honours a scene change:
+    /// is a fragment still owed its moment (waiting to be picked up, or
+    /// already in her hand / flying to the bag)? If so the change is
+    /// deferred and resumed when the bag closes over it. Detection runs
+    /// here too, so a fragment collected and left behind in the very same
+    /// breath (Room 4's door) is still caught. Outside ordinary play —
+    /// menus, pause, cutscenes, endings — the answer is always no: the
+    /// house is never held hostage.</summary>
+    public bool IsHeldMomentPending()
     {
-        // Never hold the house hostage outside ordinary play.
+        if (_heldBusy)
+            return true;
         if (_context != UiContext.Game || GetTree().Paused
             || _cutscenePlaying || _endingPlaying || _shatterPlaying)
-            return;
-
-        while (true)
-        {
-            DetectNewFragments();
-            if (_heldPending < 0 && !_heldBusy)
-                return;
-            if (!_heldBusy && _heldPending >= 0 && HeldMomentCanShow())
-                ShowFragmentHeld(_heldPending);
-            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        }
+            return false;
+        DetectNewFragments();
+        return _heldPending >= 0;
     }
 
     private void BuildMaraAside()

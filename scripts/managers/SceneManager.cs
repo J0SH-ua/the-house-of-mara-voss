@@ -8,10 +8,10 @@ public partial class SceneManager : Node
 	public static bool IsChanging { get; private set; }
 	private static string _pendingScenePath;
 
-	/// <summary>Optional pre-transition gate (GameUI's held-fragment moment):
-	/// a scene change waits for it, so a just-earned fragment is picked up,
-	/// admired and bagged before the house moves on. Null = no gate.</summary>
-	public static Func<Task> ChangeGate;
+	/// <summary>A scene change held back while GameUI plays a just-earned
+	/// fragment's moment (hand, showcase, bag). GameUI resumes it via
+	/// <see cref="ResumeDeferredSceneChange"/> when the bag closes over it.</summary>
+	private static string _deferredScenePath;
 
 	/// <summary>Fired after a scene has been swapped in (before fade-in completes).
 	/// GameState uses it for music, objectives and autosave.</summary>
@@ -115,6 +115,17 @@ public partial class SceneManager : Node
 			return;
 		}
 
+		// A fragment just earned gets its moment before the house moves
+		// on: hold this request; GameUI resumes it once the fragment
+		// is in the bag. (No waiting loops — the request simply waits.)
+		if (GameUI.Instance != null && GameUI.Instance.IsHeldMomentPending())
+		{
+			_deferredScenePath = scenePath;
+			Logger.Debug($"Scene change held for a fragment moment: {scenePath}");
+			return;
+		}
+		_deferredScenePath = null; // explicit travel supersedes a held request
+
 		while (IsChanging)
 			await Instance.ToSignal(Instance.GetTree(), SceneTree.SignalName.ProcessFrame);
 
@@ -122,9 +133,6 @@ public partial class SceneManager : Node
 
 		try
 		{
-			if (ChangeGate != null)
-				await ChangeGate();
-
 			await Instance.LoadScene(scenePath);
 			await Instance.FadeIn();
 		}
@@ -136,6 +144,17 @@ public partial class SceneManager : Node
 		{
 			IsChanging = false;
 		}
+	}
+
+	/// <summary>Called by GameUI the moment a held fragment lands in the
+	/// bag: if a scene change was held for it, finally let the house move.</summary>
+	public static void ResumeDeferredSceneChange()
+	{
+		if (string.IsNullOrWhiteSpace(_deferredScenePath))
+			return;
+		string next = _deferredScenePath;
+		_deferredScenePath = null;
+		ChangeScene(next);
 	}
 
 	public static void ChangeSceneFromTileMapLayer(TileMapLayer layer)
