@@ -152,6 +152,65 @@ public partial class GameUI : CanvasLayer
     private readonly List<string> _asideBag = new();
     private string _asideBagRoom = string.Empty;
     private readonly Random _asideRandom = new();
+    private bool _roomArrivalPlaying;
+    private bool _roomFlashPlaying;
+
+    // One short first-person threshold line the first time Mara enters a
+    // room. The kitchen keeps its bespoke bedroom-door reaction and the
+    // bedroom keeps its waking sequence; puzzle close-ups for Rooms 1-2
+    // are included because entering a lock is its own little held breath.
+    private static readonly Dictionary<string, (string RoomKey, string[] Lines)> RoomEntryMonologuesByScene = new()
+    {
+        ["room_1_puzzle.tscn"] = ("Room1Puzzle",
+        [
+            "A lock. Of course. The house won't give me a morning until I say it back in numbers.",
+        ]),
+        ["room_2.tscn"] = ("Room2",
+        [
+            "The sitting room. Dad's paper-and-ash smell. Two chairs, both empty. I used to fall asleep here just because someone else was breathing in the room.",
+        ]),
+        ["room_2_puzzle.tscn"] = ("Room2Puzzle",
+        [
+            "Letters this time. Fine. The house has never liked saying a thing only once.",
+        ]),
+        ["room_3.tscn"] = ("Room3",
+        [
+            "Her room. Don't touch the doorframe. Don't fix anything. Just… go in properly this time.",
+        ]),
+        ["room_4.tscn"] = ("Room4",
+        [
+            "The hall. Every photo turned a little away, like they're listening to something behind me. Mum's voice used to carry down here.",
+        ]),
+        ["flashback_landing.tscn"] = ("Room4Flashback",
+        [
+            "This light. I know this light. This is the evening nobody in my family says out loud.",
+        ]),
+        ["room_5.tscn"] = ("Room5",
+        [
+            "My room. My rooms. One still has kid sheets and one has twelve years of letters. Great. That's normal.",
+        ]),
+        ["apartment_now.tscn"] = ("ApartmentNow",
+        [
+            "My door. My building. My actual life, waiting where I left it. It looks less forgiving in daylight.",
+        ]),
+        ["room_6.tscn"] = ("Room6",
+        [
+            "The garden. Right. I can stand here. I can stand here and not count.",
+        ]),
+        ["porch_447.tscn"] = ("Porch447",
+        [
+            "The porch. I have come through that gate calling her name so many times. Not this time. Just walk.",
+        ]),
+        ["room_7.tscn"] = ("Room7",
+        [
+            "The last room. No more doors after this one. Whatever I decide here, I have to be the one who decides it.",
+        ]),
+    };
+
+    // The kitchen is never eligible: exactly one of the later main rooms is
+    // chosen per run for Mara black-and-white room flash.
+    private static readonly string[] RandomRoomFlashRooms = ["Room2", "Room3", "Room4", "Room5", "Room6"];
+    private const string RandomRoomFlashSeenFlag = "random_room_flash_seen";
 
     // ------------------------------------------------------- ambient life
     //
@@ -462,6 +521,7 @@ public partial class GameUI : CanvasLayer
             CloseRecollectionPanel();
             Hotspots.ApplyRecollectionVisuals();
             Hotspots.RefreshPersistent();
+            _ = PlayRoomArrivalAsync(scenePath);
         };
         if (Settings.Instance != null)
             Settings.Instance.Changed += RefreshCorruptionShader;
@@ -521,11 +581,12 @@ public partial class GameUI : CanvasLayer
                             && Settings.HotspotHintsOrDefault()
                             && Input.IsActionPressed(InputSetup.RevealHotspots)
                             && !FocusIsTextEditing();
-        if (wantHotspots && !_hotspotsHeld)
+        if (!_roomFlashPlaying && wantHotspots && !_hotspotsHeld)
             Hotspots.RevealAll();
-        else if (!wantHotspots && _hotspotsHeld)
+        else if (!_roomFlashPlaying && !wantHotspots && _hotspotsHeld)
             Hotspots.HideAll();
-        _hotspotsHeld = wantHotspots;
+        if (!_roomFlashPlaying)
+            _hotspotsHeld = wantHotspots;
         Hotspots.ValidateScene();
 
         if (_toastLabel.Visible && Time.GetTicksMsec() > (ulong)_toastUntilMsec)
@@ -2352,6 +2413,7 @@ public partial class GameUI : CanvasLayer
             _corruptionMaterial = new ShaderMaterial { Shader = shader };
             _corruptionMaterial.SetShaderParameter("intensity", 0f);
             _corruptionMaterial.SetShaderParameter("frozen", 0f);
+            _corruptionMaterial.SetShaderParameter("flashback", 0f);
             _corruptionRect.Material = _corruptionMaterial;
         }
         else
@@ -4625,6 +4687,235 @@ public partial class GameUI : CanvasLayer
         string line = _asideBag[last];
         _asideBag.RemoveAt(last);
         return line;
+    }
+
+    private static string RoomEntryFlag(string roomKey) => $"room_entry_monologue_{roomKey}";
+
+    private static string RandomRoomFlashChoiceFlag(string roomKey) => $"random_room_flash_choice_{roomKey}";
+
+    private static string SceneFileName(string scenePath)
+    {
+        if (string.IsNullOrWhiteSpace(scenePath))
+            return string.Empty;
+        int slash = scenePath.LastIndexOf('/');
+        return slash >= 0 ? scenePath.Substring(slash + 1) : scenePath;
+    }
+
+    private static string ArrivalParentRoomKey(string roomKey) => roomKey switch
+    {
+        "Room1Puzzle" => "Room1",
+        "Room2Puzzle" => "Room2",
+        "Room4Flashback" => "Room4",
+        "ApartmentNow" => "Room5",
+        "Porch447" => "Room6",
+        _ => roomKey,
+    };
+
+    private static bool IsArrivalAlreadyUnderway(GameState gs, string roomKey)
+    {
+        RoomExamineTracker.GetRoomProgress(roomKey, out int done, out int total, out _);
+        if (total > 0 && done > 0)
+            return true;
+        if (gs.IsRoomCompleted(ArrivalParentRoomKey(roomKey)))
+            return true;
+
+        return roomKey switch
+        {
+            "Room1Puzzle" => gs.IsShardRecovered(0),
+            "Room2Puzzle" => gs.IsShardRecovered(1),
+            "Room7" => gs.CountPlaced() > 0 || !string.IsNullOrWhiteSpace(gs.CompletedEnding),
+            _ => false,
+        };
+    }
+
+    /// <summary>Choose — once, and saved with the run — which non-kitchen
+    /// main room will briefly lose its colour and show Mara everything in
+    /// it. Choosing on the first eligible threshold keeps older saves in
+    /// the game: rooms already entered or underway drop out, leaving the
+    /// current and later rooms as the little deck.</summary>
+    private string EnsureRandomRoomFlashChoice(GameState gs, string currentRoomKey)
+    {
+        foreach (string room in RandomRoomFlashRooms)
+        {
+            if (gs.HasFlag(RandomRoomFlashChoiceFlag(room)))
+                return room;
+        }
+
+        if (gs.HasFlag(RandomRoomFlashSeenFlag) ||
+            System.Array.IndexOf(RandomRoomFlashRooms, currentRoomKey) < 0)
+            return null;
+
+        var candidates = new List<string>();
+        foreach (string room in RandomRoomFlashRooms)
+        {
+            bool underway = IsArrivalAlreadyUnderway(gs, room);
+            if (room == currentRoomKey)
+            {
+                if (!underway)
+                    candidates.Add(room);
+            }
+            else if (!underway && !gs.HasFlag(RoomEntryFlag(room)))
+            {
+                candidates.Add(room);
+            }
+        }
+
+        if (candidates.Count == 0)
+            return null;
+
+        string chosen = candidates[_asideRandom.Next(candidates.Count)];
+        gs.SetFlag(RandomRoomFlashChoiceFlag(chosen), save: false);
+        gs.SaveGame($"random room flash chosen: {chosen}");
+        return chosen;
+    }
+
+    private void SetRoomFlashAmount(float amount)
+    {
+        _corruptionMaterial?.SetShaderParameter("flashback", Mathf.Clamp(amount, 0f, 1f));
+    }
+
+    private async Task WaitArrivalSeconds(float seconds)
+    {
+        await ToSignal(GetTree().CreateTimer(seconds, true), SceneTreeTimer.SignalName.Timeout);
+    }
+
+    private bool StillInArrivalScene(string scenePath) =>
+        IsInsideTree() && SceneManager.CurrentScenePath == scenePath;
+
+    /// <summary>First-entry room voice, plus the once-per-run monochrome
+    /// flash. The flash rings everything still to be faced for a few
+    /// seconds — a memory accidentally pointing — then gives the room its
+    /// colour back before Mara names where she is.</summary>
+    private async Task PlayRoomArrivalAsync(string scenePath)
+    {
+        if (_roomArrivalPlaying || _cutscenePlaying || _endingPlaying || _shatterPlaying)
+            return;
+        if (!RoomEntryMonologuesByScene.TryGetValue(SceneFileName(scenePath), out var entry))
+            return;
+
+        var gs = GameState.Instance;
+        if (gs == null)
+            return;
+
+        string roomKey = entry.RoomKey;
+        string entryFlag = RoomEntryFlag(roomKey);
+        bool entrySeen = gs.HasFlag(entryFlag);
+        bool underway = IsArrivalAlreadyUnderway(gs, roomKey);
+        string flashRoom = EnsureRandomRoomFlashChoice(gs, roomKey);
+        bool playFlash = flashRoom == roomKey
+            && !gs.HasFlag(RandomRoomFlashSeenFlag)
+            && !gs.IsRoomCompleted(ArrivalParentRoomKey(roomKey));
+
+        if (!playFlash && (entrySeen || underway))
+        {
+            if (!entrySeen)
+            {
+                gs.SetFlag(entryFlag, save: false);
+                gs.SaveGame($"room entry already underway: {roomKey}");
+            }
+            return;
+        }
+
+        _roomArrivalPlaying = true;
+        try
+        {
+            await WaitArrivalSeconds(0.35f);
+            if (!StillInArrivalScene(scenePath))
+                return;
+
+            if (playFlash)
+            {
+                await PlayRandomRoomFlashAsync(scenePath);
+                if (!StillInArrivalScene(scenePath))
+                    return;
+                gs.SetFlag(RandomRoomFlashSeenFlag, save: false);
+                gs.SaveGame($"random room flash seen: {roomKey}");
+            }
+
+            if (!gs.HasFlag(entryFlag) && !underway)
+            {
+                foreach (string line in entry.Lines)
+                {
+                    await Dialogue.ShowText(this, line, 5.2f, 576f, 324f, fontSize: 24);
+                    if (!StillInArrivalScene(scenePath))
+                        return;
+                }
+                gs.SetFlag(entryFlag, save: false);
+                gs.SaveGame($"room entry monologue: {roomKey}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning($"[GameUI] Room arrival interrupted: {ex.Message}");
+        }
+        finally
+        {
+            SetRoomFlashAmount(0f);
+            _roomArrivalPlaying = false;
+        }
+    }
+
+    private async Task PlayRandomRoomFlashAsync(string scenePath)
+    {
+        Dialogue.BeginInputBlock();
+        bool revealed = false;
+        _roomFlashPlaying = true;
+        try
+        {
+            Hotspots.RevealAll();
+            revealed = true;
+            AudioManager.Play(Sfx.CorruptionGlitch, -10f, 0.72f);
+
+            if (Settings.ReduceMotionOrDefault())
+            {
+                SetRoomFlashAmount(0.85f);
+                await WaitArrivalSeconds(0.9f);
+            }
+            else
+            {
+                (float Amount, float Seconds)[] flicker =
+                [
+                    (1f, 0.14f),
+                    (0.18f, 0.08f),
+                    (0.92f, 0.18f),
+                    (0.35f, 0.08f),
+                    (1f, 0.65f),
+                ];
+                foreach (var step in flicker)
+                {
+                    if (!StillInArrivalScene(scenePath))
+                        return;
+                    SetRoomFlashAmount(step.Amount);
+                    await WaitArrivalSeconds(step.Seconds);
+                }
+            }
+
+            if (!StillInArrivalScene(scenePath))
+                return;
+
+            SetRoomFlashAmount(0.82f);
+            await Dialogue.ShowText(this, "What was that?", 2.8f, 576f, 324f, fontSize: 27);
+            if (!StillInArrivalScene(scenePath))
+                return;
+            await Dialogue.ShowText(this,
+                "For a second the room went black and white — and everything in it showed itself at once.",
+                5f, 576f, 324f, fontSize: 24);
+            if (!StillInArrivalScene(scenePath))
+                return;
+
+            await WaitArrivalSeconds(0.45f);
+        }
+        finally
+        {
+            SetRoomFlashAmount(0f);
+            _roomFlashPlaying = false;
+            if (revealed && StillInArrivalScene(scenePath) && !_hotspotsHeld)
+            {
+                Hotspots.HideAll();
+                Hotspots.RefreshPersistent();
+            }
+            Dialogue.EndInputBlock();
+        }
     }
 
     private void RequestCutsceneAdvance()

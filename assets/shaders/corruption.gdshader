@@ -8,6 +8,7 @@ uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_l
 
 uniform float intensity : hint_range(0.0, 1.0) = 0.0;
 uniform float frozen : hint_range(0.0, 1.0) = 0.0; // 1 = stop all temporal motion
+uniform float flashback : hint_range(0.0, 1.0) = 0.0; // 1 = full black-and-white room flash
 
 float hash12(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -38,9 +39,14 @@ void fragment() {
 	col = mix(col, vec3(lum), intensity * 0.28);
 	col *= mix(vec3(1.0), vec3(0.94, 0.97, 1.05), intensity);
 
+	// A one-room flashback takes the colour all the way out and lifts the
+	// contrast, so the revealed places in the room read as pale outlines.
+	float flash_lum = clamp((lum - 0.5) * 1.28 + 0.56, 0.0, 1.0);
+	col = mix(col, vec3(flash_lum), flashback);
+
 	// Film grain.
 	float grain = hash12(uv * (311.0 + mod(frame, 13.0))) - 0.5;
-	col += grain * (0.015 + intensity * 0.075);
+	col += grain * (0.015 + intensity * 0.075 + flashback * 0.035);
 
 	// Breathing vignette closing in.
 	float vig = smoothstep(0.95 - intensity * 0.32, 0.35, dist);

@@ -8,10 +8,12 @@ using Godot;
 ///
 /// The camera visibly travels: straight down one memory hallway, left at
 /// the bent runner, right past the photographs, or along the empty road
-/// until the lit porch is close enough to name. On a first arrival Mara
-/// stops with the newly recovered fragment in her hand, tries to remember
-/// what it could be for, is briefly pulled into the room it came from, and
-/// shakes the migraine back before the door can be opened. The destination
+/// until the lit porch is close enough to name. The walks are long enough
+/// that Mara sometimes thinks aloud on the way. On some first arrivals —
+/// not every one — she stops with the newly recovered fragment in her hand,
+/// tries to remember what it could be for, is briefly pulled into the room
+/// it came from, and shakes the migraine back before the door can be
+/// opened. The destination
 /// is not loaded until the player clicks the door (or the distant porch
 /// light). Each wrapper scene stores its own destination and journey id, so
 /// saving/quitting mid-journey resumes in the right place.
@@ -29,6 +31,9 @@ public partial class RoomJourney : Node2D
     private const float HeldPalmY = 0.36f;
     private const float HeldHandAspect = 1.332f;
     private const float RecoverShakeSeconds = 0.55f;
+    private const float MigraineChance = 0.4f;
+    private const float FirstWalkingMonologueChance = 0.7f;
+    private const float RepeatWalkingMonologueChance = 0.35f;
 
     private static readonly string[] FragmentIconPaths =
     [
@@ -51,6 +56,7 @@ public partial class RoomJourney : Node2D
         public string TexturePath { get; init; }
         public string[] Lines { get; init; }
         public string[] RepeatLines { get; init; }
+        public string[] RandomWalkingLines { get; init; } = [];
         public Vector2 StartFocus { get; init; } = new(576f, 324f);
         public Vector2 Focus { get; init; }
         public float FinalScale { get; init; }
@@ -76,6 +82,12 @@ public partial class RoomJourney : Node2D
                 "Straight on. The house is being unusually honest about the way.",
             ],
             RepeatLines = ["Straight on, then. The house puts the same door in front of me again."],
+            RandomWalkingLines =
+            [
+                "My hand still smells faintly of toast. Ridiculous detail for a mind to keep.",
+                "One foot, then the other. That was always the trick, wasn't it?",
+                "The boards know my weight. They don't bother creaking like I'm a stranger.",
+            ],
             FragmentLines =
             [
                 "The key's still warm in my hand. What are you for, now? A door I already opened shouldn't need carrying.",
@@ -91,7 +103,7 @@ public partial class RoomJourney : Node2D
             FinalScale = 1.7f,
             TargetRect = new Rect2(372f, 12f, 410f, 620f),
             Prompt = "Click the door to open it",
-            CameraSeconds = 3.4f,
+            CameraSeconds = 5.2f,
         },
         ["Room2ToRoom3"] = new JourneySpec
         {
@@ -102,6 +114,12 @@ public partial class RoomJourney : Node2D
                 "Left, where the runner bends. I used to run this corner too fast.",
             ],
             RepeatLines = ["Left at the runner. The house puts the same door in front of me again."],
+            RandomWalkingLines =
+            [
+                "Paper. Ash. Someone breathing in another room. Then none of it.",
+                "I can still turn left without looking. My feet remembered before I did.",
+                "Don't run. Running is how this corner used to win.",
+            ],
             FragmentLines =
             [
                 "Her face keeps catching the light. What am I meant to do with you? Look until looking turns into staying?",
@@ -118,7 +136,7 @@ public partial class RoomJourney : Node2D
             FinalScale = 1.75f,
             TargetRect = new Rect2(450f, 80f, 250f, 490f),
             Prompt = "Click the door to open it",
-            CameraSeconds = 3.8f,
+            CameraSeconds = 5.8f,
         },
         ["Room3ToRoom4"] = new JourneySpec
         {
@@ -129,6 +147,12 @@ public partial class RoomJourney : Node2D
                 "Right at the photographs. Even facing away, they know my steps.",
             ],
             RepeatLines = ["Right at the photographs. The house puts the same door in front of me again."],
+            RandomWalkingLines =
+            [
+                "I should stop apologising to furniture.",
+                "Names in pencil. Small brave names.",
+                "Her laugh could find me through two closed doors. Some days it still can.",
+            ],
             FragmentLines =
             [
                 "The jar knocks softly against my fingers. Names. Pieces. Why does this house keep putting that day in my hands?",
@@ -145,7 +169,7 @@ public partial class RoomJourney : Node2D
             FinalScale = 1.75f,
             TargetRect = new Rect2(430f, 80f, 290f, 490f),
             Prompt = "Click the door to open it",
-            CameraSeconds = 3.8f,
+            CameraSeconds = 5.8f,
         },
         ["Room6ToPorch"] = new JourneySpec
         {
@@ -162,6 +186,12 @@ public partial class RoomJourney : Node2D
                 "The road again. Shorter, now that I let myself know it.",
                 "There. The porch light.",
             ],
+            RandomWalkingLines =
+            [
+                "My shoes sound too loud for an empty road.",
+                "I keep expecting my own voice calling from the gate.",
+                "October air. Apples gone soft. Don't make a poem out of it, Mara. Walk.",
+            ],
             FragmentLines =
             [
                 "The apple bruises where my thumb holds it. Is every piece meant to be carried back to you?",
@@ -177,7 +207,7 @@ public partial class RoomJourney : Node2D
             FinalScale = 2.45f,
             TargetRect = new Rect2(490f, 215f, 220f, 155f),
             Prompt = "Click the porch light to arrive",
-            CameraSeconds = 6.2f,
+            CameraSeconds = 8.0f,
             OpenSfx = Sfx.DoorCreak,
             OpenPitch = 0.82f,
         },
@@ -200,6 +230,9 @@ public partial class RoomJourney : Node2D
     private bool _hoverCursorOwned;
     private bool _reduceMotion;
     private bool _seenBefore;
+    private readonly RandomNumberGenerator _rng = new();
+    private bool _migrainePlanned;
+    private bool _walkingMonologuePlanned;
     private float _cameraSeconds = 3.4f;
     private float _elapsed;
     private float _progress;
@@ -210,6 +243,54 @@ public partial class RoomJourney : Node2D
     private float _recoverShakeElapsed;
 
     private string SeenFlag => $"journey_seen_{JourneyId}";
+
+    /// <summary>Roll a first-journey beat once and keep the result in the
+    /// save, so quitting and resuming midway cannot reroll whether this
+    /// threshold gets a walking thought or a migraine.</summary>
+    private bool SavedRandomDecision(string kind, float chance)
+    {
+        var gs = GameState.Instance;
+        if (gs == null)
+            return _rng.Randf() < chance;
+
+        string rolledFlag = $"journey_random_{kind}_rolled_{JourneyId}";
+        string yesFlag = $"journey_random_{kind}_{JourneyId}";
+        if (!gs.HasFlag(rolledFlag))
+        {
+            gs.SetFlag(rolledFlag, save: false);
+            if (_rng.Randf() < chance)
+                gs.SetFlag(yesFlag, save: false);
+            gs.SaveGame($"journey random roll: {JourneyId} {kind}");
+        }
+        return gs.HasFlag(yesFlag);
+    }
+
+    /// <summary>Some walks get a full little monologue — the authored
+    /// route lines plus one thought chosen from this stretch's pool —
+    /// and some do not. On a quiet first walk Mara keeps only her first
+    /// threshold sentence; on a quiet repeat she simply walks.</summary>
+    private List<string> BuildWalkingLines()
+    {
+        string[] authored = _seenBefore && _spec.RepeatLines is { Length: > 0 }
+            ? _spec.RepeatLines
+            : _spec.Lines;
+        var lines = new List<string>(authored ?? []);
+        if (!_walkingMonologuePlanned)
+        {
+            if (_seenBefore)
+                return new List<string>();
+            return lines.Count > 0 ? [lines[0]] : lines;
+        }
+
+        if (_spec.RandomWalkingLines is { Length: > 0 })
+        {
+            string extra = _spec.RandomWalkingLines[
+                _rng.RandiRange(0, _spec.RandomWalkingLines.Length - 1)];
+            int insertAt = lines.Count > 1 ? lines.Count - 1 : lines.Count;
+            lines.Insert(insertAt, extra);
+        }
+        return lines;
+    }
 
     public override void _Ready()
     {
@@ -233,10 +314,15 @@ public partial class RoomJourney : Node2D
                 Logger.Warning($"[RoomJourney] Could not load memory flicker: {_spec.MemoryTexturePath}");
         }
 
+        _rng.Randomize();
         _seenBefore = GameState.Instance?.HasFlag(SeenFlag) ?? false;
         _reduceMotion = Settings.ReduceMotionOrDefault();
-        _cameraSeconds = _seenBefore ? Math.Min(1.7f, _spec.CameraSeconds) : _spec.CameraSeconds;
+        _cameraSeconds = _seenBefore ? Math.Min(2.6f, _spec.CameraSeconds) : _spec.CameraSeconds;
         _progress = _reduceMotion ? 1f : 0f;
+        _migrainePlanned = !_seenBefore && SavedRandomDecision("migraine", MigraineChance);
+        _walkingMonologuePlanned = _seenBefore
+            ? _rng.Randf() < RepeatWalkingMonologueChance
+            : SavedRandomDecision("walk_monologue", FirstWalkingMonologueChance);
 
         BuildHeldFragment();
         BuildPrompt();
@@ -345,7 +431,7 @@ public partial class RoomJourney : Node2D
         // A barely-there walking bob, gone once Mara arrives (or for
         // Reduce Motion). It is in source pixels, so it stays subtle.
         if (!_reduceMotion && _progress < 1f)
-            focus.Y += (float)Math.Sin(_elapsed * 5.2f) * 1.6f * (1f - _progress);
+            focus.Y += (float)Math.Sin(_elapsed * 4.3f) * 1.6f * (1f - _progress);
 
         Vector2 sourcePos = new(
             Mathf.Clamp(focus.X - sourceSize.X * 0.5f, 0f, 1152f - sourceSize.X),
@@ -372,9 +458,7 @@ public partial class RoomJourney : Node2D
             if (!StillHere())
                 return;
 
-            string[] lines = _seenBefore && _spec.RepeatLines is { Length: > 0 }
-                ? _spec.RepeatLines
-                : _spec.Lines;
+            List<string> lines = BuildWalkingLines();
             foreach (string line in lines)
             {
                 await Say(line, 4.8f, 24);
@@ -484,7 +568,7 @@ public partial class RoomJourney : Node2D
     /// journeys stay shortened.</summary>
     private async Task PlayFragmentMigraineAsync()
     {
-        if (_seenBefore || _spec.FragmentIndex < 0 ||
+        if (_seenBefore || !_migrainePlanned || _spec.FragmentIndex < 0 ||
             _spec.FragmentIndex >= FragmentIconPaths.Length ||
             _spec.FragmentLines == null || _spec.FragmentLines.Length == 0)
         {
