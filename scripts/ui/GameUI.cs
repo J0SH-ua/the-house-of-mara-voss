@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Godot;
 
 /// <summary>
@@ -124,10 +125,16 @@ public partial class GameUI : CanvasLayer
     private Action _recollectionConfirmAction;
     private bool _recollectionVisualPlaying;
     private Label _cutsceneCaption;
+    private Label _cutsceneHint;
+    private Label _cutsceneContinueLabel;
+    private Button _cutsceneSkipButton;
     private Tween _cutsceneTween;
     private bool _cutscenePlaying;
     private bool _cutsceneAdvanceRequested;
     private bool _cutsceneSkipRequested;
+    private bool _cutsceneClickOnly;
+    private bool _cutsceneWaitingForContinue;
+    private TaskCompletionSource<bool> _cutsceneContinueSource;
     private (string ImagePath, string Caption, float HoldSeconds)[] _activeShots;
     private Action _cutsceneOnComplete;
     private ColorRect _cutsceneBackdrop;
@@ -482,6 +489,7 @@ public partial class GameUI : CanvasLayer
         UpdateMaraAsides(delta);
         UpdateAmbientLife(delta);
         UpdateFragmentHeld(delta);
+        UpdateCutsceneContinuePrompt(delta);
 
         // "Remember it all": offered once per Clarity arming — but retried
         // every frame until the moment is actually free (no dialogue, no
@@ -672,12 +680,12 @@ public partial class GameUI : CanvasLayer
         {
             if (@event.IsActionPressed(InputSetup.AdvanceDialogue))
             {
-                _cutsceneAdvanceRequested = true;
+                RequestCutsceneAdvance();
                 GetViewport().SetInputAsHandled();
             }
             else if (@event.IsActionPressed(InputSetup.PauseGame) || @event.IsActionPressed(InputSetup.SkipDialogue))
             {
-                _cutsceneSkipRequested = true;
+                RequestCutsceneSkip();
                 GetViewport().SetInputAsHandled();
             }
             return;
@@ -1245,7 +1253,7 @@ public partial class GameUI : CanvasLayer
             _bagPanel.Visible = false;
             _openedBagFromPause = false;
             if (_cutscenePlaying)
-                _cutsceneSkipRequested = true;
+                RequestCutsceneSkip();
             if (next == UiContext.Intro)
                 _tutorialPanel.Visible = false;
             if (next != UiContext.Menu)
@@ -3144,7 +3152,9 @@ public partial class GameUI : CanvasLayer
 
     /// <summary>One still + caption. ImagePath "" = black screen, text only.
     /// The morning Mara wakes into, told with the game's own room art; the
-    /// last card states the mission plainly so the objective is never in doubt.</summary>
+    /// last card states the mission plainly so the objective is never in doubt.
+    /// This post-Start introduction is player-paced: each shot remains until
+    /// the player clicks, so HoldSeconds only informs the slow zoom here.</summary>
     private static readonly (string ImagePath, string Caption, float HoldSeconds)[] CutsceneShots =
     [
         ("",
@@ -4617,6 +4627,70 @@ public partial class GameUI : CanvasLayer
         return line;
     }
 
+    private void RequestCutsceneAdvance()
+    {
+        _cutsceneAdvanceRequested = true;
+        if (!_cutsceneWaitingForContinue)
+            return;
+
+        _cutsceneWaitingForContinue = false;
+        AudioManager.Play(Sfx.UiClick, -10f, 0.9f);
+        _cutsceneContinueSource?.TrySetResult(true);
+    }
+
+    private void RequestCutsceneSkip()
+    {
+        _cutsceneSkipRequested = true;
+        _cutsceneWaitingForContinue = false;
+        _cutsceneContinueSource?.TrySetResult(true);
+    }
+
+    private void UpdateCutsceneContinuePrompt(double delta)
+    {
+        if (_cutsceneContinueLabel == null)
+            return;
+
+        float target = _cutsceneWaitingForContinue
+            ? (Settings.ReduceMotionOrDefault()
+                ? 0.96f
+                : 0.82f + 0.16f * (float)Math.Sin(Time.GetTicksMsec() / 520.0))
+            : 0f;
+        var modulate = _cutsceneContinueLabel.Modulate;
+        modulate.A = Mathf.MoveToward(modulate.A, target, (float)delta * 1.8f);
+        _cutsceneContinueLabel.Modulate = modulate;
+        _cutsceneContinueLabel.Visible = modulate.A > 0.01f;
+    }
+
+    private async Task WaitForCutsceneSeconds(float seconds)
+    {
+        var timer = CreateTween();
+        timer.SetPauseMode(Tween.TweenPauseMode.Process);
+        timer.TweenInterval(seconds);
+        await ToSignal(timer, Tween.SignalName.Finished);
+    }
+
+    /// <summary>Hold the current post-Start introduction still until the
+    /// player explicitly continues. This is event-driven rather than a
+    /// deadline or an indefinite frame-polling loop: input completes the
+    /// source, so a caption can stay readable for as long as the player
+    /// needs.</summary>
+    private async Task WaitForCutsceneContinue()
+    {
+        if (_cutsceneSkipRequested)
+            return;
+
+        _cutsceneContinueSource = new TaskCompletionSource<bool>();
+        // Clicks made while the still was fading in do not count: the
+        // prompt appears only once the caption is fully readable.
+        _cutsceneAdvanceRequested = false;
+        _cutsceneWaitingForContinue = true;
+        if (_cutsceneContinueLabel != null)
+            _cutsceneContinueLabel.Visible = true;
+
+        await _cutsceneContinueSource.Task;
+        _cutsceneWaitingForContinue = false;
+    }
+
     private void BuildCutscene()
     {
         _cutsceneRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop };
@@ -4678,18 +4752,47 @@ public partial class GameUI : CanvasLayer
         _cutsceneCaption.OffsetBottom = -44;
         _cutsceneRoot.AddChild(_cutsceneCaption);
 
-        var hint = MakeLabel("Click — continue      Esc — skip", 16, new Color(0.9f, 0.86f, 0.78f, 0.55f));
-        hint.HorizontalAlignment = HorizontalAlignment.Right;
-        hint.MouseFilter = Control.MouseFilterEnum.Ignore;
-        hint.AnchorLeft = 1;
-        hint.AnchorRight = 1;
-        hint.AnchorTop = 1;
-        hint.AnchorBottom = 1;
-        hint.OffsetLeft = -430;
-        hint.OffsetRight = -26;
-        hint.OffsetTop = -38;
-        hint.OffsetBottom = -12;
-        _cutsceneRoot.AddChild(hint);
+        _cutsceneHint = MakeLabel("Click — continue      Esc — skip", 16, new Color(0.9f, 0.86f, 0.78f, 0.55f));
+        _cutsceneHint.HorizontalAlignment = HorizontalAlignment.Right;
+        _cutsceneHint.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _cutsceneHint.AnchorLeft = 1;
+        _cutsceneHint.AnchorRight = 1;
+        _cutsceneHint.AnchorTop = 1;
+        _cutsceneHint.AnchorBottom = 1;
+        _cutsceneHint.OffsetLeft = -430;
+        _cutsceneHint.OffsetRight = -26;
+        _cutsceneHint.OffsetTop = -38;
+        _cutsceneHint.OffsetBottom = -12;
+        _cutsceneRoot.AddChild(_cutsceneHint);
+
+        // The post-Start introduction has its own unmistakable prompt:
+        // centered under the caption and shown only while that still is
+        // waiting for the player's click.
+        _cutsceneContinueLabel = MakeLabel("Click to continue", 21,
+            new Color(0.96f, 0.92f, 0.83f));
+        _cutsceneContinueLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _cutsceneContinueLabel.VerticalAlignment = VerticalAlignment.Center;
+        _cutsceneContinueLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _cutsceneContinueLabel.AnchorLeft = 0.5f;
+        _cutsceneContinueLabel.AnchorRight = 0.5f;
+        _cutsceneContinueLabel.AnchorTop = 1;
+        _cutsceneContinueLabel.AnchorBottom = 1;
+        _cutsceneContinueLabel.OffsetLeft = -180;
+        _cutsceneContinueLabel.OffsetRight = 180;
+        _cutsceneContinueLabel.OffsetTop = -40;
+        _cutsceneContinueLabel.OffsetBottom = -10;
+        _cutsceneContinueLabel.Visible = false;
+        _cutsceneContinueLabel.Modulate = new Color(1, 1, 1, 0);
+        var continueChip = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.045f, 0.04f, 0.78f),
+            BorderColor = new Color(0.78f, 0.66f, 0.46f, 0.55f),
+        };
+        continueChip.SetBorderWidthAll(1);
+        continueChip.SetCornerRadiusAll(4);
+        continueChip.SetContentMarginAll(6);
+        _cutsceneContinueLabel.AddThemeStyleboxOverride("normal", continueChip);
+        _cutsceneRoot.AddChild(_cutsceneContinueLabel);
 
         var skip = MakeButton("Skip", 20);
         // MakeButton's normal state is transparent — invisible over the bright
@@ -4721,13 +4824,18 @@ public partial class GameUI : CanvasLayer
         skip.OffsetTop = 16;
         skip.OffsetBottom = 58;
         skip.FocusMode = Control.FocusModeEnum.None;
-        skip.Pressed += () => _cutsceneSkipRequested = true;
+        _cutsceneSkipButton = skip;
+        skip.Pressed += RequestCutsceneSkip;
         _cutsceneRoot.AddChild(skip);
 
         _cutsceneRoot.GuiInput += @event =>
         {
-            if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
-                _cutsceneAdvanceRequested = true;
+            if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left
+                && (_cutsceneSkipButton == null
+                    || !_cutsceneSkipButton.GetGlobalRect().HasPoint(mb.Position)))
+            {
+                RequestCutsceneAdvance();
+            }
         };
     }
 
@@ -4787,6 +4895,20 @@ public partial class GameUI : CanvasLayer
 
         _cutscenePlaying = true;
         _cutsceneSkipRequested = false;
+        _cutsceneAdvanceRequested = false;
+        _cutsceneWaitingForContinue = false;
+        _cutsceneContinueSource = null;
+        // Only the original post-Start introduction (no borrowed shot list)
+        // is click-paced. Borrowed screenings such as the finale truth
+        // reveal keep their authored timed flow.
+        _cutsceneClickOnly = _activeShots == null;
+        if (_cutsceneHint != null)
+            _cutsceneHint.Visible = !_cutsceneClickOnly;
+        if (_cutsceneContinueLabel != null)
+        {
+            _cutsceneContinueLabel.Visible = false;
+            _cutsceneContinueLabel.Modulate = new Color(1, 1, 1, 0);
+        }
         _cutsceneRoot.Visible = true;
         GetTree().Paused = true;
 
@@ -4854,13 +4976,28 @@ public partial class GameUI : CanvasLayer
                     _cutsceneTween.TweenProperty(_cutsceneImage, "modulate:a", 1f, 0.9);
                     _cutsceneTween.Parallel().TweenProperty(_cutsceneCaption, "modulate:a", 1f, 0.9);
                 }
-                _cutsceneTween.Parallel().TweenProperty(_cutsceneImage, "scale", Vector2.One * 1.07f, shot.HoldSeconds + 1.5f);
+                float zoomSeconds = _cutsceneClickOnly
+                    ? Math.Max(shot.HoldSeconds + 1.5f, 18f)
+                    : shot.HoldSeconds + 1.5f;
+                _cutsceneTween.Parallel().TweenProperty(_cutsceneImage, "scale", Vector2.One * 1.07f, zoomSeconds);
                 firstShot = false;
                 AudioManager.Play(Sfx.PageTurn, -16f, 0.65f);
 
-                ulong deadline = Time.GetTicksMsec() + (ulong)(shot.HoldSeconds * 1000f);
-                while (Time.GetTicksMsec() < deadline && !_cutsceneAdvanceRequested && !_cutsceneSkipRequested)
-                    await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                if (_cutsceneClickOnly)
+                {
+                    // Let the still finish fading in, then keep it there
+                    // until the player clicks. HoldSeconds no longer acts
+                    // as a reading deadline for the post-Start introduction.
+                    await WaitForCutsceneSeconds(0.95f);
+                    if (!_cutsceneSkipRequested)
+                        await WaitForCutsceneContinue();
+                }
+                else
+                {
+                    ulong deadline = Time.GetTicksMsec() + (ulong)(shot.HoldSeconds * 1000f);
+                    while (Time.GetTicksMsec() < deadline && !_cutsceneAdvanceRequested && !_cutsceneSkipRequested)
+                        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                }
 
                 if (_cutsceneSkipRequested)
                     break;
@@ -4888,6 +5025,17 @@ public partial class GameUI : CanvasLayer
         _cutsceneTween?.Kill();
         _cutsceneTween = null;
         _cutscenePlaying = false;
+        _cutsceneWaitingForContinue = false;
+        _cutsceneClickOnly = false;
+        _cutsceneContinueSource?.TrySetResult(true);
+        _cutsceneContinueSource = null;
+        if (_cutsceneContinueLabel != null)
+        {
+            _cutsceneContinueLabel.Visible = false;
+            _cutsceneContinueLabel.Modulate = new Color(1, 1, 1, 0);
+        }
+        if (_cutsceneHint != null)
+            _cutsceneHint.Visible = true;
         if (_cutsceneRoot != null)
             _cutsceneRoot.Visible = false;
 
