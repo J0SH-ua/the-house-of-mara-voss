@@ -158,64 +158,64 @@ public partial class Room5Final : MemoryRoomBase
             case "RainWindow":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "Rain on glass. Beyond it, apartment windows and a city that was never outside the Eldfen house.",
-                    "The childhood walls remember the view wrong because Mara has not opened these curtains in months. The present keeps finding the seams.",
-                }, "The city is still there when she refuses to look at it.");
+                    "Rain on the glass. Past it — apartment windows. A city. There was never a city outside our house in Eldfen.",
+                    "I haven't opened my real curtains in months. That's why this wall gets the view wrong. The present keeps coming through the cracks.",
+                }, "The city's still there, even when I won't look at it.");
                 break;
 
             case "Bed":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "One side of the bed is slept in. The other has been made so carefully it looks like evidence.",
-                    "A child's bed in outline, an adult's insomnia in the sheets. Both Maras have waited here for morning.",
-                }, "No one has slept on the untouched side. That is the point of it.");
+                    "One side of the bed is slept in. The other's made up so neat it looks like evidence.",
+                    "A kid's bed, with a grown woman's not-sleeping in the sheets. Both of me have waited here for morning.",
+                }, "Nobody sleeps on the neat side. That's the point of it.");
                 break;
 
             case "Lamp":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "The lamp is warm. Not remembered warm — actually warm, left burning through every version of this room.",
-                    "Her mother left a light on for whoever came home late. Mara still does.",
-                }, "Steady, ordinary light. The room cannot decide what year it is around it.");
+                    "It's warm. Not remember-it warm. Actually warm. It's been left on in every version of this room.",
+                    "Mum left a light on for whoever came home late. I still do.",
+                }, "Steady light. Ordinary. The room can't make up its mind around it.");
                 break;
 
             case "Desk":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "Paper, envelopes, a pen worn smooth. Every sheet begins with the same careful handwriting and stops before it can become a letter anyone could answer.",
+                    "Paper. Envelopes. A pen worn smooth. Every sheet starts in my best handwriting — and stops before it turns into a letter anyone could answer.",
                     "\"I should have been there at four.\" The sentence is everywhere. Only its endings keep failing.",
-                }, "The desk has been beginning the same apology for twelve years.");
+                }, "This desk has been starting the same apology for twelve years.");
                 break;
 
             case "RotaryPhone":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "The phone is disconnected. Its dial still remembers one number better than all the others: the house where somebody should have called by four.",
-                    "No ringing. Only the small mechanical patience of a thing built to carry voices between rooms.",
+                    "It's not even plugged in. But the dial still knows one number best. The house. Where somebody should have called by four.",
+                    "No ringing. Just sitting there, patient. A thing made to carry voices from room to room.",
                 }, "The line is silent. It was silent then, too, until it wasn't.");
                 break;
 
             case "Wardrobe":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "Adult coats, dark and heavy. Between them hangs a child's yellow raincoat, dry as paper, still small enough to be lifted with one hand.",
-                    "Mara kept it where she would see it only when looking for something else. Memory is good at arranging ambushes.",
-                }, "The yellow coat does not belong to the woman who owns this room. That is why it is here.");
+                    "My coats. Dark, heavy, grown-up. And between them — a kid's yellow raincoat. Dry as paper. Still small enough to lift with one hand.",
+                    "I kept it where I'd only see it when I was looking for something else. Memory's good at setting traps like that.",
+                }, "The yellow coat isn't mine. That's exactly why it's here.");
                 break;
 
             case "AlarmClock":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "The alarm clock has stopped at four. Its bell is turned down, as if the hour might still startle somebody.",
-                    "Four was not when Ida died. Four was when she stopped expecting Mara to be the person who came.",
+                    "The clock stopped at four. Even its bell is turned down — like the hour might still scare somebody.",
+                    "Four isn't when she died. Four is when she stopped expecting me to be the one who came.",
                 }, "Four o'clock, kept under glass.");
                 break;
 
             case "FloorPhotographs":
                 _ = ExamineShiftingAsync(hotspot, new[]
                 {
-                    "The photographs have fallen face down. On their backs, in pencil: kitchen, chairs, jars, hall, garden. Places instead of people.",
-                    "Mara can name every room she is avoiding. Naming the person takes longer.",
+                    "Photos, all face down. Pencil on the backs: kitchen, chairs, jars, hall, garden. Places. Not people.",
+                    "I can name every room I'm avoiding. Naming the person takes longer.",
                 }, "Face down is still a way of keeping them.");
                 break;
         }
@@ -251,7 +251,7 @@ public partial class Room5Final : MemoryRoomBase
             if (firstLook)
             {
                 await SaySequence(
-                    "The lamp is warm. Not remembered warm — actually warm, left burning through every version of this room.",
+                    "It's warm. Not remember-it warm. Actually warm. It's been left on in every version of this room.",
                     "You hold to that. A light for whoever comes home late. The wallpaper stops being two wallpapers. The bed chooses an age. The desk stays a desk.",
                     "Anchor does not make the room true. It gives the truth one still place to stand.");
             }

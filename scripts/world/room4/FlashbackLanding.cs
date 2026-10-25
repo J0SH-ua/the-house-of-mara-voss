@@ -65,26 +65,26 @@ public partial class FlashbackLanding : MemoryRoomBase
             case "LastPhotograph":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "September, that year. A school photograph: Ida in a too-new jumper, grinning past the camera at whoever was standing behind it. She was always grinning at the person, never at the lens.",
-                    "Look along the whole wall. In every frame this house keeps, her face is half-turned — profile, over a shoulder, mid-laugh away. It is not that she was shy. It is that the memory can no longer give her back straight-on.",
-                    "Something in this house is editing, kindly and constantly, and Mara never asked it to. That might be the most frightening thing in it: not that the house lies, but that it lies the way a mother would.",
-                }, "Half-turned in every frame. The house does its mercies without asking permission.");
+                    "September, that year. Her school photo — new jumper, grinning past the camera at whoever stood behind it. She always grinned at the person. Never at the lens.",
+                    "Look down the whole wall. In every photo she's turned half away — over a shoulder, mid-laugh. She wasn't shy. I just can't get her back straight-on any more.",
+                    "Something in this house keeps editing her, gently, all the time. I never asked it to. That's the scariest part — it lies the way a mother would. To be kind.",
+                }, "Half-turned in every frame. The house does its kindnesses without asking me.");
                 break;
 
             case "WallLight":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "Their mother left this light burning every night of their childhood — \"for whoever comes home late.\" That evening it burned until morning, and she sat beneath it on the floor, facing Ida's door.",
-                    "Nobody ever described that night to Mara. She was twenty-two, three towns away, asleep until the telephone. Everything she knows of this landing, the house has had to invent from a single sentence her mother said in this hall, years later, to the wrong daughter — the one who was still there to hear it.",
-                }, "The light she left for latecomers. It was still on at dawn. So was she.");
+                    "Mum left this light on every night we were kids — \"for whoever comes home late.\" That night it burned till morning. She sat under it, on the floor, facing Ida's door.",
+                    "Nobody ever told me about that night. I was twenty-two, three towns away, asleep till the phone rang. Everything I know about this landing comes from one sentence Mum said in this hall, years later — to the daughter who was still here to hear it.",
+                }, "The latecomers' light. Still on at dawn. So was she.");
                 break;
 
             case "CarpetRunner":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "The runner remembers feet. Stand very still and the memory obliges: a girl in socks launches from the kitchen end, arms windmilling, sliding the whole length of the hall — straight through where Mara stands, without seeing her.",
-                    "She is not a ghost, and this is not a haunting. She is a habit of the eyes. She coasts to the mirror, counts her eleven seconds aloud to no one, and is gone the way she always goes: mid-laugh, and not looking back.",
-                    "Mara does not reach for her. That is new. For twelve years she has reached every single time.",
+                    "If I stand very still, the hall remembers her feet. A girl in socks, arms windmilling, sliding the whole length of it — straight through where I'm standing. She doesn't see me.",
+                    "She's not a ghost. This isn't a haunting. She's a habit my eyes have. She coasts to the mirror, counts her eleven seconds out loud, and she's gone — mid-laugh, not looking back.",
+                    "I don't reach for her. That's new. For twelve years I reached every single time.",
                 }, "Eleven seconds, kitchen to mirror. She made everyone count. The runner still does.");
                 break;
 

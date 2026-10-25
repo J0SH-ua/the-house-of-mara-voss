@@ -127,32 +127,32 @@ public partial class Room6Final : MemoryRoomBase
             case "AppleBasket":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "A woven basket of apples waits by the tree roots, packed carefully enough for two people and a long afternoon.",
-                    "One apple has a child's bite taken out of it. Ida did not leave hungry. She left tired of being the only one still waiting.",
-                }, "The bitten apple has not browned. In this garden, waiting is preserved better than fruit.");
+                    "Her apple basket, down by the roots. Packed careful — enough for two people and a long afternoon.",
+                    "One apple's got a bite out of it. A kid's bite. She didn't leave hungry. She left tired of being the only one still waiting.",
+                }, "The bitten apple hasn't even gone brown. Waiting keeps better than fruit here.");
                 break;
 
             case "Swing":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "The swing hangs almost still. Its ropes have bitten pale grooves into the branch from years of counting.",
-                    "Ida counted swings when clocks were too slow: one for every minute she meant not to mind. She reached a number Mara has never been able to forget, then stopped counting.",
-                }, "The swing moves the smallest possible distance, as if someone has only just stepped off it.");
+                    "The swing's nearly still. The ropes have worn pale grooves in the branch. Years of counting did that.",
+                    "She counted swings when clocks were too slow. One for every minute she meant not to mind. She got to a number I've never been able to forget. Then she stopped counting.",
+                }, "It moves the tiniest bit. Like someone only just stepped off.");
                 break;
 
             case "BrokenGate":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "The latch is broken from the garden side. Not kicked in by a stranger — worried loose, over and over, by a familiar hand.",
-                    "Below it is one small shoe print pointed outward. No matching print comes back.",
-                }, "The gate hangs open on the decision waiting eventually made.");
+                    "The latch is broken from this side. Not kicked in. Worried loose, over and over, by a hand that knew it. Hers.",
+                    "Under it, one small shoe print, pointing out. There's no print coming back.",
+                }, "It hangs open. Waiting makes its own decisions, in the end.");
                 break;
 
             case "EmptyRoad":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "The road bends toward the little bridge and out of sight. It is ordinary gravel and pale distance. That is the worst part: it never needed to be monstrous.",
-                    "At 4:47 Mara came through the gate calling Ida's name. The road gave her back only the sound of the swing chain behind her.",
+                    "The road bends off to the little bridge and out of sight. Just gravel. Just distance. That's the worst part — it never needed to be monstrous.",
+                    "At 4:47 I came through that gate calling her name. All the road gave me back was the swing chain, creaking behind me.",
                 }, "No car. No figure on the bridge. Just the place where being late stopped being temporary.");
                 break;
         }
@@ -278,8 +278,8 @@ public partial class Room6Final : MemoryRoomBase
                 await SaySequence(
                     "Basket. Swing. Gate. Road.",
                     "She waited with the apples. She counted on the swing until counting became another way to be alone. Then she opened the broken gate herself.",
-                    "Mara was twenty-two, and certain there would be time to finish what she was doing. She remembered at 4:47. The swing was still moving. The road was already empty.",
-                    "This is the afternoon under every room: not a monster, not a mystery with clean edges. Only a sister who waited, and a sister who did not come.",
+                    "I was twenty-two, and so sure there'd be time to finish what I was doing. I remembered at 4:47. The swing was still moving. The road was already empty.",
+                    "This is the afternoon under every room. No monster. No mystery with clean edges. Just a sister who waited — and a sister who didn't come.",
                     "Now that the line can be followed without looking away, the last way of remembering wakes: Release. It will not arrange the truth kindly.");
             }
             else

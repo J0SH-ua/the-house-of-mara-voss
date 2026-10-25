@@ -187,8 +187,8 @@ public partial class Room4 : Node2D
 		Dialogue.BeginInputBlock();
 		try
 		{
-			await Dialogue.ShowText(this, "The photographs are not ten captions. They are one sentence Mara's mother once said in this hall, broken across the wall so Mara would not have to hear all of it at once.", 5.5f, 576f, 324f, HoverFontPath, 24);
-			await Dialogue.ShowText(this, "Looking finds the words. They do not yet sound like anyone speaking.", 5.0f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "These photos aren't captions. They're one sentence Mum once said in this hall — broken across the wall so I wouldn't have to hear it all at once.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "Looking finds the words. They don't sound like anyone speaking. Not yet.", 5.0f, 576f, 324f, HoverFontPath, 24);
 		}
 		finally
 		{
@@ -256,7 +256,7 @@ public partial class Room4 : Node2D
 		Dialogue.BeginInputBlock();
 		try
 		{
-			await Dialogue.ShowText(this, "The sentence does not rescue Mara. It gives her one sentence that does not move when she repeats it: She would have loved to see how far you've come.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "It doesn't rescue me. It gives me one sentence that stays still when I say it back: She would have loved to see how far you've come.", 5.5f, 576f, 324f, HoverFontPath, 24);
 			await Dialogue.ShowText(this, "That stillness has a name now, the way listening did. Anchor.", 5.0f, 576f, 324f, HoverFontPath, 24);
 			await Dialogue.ShowText(this, "Somewhere down the hall, brass is listening.", 4.5f, 576f, 324f, HoverFontPath, 24);
 		}
@@ -288,18 +288,18 @@ public partial class Room4 : Node2D
 			{
 				// The second honest look: the mirror stops showing the
 				// evening and lets Mara stand in it.
-				await Dialogue.ShowText(this, "The woman on the floor has not moved. She will never move; that is not what she is for. The mirror is not showing Mara a picture. It is keeping a place.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
-				await Dialogue.ShowText(this, "Mara leans closer, the way she has refused to lean for twelve years — and the glass gives like cold water.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				await Dialogue.ShowText(this, "She hasn't moved. She never will. That's not what she's for. This isn't a picture the mirror's showing me. It's a place it's been keeping.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
+				await Dialogue.ShowText(this, "I lean in — the way I've refused to for twelve years — and the glass gives like cold water.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
 				AudioManager.Play(Sfx.ClarifyReveal, -8f, 0.65f);
 				SceneManager.ChangeScene(FlashbackScenePath);
 				return;
 			}
 
-			await Dialogue.ShowText(this, "The hallway stretches back in the mirror. All those photographs, reversed. Ida at fourteen, mirrored, looking in the other direction.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
-			await Dialogue.ShowText(this, "The mirror is showing something different. A different version of this hallway. One where more has been taken down.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
+			await Dialogue.ShowText(this, "The hall stretches back in the mirror. All the photos backwards. Ida at fourteen, mirrored, looking the other way.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
+			await Dialogue.ShowText(this, "No — the mirror's showing something else. This hall, but different. More taken down.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
 			await Dialogue.ShowText(this, "That's not this hallway. That's somewhere else.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
-			await Dialogue.ShowText(this, "There is a woman in the mirror. She is sitting on a floor. She is not here.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 28);
-			await Dialogue.ShowText(this, "She is on a landing, under a light left burning for someone who did not come home. If Mara looks again — really looks — the mirror will let her stand in that evening. It is waiting to be allowed.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "There's a woman in the mirror. Sitting on a floor. She's not here.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 28);
+			await Dialogue.ShowText(this, "She's on a landing. Under a light left on for someone who never came home. If I look again — really look — I think it would let me stand in that evening. It's waiting to be allowed.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
 		}
 		finally
 		{
@@ -312,9 +312,9 @@ public partial class Room4 : Node2D
 		RoomExamineTracker.RecordExamine("Room4", "HallDrawer");
 		AudioManager.Play(Sfx.DrawerOpen, -7f);
 		var globalPosition = _drawerCollisionArea.GlobalPosition;
-		await Dialogue.ShowText(this, "A hall table drawer. Old wood, slightly sticky. In this memory it has been opened a hundred times and never once seen into — the house is gentle that way, and Mara has let it be.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
-		await Dialogue.ShowText(this, "Inside: a locksmith's ring of blank keys, bright as new pennies. Their father cut keys for half of Eldfen at this table, and kept the uncut ones here, ready.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
-		await Dialogue.ShowText(this, "One blank is tagged with string, lettered in a child's careful hand: FOR WHEN I'M TALLER. He never got to cut hers. The house kept the blanks bright so that Mara would not have to see them dull.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+		await Dialogue.ShowText(this, "The hall drawer. Old wood, a bit sticky. I've opened it a hundred times in here and never once seen inside. The house is gentle like that. I've let it be.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+		await Dialogue.ShowText(this, "Inside — blank keys on a ring, bright as new pennies. Dad cut keys for half of Eldfen at this table. He kept the uncut ones here, ready.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+		await Dialogue.ShowText(this, "One has a string tag, in a kid's careful letters: FOR WHEN I'M TALLER. He never got to cut hers. The house keeps them bright so I won't have to see them dull.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
 	}
 
 	private async void OnTurnedFramesPressed(Area2D frameArea)
@@ -335,9 +335,9 @@ public partial class Room4 : Node2D
 				return;
 			}
 
-			await Dialogue.ShowText(this, "Two frames at the end of the hall have been turned to the wall. Not taken down. Turned — the way you treat a face you cannot stop seeing but cannot bear to meet.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
-			await Dialogue.ShowText(this, "The backs are brown paper and old tape. On one, in pencil, in their mother's hand: 'later.' On the other, nothing at all. Later has been twelve years now.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
-			await Dialogue.ShowText(this, "Mara does not turn them around. Not yet. But she reads the word her mother left, and for the first time the hallway clock of her grief has something written on it besides four o'clock. Later. She is allowed a later.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "Two frames at the end of the hall, turned to the wall. Not taken down. Turned — like a face you can't stop seeing but can't bear to meet.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "Brown paper backs. Old tape. On one, in Mum's pencil: 'later.' On the other, nothing. Later is twelve years long now.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "I don't turn them round. Not yet. But I read Mum's word, and for the first time there's something on my clock besides four o'clock. Later. I'm allowed a later.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
 		}
 		finally
 		{
@@ -523,7 +523,7 @@ public partial class Room4 : Node2D
 
 		await Dialogue.ShowText(this, "\"She used to run this hallway. Slide on the wooden floor in her socks — she'd get a running start from the kitchen doorway and coast all the way to the mirror at the end.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 20);
 		await Dialogue.ShowText(this, "\"She could make it from one end to the other in eleven seconds. She counted. She made everyone count.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		await Dialogue.ShowText(this, "\"She made Mara count. Mara counted. Eleven seconds. She still knows the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+		await Dialogue.ShowText(this, "\"She made me count. I counted. Eleven seconds. I still know the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		await Dialogue.ShowText(this, "Beyond the door is not the end of the house. It is the room Mara has been keeping between then and now.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 28);
 
 		if (GameState.Instance != null && !GameState.Instance.IsShardRecovered(3))

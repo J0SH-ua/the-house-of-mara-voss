@@ -88,7 +88,7 @@ public partial class Room4Puzzle : MemoryRoomBase
         if (!_opened)
         {
             _ = PlayStoryLessonOnceAsync("story_lesson_room4_door_echo",
-                "Close, the door is not locked with one key. It is listening for the knock Mara and Ida used when one of them came home after dark.");
+                "Up close, it isn't locked with one key. It's listening for our knock — the one we used when one of us came home after dark.");
         }
     }
 
@@ -270,7 +270,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             "The final keyhole, under the circle. Something behind it shifts — not a lock giving way, but a room deciding which year to be.",
             "It is the coldest of the three.",
         ],
-        _ => ["cold brass, patient under her fingers."],
+        _ => ["cold brass, patient under my fingers."],
     };
 
     private static string RepeatLine(string id) => id switch
@@ -339,7 +339,7 @@ public partial class Room4Puzzle : MemoryRoomBase
             AudioManager.Play(Sfx.LockRattle, -7f, 0.82f);
             await SaySequence(
                 "The brass takes the sound and gives nothing back.",
-                "This door will not listen until the hallway behind Mara has finished its sentence.");
+                "This door won't listen until the hall behind me has finished its sentence.");
         }
         finally
         {

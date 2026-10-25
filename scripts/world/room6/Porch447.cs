@@ -58,23 +58,23 @@ public partial class Porch447 : MemoryRoomBase
             case "LitWindow":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "The window is lit the way it was lit that day — someone home, someone expecting the afternoon to end ordinarily.",
-                    "Her mother left lights on for latecomers. This is the last one that ever waited for both of her daughters.",
-                }, "Lit, the way it will be lit in her forever.");
+                    "The window's lit the way it was that day. Someone home. Someone thinking the afternoon would just end like afternoons do.",
+                    "Mum left lights on for anyone coming home late. This is the last one that ever waited for both her girls.",
+                }, "Still lit. In my head it always will be.");
                 break;
 
             case "PorchSteps":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "Here. Exactly here. This is where Mara stood at 4:47 and called until calling changed its meaning.",
-                    "The steps remember the shape of her arriving. Nothing in the garden answered except the swing, finishing its swing.",
-                }, "Forty-seven minutes past. The steps keep the number so she doesn't have to say it.");
+                    "Here. Right here. This is where I stood at 4:47 and called her name until calling stopped meaning come home.",
+                    "The steps still hold the shape of me arriving. Nothing answered. Just the swing, finishing its swing.",
+                }, "Forty-seven minutes late. The steps keep the number so I don't have to say it.");
                 break;
 
             case "GardenPath":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "The path goes down past the apple trees to the gate — the way she traced, walked backwards. From the porch it looks so short. That is the cruelty the house usually edits out: how short it was.",
+                    "The path runs down past the apple trees to the gate. From here it looks so short. That's the part the house usually hides from me. How short it was.",
                     "A child's walk. A few minutes end to end. Twelve years long, in the other direction.",
                 }, "Shorter than memory allows. It always was.");
                 break;

@@ -135,6 +135,97 @@ public partial class GameUI : CanvasLayer
     private ColorRect _cutsceneWash;
     private bool _cutsceneFadeFromWhite;
 
+    // Mara's own voice in the HUD: brief asides she mutters to herself while
+    // looking at things, and her startled reactions when corruption shows
+    // her Ida. Non-blocking by design — she talks while the player plays.
+    private Label _maraAsideLabel;
+    private Tween _maraAsideTween;
+    private int _lastExaminesPerformed = -1;
+    private float _asideCooldown;
+    private readonly List<string> _asideBag = new();
+    private string _asideBagRoom = string.Empty;
+    private readonly Random _asideRandom = new();
+
+    // The Ida illusion: when corruption is in the room, a small yellow
+    // figure is sometimes just... there, briefly, at the edge of things.
+    private TextureRect _idaIllusion;
+    private Tween _idaIllusionTween;
+    private float _idaIllusionTimer = 35f;
+    private int _lastCorruptionCount;
+    private int _idaReactionIndex;
+
+    private const string IdaIllusionSeenFlag = "ida_illusion_seen";
+
+    private static readonly string[] IdaReactionLines =
+    [
+        "Ida...?",
+        "No. No — you're not here.",
+        "I saw— did I see—?",
+        "There. Just there. ...Gone.",
+        "Don't do that. Please don't do that.",
+        "Yellow. I saw yellow.",
+        "Stop it. Stop showing me her.",
+        "I'm awake. I am awake. Aren't I?",
+    ];
+
+    private static readonly string[] GenericAsideLines =
+    [
+        "Okay. Just look at everything. Properly this time.",
+        "I know this. I know I know this.",
+        "Stop shaking. It's only a house.",
+        "Don't think. Look. Looking's safe. Probably.",
+        "Everything here's mine. That's the worst part.",
+        "Breathe. In. Out. Again.",
+    ];
+
+    private static readonly string[] Room1AsideLines =
+    [
+        "Morning. It's always morning in here.",
+        "Toast. Coffee. Like nothing happened. Like she just—",
+        "That clock. I keep not looking at that clock.",
+    ];
+
+    private static readonly string[] Room2AsideLines =
+    [
+        "Dad's study. Still smells like paper.",
+        "She read to me in here. I half-listened. I always half-listened.",
+        "Don't touch the phone. ...Why did I say that out loud?",
+    ];
+
+    private static readonly string[] Room3AsideLines =
+    [
+        "Her room. Okay. Okay, I can do her room.",
+        "The jars. God, the names. She named every single one.",
+        "Don't straighten anything. Just look.",
+    ];
+
+    private static readonly string[] Room4AsideLines =
+    [
+        "Mum's voice is in this wall somewhere. In pieces.",
+        "Eleven seconds. I can still hear socks on the boards.",
+        "Later. She wrote 'later'. Imagine that.",
+    ];
+
+    private static readonly string[] Room5AsideLines =
+    [
+        "My room. Both my rooms.",
+        "Twelve letters. Say it plain: twelve years of sorry, never sent.",
+        "That's my writing. That's definitely my writing.",
+    ];
+
+    private static readonly string[] Room6AsideLines =
+    [
+        "The garden. Right. The garden.",
+        "She waited right here. Right here, and I—",
+        "Don't count. Whatever you do, don't count the swings.",
+    ];
+
+    private static readonly string[] Room7AsideLines =
+    [
+        "Six pieces. My whole life in six pieces.",
+        "They lived in an order. I was there. I should know it.",
+    ];
+
     // Overlay
     private ColorRect _corruptionRect;
     private ShaderMaterial _corruptionMaterial;
@@ -203,11 +294,14 @@ public partial class GameUI : CanvasLayer
         BuildRecollectionPanel();
         BuildShatterOverlay();
         BuildConfirmPanel();
+        BuildMaraAside();
+        BuildIdaIllusion();
 
         if (GameState.Instance != null)
         {
             var gs = GameState.Instance;
             gs.CorruptionChanged += (_, _) => RefreshHud();
+            gs.CorruptionChanged += OnCorruptionChangedForIllusion;
             gs.ClarityChanged += _ => RefreshHud();
             gs.ShardsChanged += RefreshHud;
             gs.ShardsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
@@ -264,6 +358,8 @@ public partial class GameUI : CanvasLayer
         RefreshRememberButton();
         RefreshMemoryVerbBar();
         UpdateCollapsePulse();
+        UpdateMaraAsides(delta);
+        UpdateIdaIllusion(delta);
 
         // "Remember it all": offered once per Clarity arming — but retried
         // every frame until the moment is actually free (no dialogue, no
@@ -3740,6 +3836,239 @@ public partial class GameUI : CanvasLayer
         AudioManager.Instance?.StopAmbience();
         // FinishRun already let go of the save. Do not SaveGame here.
         GetTree().ChangeSceneToFile(MainMenuScenePath);
+    }
+
+    // ---------------------------------------------------------- Mara's voice
+
+    private void BuildMaraAside()
+    {
+        _maraAsideLabel = MakeLabel(string.Empty, 21, new Color(0.95f, 0.9f, 0.8f));
+        _maraAsideLabel.AnchorLeft = 0.5f;
+        _maraAsideLabel.AnchorRight = 0.5f;
+        _maraAsideLabel.AnchorTop = 1f;
+        _maraAsideLabel.AnchorBottom = 1f;
+        _maraAsideLabel.OffsetLeft = -460;
+        _maraAsideLabel.OffsetRight = 460;
+        _maraAsideLabel.OffsetTop = -88;
+        _maraAsideLabel.OffsetBottom = -42;
+        _maraAsideLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _maraAsideLabel.VerticalAlignment = VerticalAlignment.Center;
+        _maraAsideLabel.AutowrapMode = TextServer.AutowrapMode.Word;
+        _maraAsideLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _maraAsideLabel.Modulate = new Color(1, 1, 1, 0);
+
+        var chip = new StyleBoxFlat
+        {
+            BgColor = new Color(0.04f, 0.035f, 0.03f, 0.72f),
+            BorderColor = new Color(0.78f, 0.66f, 0.46f, 0.4f),
+        };
+        chip.SetBorderWidthAll(1);
+        chip.SetCornerRadiusAll(4);
+        chip.ContentMarginLeft = 14;
+        chip.ContentMarginRight = 14;
+        chip.ContentMarginTop = 6;
+        chip.ContentMarginBottom = 6;
+        _maraAsideLabel.AddThemeStyleboxOverride("normal", chip);
+        _hud.AddChild(_maraAsideLabel);
+    }
+
+    /// <summary>Mara, thinking out loud — a caption in her own voice that
+    /// never takes the controls away from the player.</summary>
+    private void ShowMaraAside(string line)
+    {
+        if (_maraAsideLabel == null || string.IsNullOrWhiteSpace(line))
+            return;
+
+        _maraAsideTween?.Kill();
+        _maraAsideLabel.Text = line;
+        _maraAsideLabel.Modulate = new Color(1, 1, 1, 0);
+        _maraAsideTween = CreateTween();
+        _maraAsideTween.TweenProperty(_maraAsideLabel, "modulate:a", 1f, 0.3f);
+        _maraAsideTween.TweenInterval(2.6f);
+        _maraAsideTween.TweenProperty(_maraAsideLabel, "modulate:a", 0f, 0.7f);
+    }
+
+    private void UpdateMaraAsides(double delta)
+    {
+        _asideCooldown = Mathf.Max(0f, _asideCooldown - (float)delta);
+
+        var gs = GameState.Instance;
+        if (gs == null || _context != UiContext.Game)
+            return;
+
+        int examines = gs.ExaminesPerformed;
+        if (_lastExaminesPerformed < 0 || examines < _lastExaminesPerformed)
+        {
+            _lastExaminesPerformed = examines;
+            return;
+        }
+        if (examines == _lastExaminesPerformed)
+            return;
+
+        // Something was just looked at. Wait until Mara can be heard — the
+        // look's own words finished, no panel up — then let her mutter.
+        if (GetTree().Paused || Dialogue.IsShowing || AnyPanelOpen() ||
+            _cutscenePlaying || _endingPlaying || _shatterPlaying)
+            return;
+
+        _lastExaminesPerformed = examines;
+        if (_asideCooldown > 0f)
+            return;
+        if (_asideRandom.NextDouble() > 0.55)
+        {
+            _asideCooldown = 10f;
+            return;
+        }
+
+        string line = NextAsideLine(GameState.CurrentRoomName());
+        if (line == null)
+            return;
+        ShowMaraAside(line);
+        _asideCooldown = 35f;
+    }
+
+    private string NextAsideLine(string room)
+    {
+        room ??= string.Empty;
+        if (_asideBag.Count == 0 || _asideBagRoom != room)
+        {
+            _asideBagRoom = room;
+            _asideBag.Clear();
+            _asideBag.AddRange(GenericAsideLines);
+            _asideBag.AddRange(room switch
+            {
+                "Room1" => Room1AsideLines,
+                "Room2" => Room2AsideLines,
+                "Room3" => Room3AsideLines,
+                "Room4" => Room4AsideLines,
+                "Room5" => Room5AsideLines,
+                "Room6" => Room6AsideLines,
+                "Room7" => Room7AsideLines,
+                _ => System.Array.Empty<string>(),
+            });
+            for (int i = _asideBag.Count - 1; i > 0; i--)
+            {
+                int j = _asideRandom.Next(i + 1);
+                (_asideBag[i], _asideBag[j]) = (_asideBag[j], _asideBag[i]);
+            }
+        }
+
+        if (_asideBag.Count == 0)
+            return null;
+        int last = _asideBag.Count - 1;
+        string line = _asideBag[last];
+        _asideBag.RemoveAt(last);
+        return line;
+    }
+
+    // ---------------------------------------------------------- Ida illusion
+
+    private void BuildIdaIllusion()
+    {
+        _idaIllusion = new TextureRect
+        {
+            Texture = GD.Load<Texture2D>("res://assets/images/bgs/Ida_Illusion.png"),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspect,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Visible = false,
+            Modulate = new Color(0.86f, 0.9f, 1f, 0f),
+        };
+        AddChild(_idaIllusion);
+    }
+
+    private void OnCorruptionChangedForIllusion(int count, CorruptionTier tier)
+    {
+        bool rose = count > _lastCorruptionCount;
+        _lastCorruptionCount = count;
+
+        // When the memory frays further, sometimes she is just suddenly
+        // there. Corruption is when Mara sees her.
+        if (rose && count >= 3 && _asideRandom.NextDouble() < 0.3)
+            _idaIllusionTimer = Mathf.Min(_idaIllusionTimer,
+                0.8f + (float)_asideRandom.NextDouble() * 1.6f);
+    }
+
+    private void UpdateIdaIllusion(double delta)
+    {
+        if (_idaIllusion == null || _idaIllusion.Visible)
+            return;
+
+        var gs = GameState.Instance;
+        if (gs == null || _context != UiContext.Game)
+            return;
+        if (_lastCorruptionCount < 3)
+            return;
+        if (Settings.CorruptionIntensityOrDefault() <= 0.01f)
+            return;
+        if (GetTree().Paused || Dialogue.IsShowing || AnyPanelOpen() ||
+            _cutscenePlaying || _endingPlaying || _shatterPlaying)
+            return;
+
+        _idaIllusionTimer -= (float)delta;
+        if (_idaIllusionTimer > 0f)
+            return;
+
+        ShowIdaIllusion(gs);
+
+        // The more corrupted the memory, the less long between glimpses.
+        float density = Mathf.Clamp(_lastCorruptionCount / 14f, 0f, 1f);
+        float baseSeconds = Mathf.Lerp(55f, 16f, density);
+        _idaIllusionTimer = baseSeconds * (0.7f + (float)_asideRandom.NextDouble() * 0.6f);
+    }
+
+    private void ShowIdaIllusion(GameState gs)
+    {
+        var texture = _idaIllusion.Texture;
+        if (texture == null)
+            return;
+
+        Vector2 view = GetViewport().GetVisibleRect().Size;
+        float height = 150f + (float)_asideRandom.NextDouble() * 80f;
+        float width = height * texture.GetSize().X / Mathf.Max(texture.GetSize().Y, 1f);
+        float x = 40f + (float)_asideRandom.NextDouble() * Mathf.Max(view.X - width - 80f, 1f);
+        float y = view.Y - height - (70f + (float)_asideRandom.NextDouble() * 110f);
+        _idaIllusion.Position = new Vector2(x, y);
+        _idaIllusion.Size = new Vector2(width, height);
+        _idaIllusion.Visible = true;
+        _idaIllusion.Modulate = new Color(0.86f, 0.9f, 1f, 0f);
+
+        float peak = Mathf.Clamp(0.85f * Settings.CorruptionIntensityOrDefault(), 0.15f, 0.9f);
+        bool still = Settings.ReduceMotionOrDefault();
+        AudioManager.Play(Sfx.CorruptionWhisper, -14f, 0.9f + (float)_asideRandom.NextDouble() * 0.2f);
+
+        _idaIllusionTween?.Kill();
+        _idaIllusionTween = CreateTween();
+        _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, still ? 0.4f : 0.12f);
+        _idaIllusionTween.TweenInterval(still ? 0.9f : 0.65f);
+        if (!still)
+        {
+            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak * 0.35f, 0.05f);
+            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, 0.05f);
+            _idaIllusionTween.TweenInterval(0.3f);
+        }
+        _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", 0f, 0.35f);
+        _idaIllusionTween.TweenCallback(Callable.From(() =>
+        {
+            if (_idaIllusion != null)
+            {
+                _idaIllusion.Visible = false;
+                _idaIllusion.Modulate = new Color(0.86f, 0.9f, 1f, 0f);
+            }
+        }));
+
+        // Mara reacts — startled out loud the first time, fraying after.
+        if (!gs.HasFlag(IdaIllusionSeenFlag))
+        {
+            gs.SetFlag(IdaIllusionSeenFlag);
+            ShowMaraAside("Wha— what was that?");
+        }
+        else
+        {
+            ShowMaraAside(IdaReactionLines[_idaReactionIndex % IdaReactionLines.Length]);
+            _idaReactionIndex++;
+        }
     }
 
     private void BuildCutscene()

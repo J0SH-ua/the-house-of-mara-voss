@@ -57,24 +57,24 @@ public partial class ApartmentNow : MemoryRoomBase
             case "UnopenedMail":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "Mail behind the door, in strata. Bills. A birthday card, two years unopened. At the bottom, a postcard in her mother's hand that Mara already knows by heart — which is not the same as having read it.",
-                    "Every envelope is a person mid-sentence. She stopped letting them finish years ago.",
-                }, "Unopened is not the same as unsent. She knows that. Knowing is not the same as opening.");
+                    "Mail piled behind my door. Bills. A birthday card I never opened — two years old now. And at the bottom, a postcard from Mum. I know what it says. That's not the same as reading it.",
+                    "Every envelope is someone halfway through talking to me. I stopped letting them finish years ago.",
+                }, "Unopened isn't the same as unsent. I know that. Knowing isn't the same as opening.");
                 break;
 
             case "SilentPhone":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "The phone rings for other people in this building. Through the wall, Mara hears lives being answered.",
-                    "Hers has been silent long enough that silence started to feel like something she chose. She isn't sure anymore whether she chose it — or whether it chose the shape of her.",
-                }, "No messages. That used to feel like peace.");
+                    "Other people's phones ring in this building. Through the wall I can hear them being answered. Lives, going on.",
+                    "Mine's been quiet so long it started to feel like my choice. I'm not sure any more if I chose the quiet — or it chose me.",
+                }, "No messages. I used to call that peace.");
                 break;
 
             case "CornerChair":
                 _ = ExamineObjectAsync(hotspot, new[]
                 {
-                    "One chair, turned to the corner like a child being punished. Mara sits here at the bad hours, knees drawn up, waiting for a morning that happened twelve years ago to be over.",
-                    "The chair is the truest furniture in the apartment. Everything else is a set from a play about a woman who is fine.",
+                    "My corner chair. Turned to the wall like a kid being punished. I sit here at the bad hours, knees up, waiting for a morning from twelve years ago to finally be over.",
+                    "It's the most honest thing I own. Everything else in here is props for a play about a woman who's fine.",
                 }, "The corner of the room. The corner of everything.");
                 break;
 
