@@ -371,7 +371,7 @@ public partial class DifferenceInvestigation : Node2D
         {
             var m = _dust[i];
             m.Pos.Y += m.Speed * rate * dt;
-            m.Pos.X += Mathf.Sin((Time.GetTicksMsec() + i * 397) / 900.0f) * 6f * dt;
+            m.Pos.X += Mathf.Sin((Time.GetTicksMsec() + (ulong)(i * 397)) / 900.0f) * 6f * dt;
             if (m.Pos.Y > 652f)
             {
                 m.Pos.Y = -4f;
