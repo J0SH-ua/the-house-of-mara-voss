@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmaraidaghost1"
-path="res://.godot/imported/Ida_Illusion.png-1f77d70f5c94a6543548fec18a3a8aaa.ctex"
+uid="uid://cyluo7ve6nboq"
+path="res://.godot/imported/Ida_Illusion.png-f0f9ea1eeaf84a8e6c8df5e88d5b6b9c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/images/core/shards/Ida_Illusion.png"
-dest_files=["res://.godot/imported/Ida_Illusion.png-1f77d70f5c94a6543548fec18a3a8aaa.ctex"]
+source_file="res://assets/images/bgs/Ida_Illusion.png"
+dest_files=["res://.godot/imported/Ida_Illusion.png-f0f9ea1eeaf84a8e6c8df5e88d5b6b9c.ctex"]
 
 [params]
 
