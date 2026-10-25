@@ -9,10 +9,13 @@ using Godot;
 /// and it shows. Everything Mara inspects starts to shift in appearance,
 /// sliding between its childhood and adult selves (double-exposed, torn,
 /// tinted by two years at once). Everything except the bedside lamp, which
-/// simply stays itself. At first nobody says so; once three things have
-/// gone sliding, Mara notices it out loud, the way a person would — "that
-/// lamp is the only thing in here that isn't weird." What to do about a
-/// still thing stays the player's to put together. Anchoring it
+/// simply stays itself — and which will not be touched until everything
+/// else has been. Reach for it early and Mara stops herself, out loud: the
+/// sliding things first, all of them; that is apparently the rule. Only
+/// once every shifting thing has been faced can she actually touch it —
+/// and in the touching, she notices it herself, the way a person would:
+/// "that lamp is the only thing in here that isn't weird." What to do
+/// about a still thing stays the player's to put together. Anchoring it
 /// settles every shifted object back into one year, holds the writing desk
 /// still long enough to recover the unsent apology, and once the letters
 /// are Mara's, the inside of the wardrobe — past the coats and the yellow
@@ -37,6 +40,32 @@ public partial class Room5Final : MemoryRoomBase
     [
         "RainWindow", "Bed", "Desk", "RotaryPhone", "Wardrobe", "AlarmClock", "FloorPhotographs",
     ];
+
+    /// <summary>Reached for too soon, the lamp is refused — by the room, by
+    /// Mara; here the difference is academic. She says why out loud,
+    /// plainly, the way a person talks herself out of a door she is not
+    /// ready to open. Nothing is recorded, nothing frays: it is not time.</summary>
+    private static readonly string[] LampRefusalLines =
+    [
+        "I reach for it — and stop, like my hand knows something. Not yet. Everything else in here is still sliding. It all has to be looked at first. That's… apparently the rule.",
+        "No. Not that one. Not while the rest of the room won't sit still. My hand just… won't.",
+        "It stays lit. Warm. Ordinary. And somehow out of reach until I've faced the rest of this room. Everything else first.",
+        "Not yet. I don't know why I know that. I just do. The sliding things first. All of them.",
+    ];
+
+    private int _lampRefusalCount;
+
+    /// <summary>Every thing in this room that slides has been faced at
+    /// least once. Only then will the lamp let itself be touched.</summary>
+    private bool AllShiftersTouched()
+    {
+        foreach (var id in ShiftingIds)
+        {
+            if (!WasExamined(id))
+                return false;
+        }
+        return true;
+    }
 
     /// <summary>The wardrobe's open interior in the Room 5 painting.</summary>
     private static readonly Rect2 WardrobePortalRect = new(968, 118, 152, 428);
@@ -88,6 +117,8 @@ public partial class Room5Final : MemoryRoomBase
         _gardenLabel.Visible = GameState.Instance?.IsShardRecovered(4) ?? false;
 
         var gs = GameState.Instance;
+        if (gs != null && !gs.HasFlag(AnchoredFlag) && !WasExamined("Lamp") && AllShiftersTouched())
+            GameUI.Instance?.QueueIdaIllusion("room5_lamp");
         if (gs == null || !gs.IsShardRecovered(4))
         {
             _ = PlayStoryLessonOnceAsync("story_lesson_room5_anchor_room",
@@ -115,6 +146,15 @@ public partial class Room5Final : MemoryRoomBase
 
         var gs = GameState.Instance;
         var activeVerb = MemoryVerbSystem.Active;
+
+        // The lamp will not be touched — looked at closely or Anchored —
+        // until everything that slides has been faced. The room has an
+        // order, and the still thing comes last.
+        if (hotspot.Id == "Lamp" && !(gs?.HasFlag(AnchoredFlag) ?? false) && !AllShiftersTouched())
+        {
+            _ = LampNotYetAsync(hotspot);
+            return;
+        }
 
         if (activeVerb == MemoryVerb.Anchor)
         {
@@ -176,6 +216,7 @@ public partial class Room5Final : MemoryRoomBase
                 {
                     "It's warm. Not remember-it warm. Actually warm. It's been left on in every version of this room.",
                     "Mum left a light on for whoever came home late. I still do.",
+                    "Wait. Everything else I've touched in here started sliding — one year, then the other. This hasn't. That lamp is the only thing in here that isn't weird. It doesn't slide. It doesn't change. It just… stays.",
                 }, "Steady light. Ordinary. The room can't make up its mind around it.");
                 break;
 
@@ -250,10 +291,20 @@ public partial class Room5Final : MemoryRoomBase
 
             if (firstLook)
             {
-                await SaySequence(
+                var lines = new List<string>
+                {
                     "It's warm. Not remember-it warm. Actually warm. It's been left on in every version of this room.",
-                    "You hold to that. A light for whoever comes home late. The wallpaper stops being two wallpapers. The bed chooses an age. The desk stays a desk.",
-                    "Anchor does not make the room true. It gives the truth one still place to stand.");
+                };
+                // If she never examined it first, the noticing still happens
+                // — here, in the touching, the way the room insisted.
+                if (gs != null && !gs.HasFlag(LampNoticeFlag))
+                {
+                    gs.SetFlag(LampNoticeFlag);
+                    lines.Add("Everything else I touched in here started sliding — one year, then the other. This never did. That lamp is the only thing in here that isn't weird. It just… stays.");
+                }
+                lines.Add("You hold to that. A light for whoever comes home late. The wallpaper stops being two wallpapers. The bed chooses an age. The desk stays a desk.");
+                lines.Add("Anchor does not make the room true. It gives the truth one still place to stand.");
+                await SaySequence(lines.ToArray());
             }
             else
             {
@@ -481,46 +532,42 @@ public partial class Room5Final : MemoryRoomBase
             QueueRedraw();
         }
 
-        await MaybeNoticeLampStillAsync(gs);
+        if (hotspot.Id == "Lamp")
+        {
+            // The noticing lives in the lamp's own first lines now; this
+            // only remembers that she has said it.
+            gs?.SetFlag(LampNoticeFlag);
+        }
+        else if (gs != null && !gs.HasFlag(AnchoredFlag)
+            && !WasExamined("Lamp") && AllShiftersTouched())
+        {
+            // Everything that slides has just been faced, and the lamp
+            // still waits untouched. Before Mara can talk herself out of
+            // it, someone small is already at the nightstand, looking at
+            // the light. (A tell, not a word of instruction.)
+            GameUI.Instance?.QueueIdaIllusion("room5_lamp");
+        }
     }
 
-    /// <summary>Once three things in this room have started sliding between
-    /// years, Mara says the quiet part out loud — to herself, thinking, the
-    /// way a person would. She names the observation only: the lamp is the
-    /// one thing here that isn't weird. That a still thing is what Anchor
-    /// wants remains the player's own step to take.</summary>
-    private async Task MaybeNoticeLampStillAsync(GameState gs)
+    /// <summary>The lamp, reached for before its time. Mara stops her own
+    /// hand and says so; the room keeps its order.</summary>
+    private async Task LampNotYetAsync(Hotspot lamp)
     {
-        if (gs == null || gs.HasFlag(AnchoredFlag) || gs.HasFlag(LampNoticeFlag))
+        if (Busy)
             return;
-
-        int shifted = 0;
-        foreach (var id in ShiftingIds)
-        {
-            if (WasExamined(id))
-                shifted++;
-        }
-        if (shifted < 3)
-            return;
-
         Busy = true;
         try
         {
-            var lamp = GetHotspot("Lamp");
-            if (lamp != null)
-                Hotspots.SpawnRipple(lamp.Center, new Color(1f, 0.88f, 0.55f));
-
-            await SayStoryLessonOnceAsync(LampNoticeFlag,
-                "Everything I look at properly in this room starts sliding — one year, then the other. Everything except...",
-                "That lamp. It's the only thing in here that isn't weird. It doesn't slide. It doesn't change. It just stays on — same as it always did.");
+            AudioManager.Play(Sfx.Denied, -10f, 0.94f);
+            Hotspots.SpawnRipple(lamp.Center, new Color(0.75f, 0.72f, 0.68f));
+            string line = LampRefusalLines[_lampRefusalCount % LampRefusalLines.Length];
+            _lampRefusalCount++;
+            await Say(line, 4.5f, 24);
         }
         finally
         {
             if (GodotObject.IsInstanceValid(this))
-            {
                 Busy = false;
-                QueueRedraw();
-            }
         }
     }
 

@@ -146,13 +146,24 @@ public partial class GameUI : CanvasLayer
     private string _asideBagRoom = string.Empty;
     private readonly Random _asideRandom = new();
 
-    // The Ida illusion: when corruption is in the room, a small yellow
-    // figure is sometimes just... there, briefly, at the edge of things.
+    // The Ida illusions: authored, never random. Each room has its own
+    // place for her — at its window, with a jar, running its hallway, on
+    // its swing, looking at its lamp — and its own moment to have her: a
+    // first entry, a puzzle finished, a last thing faced. Early she is
+    // barely a shape at all; in corruption she is the wrong shape.
     private TextureRect _idaIllusion;
     private Tween _idaIllusionTween;
-    private float _idaIllusionTimer = 35f;
-    private int _lastCorruptionCount;
+    private Tween _idaMotionTween;
+    private Tween _idaBobTween;
+    private CorruptionTier _lastIllusionTier = CorruptionTier.Calm;
     private int _idaReactionIndex;
+    private int _idaGloomReactionIndex;
+    private IllusionBeat _pendingIllusion;
+    private float _pendingIllusionDelay;
+    private float _pendingIllusionAge;
+    private float _gloomIllusionCooldown;
+    private string _lastIllusionSceneFile = string.Empty;
+    private readonly Dictionary<string, Texture2D> _idaPoseCache = new();
 
     private const string IdaIllusionSeenFlag = "ida_illusion_seen";
 
@@ -166,6 +177,136 @@ public partial class GameUI : CanvasLayer
         "Yellow. I saw yellow.",
         "Stop it. Stop showing me her.",
         "I'm awake. I am awake. Aren't I?",
+    ];
+
+    private static readonly string[] IdaGloomReactionLines =
+    [
+        "Don't look like that. You never looked like that.",
+        "That's not her face. That's not her face.",
+        "Why are you wet— no. No. Don't answer that.",
+        "Go back. Go back to how I— please.",
+        "Not you. You're just what I did, wearing her coat.",
+    ];
+
+    private enum IllusionMood { Normal, Foggy, Silhouette, Gloomy }
+    private enum IllusionMotion { Still, RunAcross, Sway }
+
+    /// <summary>One authored Ida moment: a specific scene, a pose that
+    /// belongs to that room's geometry, the spot she stands in (fractions
+    /// of the 1152×648 room, her feet at FeetY), how unclear she is, and
+    /// what Mara says. OnceFlag == null means the moment may repeat.</summary>
+    private sealed class IllusionBeat
+    {
+        public string Key;
+        public string SceneFile;
+        public string Pose;
+        public float CenterX;
+        public float FeetY;
+        public float Height;
+        public IllusionMood Mood;
+        public IllusionMotion Motion;
+        public float Delay;
+        public string OnceFlag;
+        public string Reaction;
+        public bool EntryTriggered;
+        public int RequiresShard = -1;
+    }
+
+    private static readonly IllusionBeat[] IllusionBeats =
+    [
+        // Coming back into the kitchen with the first fragment found:
+        // a shape at the window, looking out at the garden that is coming.
+        new()
+        {
+            Key = "room1_window", SceneFile = "room_1.tscn", Pose = "window",
+            CenterX = 0.72f, FeetY = 0.80f, Height = 205f,
+            Mood = IllusionMood.Foggy, Motion = IllusionMotion.Still,
+            Delay = 2.5f, OnceFlag = "illusion_room1_window",
+            Reaction = "…At the window. She was just— no. No, she wasn't.",
+            EntryTriggered = true, RequiresShard = 0,
+        },
+        // First steps into the sitting room: only an outline by the fire.
+        // The earliest glimpse is the least certain one.
+        new()
+        {
+            Key = "room2_fire", SceneFile = "room_2.tscn", Pose = "stand",
+            CenterX = 0.30f, FeetY = 0.74f, Height = 205f,
+            Mood = IllusionMood.Silhouette, Motion = IllusionMotion.Still,
+            Delay = 5f, OnceFlag = "illusion_room2_fire", Reaction = null,
+            EntryTriggered = true,
+        },
+        // The preserved-names room: she is holding one of the jars.
+        new()
+        {
+            Key = "room3_jar", SceneFile = "room_3.tscn", Pose = "jar",
+            CenterX = 0.70f, FeetY = 0.93f, Height = 232f,
+            Mood = IllusionMood.Foggy, Motion = IllusionMotion.Still,
+            Delay = 6f, OnceFlag = "illusion_room3_jar",
+            Reaction = "She's holding one of the— …they're all still there. I counted. They're all there.",
+            EntryTriggered = true,
+        },
+        // The hallway of sentences: she runs it, the way she always did.
+        new()
+        {
+            Key = "room4_run", SceneFile = "room_4.tscn", Pose = "run",
+            CenterX = 0.5f, FeetY = 0.86f, Height = 185f,
+            Mood = IllusionMood.Normal, Motion = IllusionMotion.RunAcross,
+            Delay = 4f, OnceFlag = "illusion_room4_run",
+            Reaction = "Bare feet. Running, in here, after all this—",
+            EntryTriggered = true,
+        },
+        // The landing in the flashback: the runner of socks, seen at last.
+        new()
+        {
+            Key = "flashback_run", SceneFile = "flashback_landing.tscn", Pose = "run",
+            CenterX = 0.5f, FeetY = 0.82f, Height = 165f,
+            Mood = IllusionMood.Foggy, Motion = IllusionMotion.RunAcross,
+            Delay = 3.5f, OnceFlag = "illusion_flashback_run", Reaction = null,
+            EntryTriggered = true,
+        },
+        // Room 5's tell — NOT on entry. The room itself asks for this once
+        // everything that slides has been faced: she is already at the
+        // nightstand, looking at the one still thing.
+        new()
+        {
+            Key = "room5_lamp", SceneFile = "room_5.tscn", Pose = "window",
+            CenterX = 0.44f, FeetY = 0.87f, Height = 218f,
+            Mood = IllusionMood.Normal, Motion = IllusionMotion.Still,
+            Delay = 1.6f, OnceFlag = "illusion_room5_lamp",
+            Reaction = "…She's looking at the lamp. Just… looking at it.",
+            EntryTriggered = false,
+        },
+        // Mara's own apartment: at the rain window. She never saw this room
+        // — which is exactly what is unbearable about her being in it.
+        new()
+        {
+            Key = "apartment_window", SceneFile = "apartment_now.tscn", Pose = "window",
+            CenterX = 0.17f, FeetY = 0.90f, Height = 228f,
+            Mood = IllusionMood.Foggy, Motion = IllusionMotion.Still,
+            Delay = 5f, OnceFlag = "illusion_apartment_window",
+            Reaction = "Not here. She never even— this room is mine. She never saw this room.",
+            EntryTriggered = true,
+        },
+        // The garden: on the swing, barely moving.
+        new()
+        {
+            Key = "room6_swing", SceneFile = "room_6.tscn", Pose = "swing",
+            CenterX = 0.388f, FeetY = 0.605f, Height = 122f,
+            Mood = IllusionMood.Normal, Motion = IllusionMotion.Sway,
+            Delay = 4f, OnceFlag = "illusion_room6_swing",
+            Reaction = "The swing's moving like somebody— …nobody's on the swing.",
+            EntryTriggered = true,
+        },
+        // The porch at 4:47: small, down the path, already going.
+        new()
+        {
+            Key = "porch_run", SceneFile = "porch_447.tscn", Pose = "run",
+            CenterX = 0.5f, FeetY = 0.82f, Height = 118f,
+            Mood = IllusionMood.Foggy, Motion = IllusionMotion.RunAcross,
+            Delay = 3f, OnceFlag = "illusion_porch_run",
+            Reaction = "Down the path. She's going down the— …gone.",
+            EntryTriggered = true,
+        },
     ];
 
     private static readonly string[] GenericAsideLines =
@@ -312,6 +453,7 @@ public partial class GameUI : CanvasLayer
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
             gs.CollapseStarted += OnCollapseStarted;
+            gs.CollapseStarted += OnCollapseStartedForIllusion;
             gs.CollapseTicked += OnCollapseTicked;
             gs.CollapseEnded += OnCollapseEnded;
             gs.Saved += () => ShowToast("Memory preserved.", quiet: true);
@@ -1310,6 +1452,14 @@ public partial class GameUI : CanvasLayer
             return;
 
         _toastLabel.Text = text;
+
+        // The toast chip grows down to hold the whole message instead of
+        // letting the second line spill off it.
+        float toastH = Mathf.Max(MeasureHudTextHeight(text, 804f, 23), 28f);
+        _toastLabel.OffsetBottom = _toastLabel.OffsetTop + toastH;
+        if (_toastPanel != null)
+            _toastPanel.OffsetBottom = _toastPanel.OffsetTop + toastH + 20f;
+
         _toastLabel.Visible = true;
         var m = _toastLabel.Modulate;
         m.A = quiet ? 0.55f : 0.95f;
@@ -1336,6 +1486,37 @@ public partial class GameUI : CanvasLayer
             if (_toastPanel != null)
                 _toastPanel.Visible = false;
         }));
+    }
+
+    /// <summary>Wrapped height of a HUD line in the real font, so chips and
+    /// captions can be sized to their words instead of overflowing.</summary>
+    private float MeasureHudTextHeight(string text, float width, int fontSize)
+    {
+        if (_font == null || string.IsNullOrEmpty(text))
+            return 0f;
+        return _font.GetMultilineStringSize(
+            text, HorizontalAlignment.Center, width, fontSize).Y;
+    }
+
+    /// <summary>Cutscene captions run long; the caption area grows upward
+    /// over the letterbox (stepping the type down if it must) so no line
+    /// of the truth ever falls off the bottom of the screen.</summary>
+    private void SetCutsceneCaption(string text)
+    {
+        if (_cutsceneCaption == null)
+            return;
+        _cutsceneCaption.Text = text ?? string.Empty;
+
+        int size = 30;
+        float h = MeasureHudTextHeight(_cutsceneCaption.Text, 942f, size);
+        while (h > 250f && size > 22)
+        {
+            size -= 2;
+            h = MeasureHudTextHeight(_cutsceneCaption.Text, 942f, size);
+        }
+        _cutsceneCaption.AddThemeFontSizeOverride("font_size", size);
+        float need = Mathf.Clamp(h + 18f, 138f, 268f);
+        _cutsceneCaption.OffsetTop = _cutsceneCaption.OffsetBottom - need;
     }
 
     // ================================================================= confirm
@@ -1865,7 +2046,15 @@ public partial class GameUI : CanvasLayer
 
         var gs = GameState.Instance;
         _objectiveLabel.Text = (gs?.GetCurrentObjective() ?? string.Empty);
-        _objectiveLabel.GetParent<Control>().Visible = !string.IsNullOrWhiteSpace(_objectiveLabel.Text);
+        var objectivePanel = _objectiveLabel.GetParent<Control>();
+        objectivePanel.Visible = !string.IsNullOrWhiteSpace(_objectiveLabel.Text);
+        if (objectivePanel.Visible)
+        {
+            // The objective chip fits its text rather than clipping line two.
+            float objectiveH = MeasureHudTextHeight(_objectiveLabel.Text, 516f, 21);
+            objectivePanel.OffsetBottom = objectivePanel.OffsetTop
+                + Mathf.Max(objectiveH, 26f) + 24f;
+        }
 
         // Clarity pips (ColorRects — no font-glyph roulette).
         int clarity = gs?.ClarityCount ?? 0;
@@ -3978,91 +4167,355 @@ public partial class GameUI : CanvasLayer
         AddChild(_idaIllusion);
     }
 
+    /// <summary>Ask for an authored Ida moment by key — rooms call this at
+    /// their story beats (Room 5's lamp tell is one). She appears in that
+    /// beat's own scene, in its own place, after its own pause, at the
+    /// first quiet moment: never over dialogue, a panel, a cutscene, an
+    /// ending, or a pause.</summary>
+    public void QueueIdaIllusion(string beatKey)
+    {
+        if (string.IsNullOrEmpty(beatKey))
+            return;
+        foreach (var beat in IllusionBeats)
+        {
+            if (beat.Key == beatKey)
+            {
+                QueueIllusionBeat(beat);
+                return;
+            }
+        }
+    }
+
+    private void QueueIllusionBeat(IllusionBeat beat, string knownSceneFile = null)
+    {
+        var gs = GameState.Instance;
+        if (beat == null || gs == null || _context != UiContext.Game)
+            return;
+        if (_pendingIllusion != null || (_idaIllusion?.Visible ?? false))
+            return; // one haunting at a time; authored beats are sparse
+        if (beat.OnceFlag != null && gs.HasFlag(beat.OnceFlag))
+            return;
+        if (beat.RequiresShard >= 0 && !gs.IsShardRecovered(beat.RequiresShard))
+            return;
+        string here = knownSceneFile ?? SceneFileName(SceneManager.CurrentScenePath);
+        if (here != beat.SceneFile)
+            return;
+
+        _pendingIllusion = beat;
+        _pendingIllusionDelay = beat.Delay;
+        _pendingIllusionAge = 0f;
+    }
+
+    /// <summary>Where corruption puts her in each room: nearer than the
+    /// room's own moment does, larger — except down the hallway, where she
+    /// is small and far and perfectly still, which is worse. Room 7 has no
+    /// gloomy spot at all; the real door is there.</summary>
+    private static IllusionBeat GloomyBeatFor(string sceneFile)
+    {
+        (float cx, float feet, float h) spot = sceneFile switch
+        {
+            "room_1.tscn" => (0.20f, 0.97f, 295f),
+            "room_1_puzzle.tscn" => (0.87f, 0.95f, 215f),
+            "room_2.tscn" => (0.55f, 0.97f, 295f),
+            "room_2_puzzle.tscn" => (0.13f, 0.95f, 215f),
+            "room_3.tscn" => (0.235f, 0.96f, 285f),
+            "room_4.tscn" => (0.47f, 0.80f, 110f),
+            "flashback_landing.tscn" => (0.47f, 0.80f, 110f),
+            "Room_4_puzzle.tscn" => (0.88f, 0.96f, 205f),
+            "room_5.tscn" => (0.60f, 0.97f, 295f),
+            "apartment_now.tscn" => (0.46f, 0.97f, 295f),
+            "room_6.tscn" => (0.30f, 0.92f, 255f),
+            "porch_447.tscn" => (0.235f, 0.88f, 225f),
+            _ => (0f, 0f, 0f),
+        };
+        if (spot.h <= 0f)
+            return null;
+
+        return new IllusionBeat
+        {
+            Key = "gloom", SceneFile = sceneFile, Pose = "gloom",
+            CenterX = spot.cx, FeetY = spot.feet, Height = spot.h,
+            Mood = IllusionMood.Gloomy, Motion = IllusionMotion.Still,
+            Delay = 1.2f, OnceFlag = null, Reaction = null,
+        };
+    }
+
+    private void QueueGloomyIllusion(float delay)
+    {
+        if (_gloomIllusionCooldown > 0f)
+            return;
+        if (Settings.CorruptionIntensityOrDefault() <= 0.01f)
+            return;
+        var beat = GloomyBeatFor(SceneFileName(SceneManager.CurrentScenePath));
+        if (beat == null)
+            return;
+        beat.Delay = delay;
+        QueueIllusionBeat(beat);
+        if (_pendingIllusion == beat)
+            _gloomIllusionCooldown = 50f;
+    }
+
     private void OnCorruptionChangedForIllusion(int count, CorruptionTier tier)
     {
-        bool rose = count > _lastCorruptionCount;
-        _lastCorruptionCount = count;
+        bool tierRose = tier > _lastIllusionTier;
+        _lastIllusionTier = tier;
 
-        // When the memory frays further, sometimes she is just suddenly
-        // there. Corruption is when Mara sees her.
-        if (rose && count >= 3 && _asideRandom.NextDouble() < 0.3)
-            _idaIllusionTimer = Mathf.Min(_idaIllusionTimer,
-                0.8f + (float)_asideRandom.NextDouble() * 1.6f);
+        // Corruption deepening is its own authored moment: the first time
+        // the memory frays into a worse tier, she is in the room with it.
+        if (tierRose && tier >= CorruptionTier.Fractured)
+            QueueGloomyIllusion(1.2f);
+    }
+
+    private void OnCollapseStartedForIllusion()
+    {
+        // Fifteen seconds and the room coming apart: of course she is in it.
+        QueueGloomyIllusion(2.5f);
+    }
+
+    private static string SceneFileName(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return string.Empty;
+        int slash = path.LastIndexOf('/');
+        return slash >= 0 ? path.Substring(slash + 1) : path;
+    }
+
+    /// <summary>Room-entry beats fire from here (polled, so a UI-context
+    /// lag on the exact frame of a scene change can never eat one).</summary>
+    private void WatchForRoomEntry()
+    {
+        string file = SceneFileName(SceneManager.CurrentScenePath);
+        if (string.IsNullOrEmpty(file) || file == _lastIllusionSceneFile)
+            return;
+        if (_context != UiContext.Game)
+            return; // unspent — retried next frame, once we're in the game
+        _lastIllusionSceneFile = file;
+
+        // A glimpse belongs to the room that asked for it. Leaving that
+        // room lets it go — its once-flag is only ever spent by showing.
+        if (_pendingIllusion != null && _pendingIllusion.SceneFile != file)
+            _pendingIllusion = null;
+        if (_idaIllusion?.Visible ?? false)
+            HideIdaIllusionNow();
+
+        foreach (var beat in IllusionBeats)
+        {
+            if (beat.EntryTriggered && beat.SceneFile == file)
+                QueueIllusionBeat(beat, file);
+        }
+    }
+
+    private void HideIdaIllusionNow()
+    {
+        // Note: the alpha tween itself is left to finish on its own — this
+        // runs from that tween's final callback, and a later stray fade on
+        // an invisible sprite is harmless.
+        _idaMotionTween?.Kill();
+        _idaBobTween?.Kill();
+        if (_idaIllusion != null)
+        {
+            _idaIllusion.Visible = false;
+            _idaIllusion.Rotation = 0f;
+            var m = _idaIllusion.Modulate;
+            m.A = 0f;
+            _idaIllusion.Modulate = m;
+        }
     }
 
     private void UpdateIdaIllusion(double delta)
     {
-        if (_idaIllusion == null || _idaIllusion.Visible)
+        _gloomIllusionCooldown = Mathf.Max(0f, _gloomIllusionCooldown - (float)delta);
+        WatchForRoomEntry();
+
+        if (_idaIllusion == null || _idaIllusion.Visible || _pendingIllusion == null)
             return;
 
         var gs = GameState.Instance;
         if (gs == null || _context != UiContext.Game)
             return;
-        if (_lastCorruptionCount < 3)
+
+        _pendingIllusionAge += (float)delta;
+        if (_pendingIllusionAge > 40f)
+        {
+            _pendingIllusion = null; // the moment passed; nothing was spent
             return;
-        if (Settings.CorruptionIntensityOrDefault() <= 0.01f)
+        }
+        if (SceneFileName(SceneManager.CurrentScenePath) != _pendingIllusion.SceneFile)
+            return;
+
+        if (!GetTree().Paused)
+            _pendingIllusionDelay -= (float)delta;
+        if (_pendingIllusionDelay > 0f)
             return;
         if (GetTree().Paused || Dialogue.IsShowing || AnyPanelOpen() ||
             _cutscenePlaying || _endingPlaying || _shatterPlaying)
             return;
 
-        _idaIllusionTimer -= (float)delta;
-        if (_idaIllusionTimer > 0f)
-            return;
-
-        ShowIdaIllusion(gs);
-
-        // The more corrupted the memory, the less long between glimpses.
-        float density = Mathf.Clamp(_lastCorruptionCount / 14f, 0f, 1f);
-        float baseSeconds = Mathf.Lerp(55f, 16f, density);
-        _idaIllusionTimer = baseSeconds * (0.7f + (float)_asideRandom.NextDouble() * 0.6f);
+        var beat = _pendingIllusion;
+        _pendingIllusion = null;
+        ShowIdaIllusion(gs, beat);
     }
 
-    private void ShowIdaIllusion(GameState gs)
+    private Texture2D LoadIdaPose(string pose)
     {
-        var texture = _idaIllusion.Texture;
-        if (texture == null)
+        if (string.IsNullOrEmpty(pose))
+            pose = "stand";
+        if (_idaPoseCache.TryGetValue(pose, out var cached))
+            return cached;
+
+        string path = pose switch
+        {
+            "window" => "res://assets/images/bgs/ida_window.png",
+            "jar" => "res://assets/images/bgs/ida_jar.png",
+            "run" => "res://assets/images/bgs/ida_run.png",
+            "swing" => "res://assets/images/bgs/ida_swing.png",
+            "gloom" => "res://assets/images/bgs/ida_gloomy.png",
+            _ => "res://assets/images/bgs/Ida_Illusion.png",
+        };
+        var tex = ResourceLoader.Exists(path) ? GD.Load<Texture2D>(path) : null;
+        // A pose that isn't there yet still haunts as her plain standing
+        // shape — never as a missing-resource error.
+        tex ??= GD.Load<Texture2D>("res://assets/images/bgs/Ida_Illusion.png");
+        _idaPoseCache[pose] = tex;
+        return tex;
+    }
+
+    private void ShowIdaIllusion(GameState gs, IllusionBeat beat)
+    {
+        var texture = LoadIdaPose(beat.Pose);
+        if (texture == null || _idaIllusion == null)
             return;
 
-        Vector2 view = GetViewport().GetVisibleRect().Size;
-        float height = 150f + (float)_asideRandom.NextDouble() * 80f;
-        float width = height * texture.GetSize().X / Mathf.Max(texture.GetSize().Y, 1f);
-        float x = 40f + (float)_asideRandom.NextDouble() * Mathf.Max(view.X - width - 80f, 1f);
-        float y = view.Y - height - (70f + (float)_asideRandom.NextDouble() * 110f);
-        _idaIllusion.Position = new Vector2(x, y);
-        _idaIllusion.Size = new Vector2(width, height);
-        _idaIllusion.Visible = true;
-        _idaIllusion.Modulate = new Color(0.86f, 0.9f, 1f, 0f);
+        _idaIllusion.Texture = texture;
+        _idaIllusion.Rotation = 0f;
 
-        float peak = Mathf.Clamp(0.85f * Settings.CorruptionIntensityOrDefault(), 0.15f, 0.9f);
+        Vector2 view = GetViewport().GetVisibleRect().Size;
+        float scale = view.Y / 648f; // beats are authored at 1152x648
+        float height = beat.Height * scale;
+        float width = height * texture.GetSize().X / Mathf.Max(texture.GetSize().Y, 1f);
+        float x = beat.CenterX * view.X - width / 2f;
+        float y = beat.FeetY * view.Y - height;
+
+        // Each mood is a way of being barely there: a memory of her; a
+        // breath of fog with her shape in it; her outline with the light
+        // gone out of it; or — in corruption — her, nearer and wrong.
+        (Color tint, float peak, float fadeIn, float hold, float fadeOut) look = beat.Mood switch
+        {
+            IllusionMood.Foggy => (new Color(0.82f, 0.87f, 0.96f), 0.42f, 0.8f, 2.6f, 1.0f),
+            IllusionMood.Silhouette => (new Color(0.04f, 0.045f, 0.07f), 0.8f, 0.5f, 1.9f, 0.6f),
+            IllusionMood.Gloomy => (new Color(0.52f, 0.57f, 0.7f), 0.95f, 0.12f, 1.15f, 0.2f),
+            _ => (new Color(1f, 0.97f, 0.9f), 0.78f, 0.45f, 2.1f, 0.7f),
+        };
         bool still = Settings.ReduceMotionOrDefault();
-        AudioManager.Play(Sfx.CorruptionWhisper, -14f, 0.9f + (float)_asideRandom.NextDouble() * 0.2f);
+        float peak = look.peak;
+        if (beat.Mood == IllusionMood.Gloomy)
+            peak *= 0.55f + 0.45f * Settings.CorruptionIntensityOrDefault();
+        float fadeIn = still ? Mathf.Max(look.fadeIn, 0.4f) : look.fadeIn;
+
+        if (beat.OnceFlag != null)
+            gs.SetFlag(beat.OnceFlag);
+
+        _idaIllusion.Size = new Vector2(width, height);
+        _idaIllusion.PivotOffset = new Vector2(width / 2f, 0f); // a sway hangs from above
+        _idaIllusion.Position = beat.Motion == IllusionMotion.RunAcross
+            ? new Vector2(-width - 12f, y)
+            : new Vector2(x, y);
+        _idaIllusion.Modulate = new Color(look.tint, 0f);
+        _idaIllusion.Visible = true;
+
+        switch (beat.Mood)
+        {
+            case IllusionMood.Gloomy:
+                AudioManager.Play(Sfx.CorruptionWhisper, -13f, 0.72f);
+                AudioManager.Play(Sfx.CorruptionGlitch, -17f, 0.8f);
+                break;
+            case IllusionMood.Silhouette:
+                AudioManager.Play(Sfx.CorruptionWhisper, -24f, 0.9f);
+                break;
+            case IllusionMood.Foggy:
+                AudioManager.Play(Sfx.CorruptionWhisper, -22f, 0.98f);
+                break;
+            default:
+                AudioManager.Play(Sfx.CorruptionWhisper, -20f, 1.05f);
+                break;
+        }
 
         _idaIllusionTween?.Kill();
+        _idaMotionTween?.Kill();
+        _idaBobTween?.Kill();
         _idaIllusionTween = CreateTween();
-        _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, still ? 0.4f : 0.12f);
-        _idaIllusionTween.TweenInterval(still ? 0.9f : 0.65f);
-        if (!still)
-        {
-            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak * 0.35f, 0.05f);
-            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, 0.05f);
-            _idaIllusionTween.TweenInterval(0.3f);
-        }
-        _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", 0f, 0.35f);
-        _idaIllusionTween.TweenCallback(Callable.From(() =>
-        {
-            if (_idaIllusion != null)
-            {
-                _idaIllusion.Visible = false;
-                _idaIllusion.Modulate = new Color(0.86f, 0.9f, 1f, 0f);
-            }
-        }));
 
-        // Mara reacts — startled out loud the first time, fraying after.
+        if (beat.Motion == IllusionMotion.RunAcross)
+        {
+            float runSeconds = still ? 3.2f : 2.3f;
+            _idaMotionTween = CreateTween();
+            _idaMotionTween.TweenProperty(_idaIllusion, "position:x", view.X + 12f, runSeconds);
+            if (!still)
+            {
+                _idaBobTween = CreateTween();
+                _idaBobTween.SetLoops();
+                _idaBobTween.TweenProperty(_idaIllusion, "position:y", y - 7f, 0.17f);
+                _idaBobTween.TweenProperty(_idaIllusion, "position:y", y, 0.17f);
+            }
+            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, 0.35f);
+            _idaIllusionTween.TweenInterval(Mathf.Max(runSeconds - 0.75f, 0.1f));
+            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", 0f, 0.4f);
+        }
+        else
+        {
+            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, fadeIn);
+            if (beat.Mood == IllusionMood.Gloomy && !still)
+            {
+                _idaMotionTween = CreateTween();
+                _idaMotionTween.TweenProperty(_idaIllusion, "position:x", x + 3f, 0.05f);
+                _idaMotionTween.TweenProperty(_idaIllusion, "position:x", x - 2f, 0.05f);
+                _idaMotionTween.TweenProperty(_idaIllusion, "position:x", x, 0.06f);
+                _idaIllusionTween.TweenInterval(look.hold * 0.45f);
+                _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak * 0.3f, 0.05f);
+                _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, 0.06f);
+                _idaIllusionTween.TweenInterval(look.hold * 0.4f);
+                _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak * 0.45f, 0.04f);
+                _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, 0.05f);
+            }
+            else if (beat.Mood == IllusionMood.Foggy && !still)
+            {
+                // Fog breathes; it never sits at one opacity.
+                _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak * 0.72f, look.hold * 0.5f);
+                _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", peak, look.hold * 0.5f);
+            }
+            else
+            {
+                _idaIllusionTween.TweenInterval(look.hold);
+            }
+            _idaIllusionTween.TweenProperty(_idaIllusion, "modulate:a", 0f, look.fadeOut);
+
+            if (beat.Motion == IllusionMotion.Sway && !still)
+            {
+                _idaMotionTween = CreateTween();
+                _idaMotionTween.SetTrans(Tween.TransitionType.Sine);
+                _idaMotionTween.TweenProperty(_idaIllusion, "rotation_degrees", 2.4f, 0.9f);
+                _idaMotionTween.TweenProperty(_idaIllusion, "rotation_degrees", -2.4f, 1.8f);
+                _idaMotionTween.TweenProperty(_idaIllusion, "rotation_degrees", 0f, 0.9f);
+            }
+        }
+
+        _idaIllusionTween.TweenCallback(Callable.From(() => HideIdaIllusionNow()));
+
+        // Mara reacts — startled out loud the first time she ever sees her,
+        // then in the moment's own words, then fraying.
         if (!gs.HasFlag(IdaIllusionSeenFlag))
         {
             gs.SetFlag(IdaIllusionSeenFlag);
             ShowMaraAside("Wha— what was that?");
+        }
+        else if (!string.IsNullOrWhiteSpace(beat.Reaction))
+        {
+            ShowMaraAside(beat.Reaction);
+        }
+        else if (beat.Mood == IllusionMood.Gloomy)
+        {
+            ShowMaraAside(IdaGloomReactionLines[_idaGloomReactionIndex % IdaGloomReactionLines.Length]);
+            _idaGloomReactionIndex++;
         }
         else
         {
@@ -4250,7 +4703,7 @@ public partial class GameUI : CanvasLayer
                 _cutsceneImage.Texture = string.IsNullOrEmpty(shot.ImagePath)
                     ? null
                     : GD.Load<Texture2D>(shot.ImagePath);
-                _cutsceneCaption.Text = shot.Caption;
+                SetCutsceneCaption(shot.Caption);
 
                 _cutsceneTween?.Kill();
                 _cutsceneImage.PivotOffset = _cutsceneImage.Size / 2f;
