@@ -40,6 +40,7 @@ public partial class Dialogue : Control
     private string _fontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     private int _fontSize = 32;
     private bool _typingDone;
+    private Theme _labelTheme;
 
     public static bool IsInputBlocked => _inputBlockCount > 0;
     public static bool IsShowing => _activeCount > 0;
@@ -198,7 +199,8 @@ public partial class Dialogue : Control
         AddChild(_advanceIndicator);
 
         var font = GD.Load<FontFile>(_fontPath);
-        var theme = new Theme();
+        _labelTheme = new Theme();
+        var theme = _labelTheme;
         if (font != null)
             theme.SetFont("font", "Label", font);
         theme.SetFontSize("font_size", "Label", _fontSize);
@@ -291,6 +293,7 @@ public partial class Dialogue : Control
         {
             await dialogue.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
 
+            dialogue.FitBubbleToText();
             await dialogue.PlayFadeInAnimation(chainSkipped ? 0.05f : 0.3f);
             await dialogue.PlayTypewriterAnimation(chainSkipped);
             await dialogue.WaitForAdvance(durationInSeconds, chainSkipped);
@@ -306,6 +309,49 @@ public partial class Dialogue : Control
             _activeCount = Math.Max(0, _activeCount - 1);
             EndInputBlock();
         }
+    }
+
+    /// <summary>
+    /// Sizes the bubble plate to the line it is about to say. The plate used
+    /// to be one fixed height, so anything past two lines spilled off the
+    /// paper and out of the bubble entirely. Now the wrapped text is
+    /// measured with the real font first, the plate grows upward from its
+    /// bottom edge to hold it, and the font steps down only when the plate
+    /// would otherwise have to grow taller than a bubble should ever be.
+    /// Measuring a shade narrower than the label wraps to keeps the
+    /// estimate safely generous.
+    /// </summary>
+    private void FitBubbleToText()
+    {
+        if (_backgroundRect == null || _dialogueLabel == null)
+            return;
+
+        const float measureWidth = 1000f;
+        const float minBubbleHeight = 100f; // the plate's original height
+        const float maxBubbleHeight = 232f;
+        const float verticalPadding = 46f;
+
+        int size = _fontSize;
+        float textHeight = 0f;
+        var font = GD.Load<FontFile>(_fontPath);
+        if (font != null)
+        {
+            while (true)
+            {
+                textHeight = font.GetMultilineStringSize(
+                    _fullText, HorizontalAlignment.Center, measureWidth, size).Y;
+                if (textHeight + verticalPadding <= maxBubbleHeight || size <= 18)
+                    break;
+                size -= 2;
+            }
+        }
+
+        float bubbleHeight = Mathf.Clamp(
+            textHeight + verticalPadding, minBubbleHeight, maxBubbleHeight);
+        _backgroundRect.OffsetTop = _backgroundRect.OffsetBottom - bubbleHeight;
+        _dialogueLabel.OffsetTop = _dialogueLabel.OffsetBottom - bubbleHeight;
+        if (_labelTheme != null && size != _fontSize)
+            _labelTheme.SetFontSize("font_size", "Label", size);
     }
 
     private async Task NextFrame()
