@@ -34,7 +34,7 @@ public partial class Porch447 : MemoryRoomBase
     private enum SanityKind { None, Migraine, Flicker, Nausea }
 
     private static readonly Vector2 HandleBase = new(264, 278);
-    private const float HoldSecondsNeeded = 4f;
+    private const float HoldSecondsNeeded = 5f;
     private const float HoldRingRadius = 46f;
 
     private readonly RandomNumberGenerator _rng = new();
@@ -64,6 +64,13 @@ public partial class Porch447 : MemoryRoomBase
     private bool _sawMigraine;
     private bool _sawFlicker;
     private bool _sawNausea;
+
+    // From the window onward the nausea keeps its own schedule and
+    // can ride on top of whatever else her head is doing.
+    private float _nauseaTimer = 5f;
+    private float _nauseaLeft;
+
+    private bool NauseaOn => _nauseaLeft > 0f || _sanity == SanityKind.Nausea;
 
     protected override string RoomName => "Porch447";
     protected override string BackgroundPath => "res://assets/images/bgs/Porch_447_BG.png";
@@ -216,7 +223,9 @@ public partial class Porch447 : MemoryRoomBase
         _knockCount = 0;
         _knockStarted = false;
         _sanity = SanityKind.None;
-        _sanityTimer = _rng.RandfRange(6.5f, 9f);
+        _sanityTimer = _rng.RandfRange(5f, 7f);
+        _nauseaTimer = 5f;
+        _nauseaLeft = 0f;
         GameState.Instance?.Toast("Click the front door to knock: knock knock — a breath — knock knock knock.");
         QueueRedraw();
     }
@@ -236,11 +245,11 @@ public partial class Porch447 : MemoryRoomBase
                 if (!GodotObject.IsInstanceValid(this))
                     return;
                 _windowLitPhase = true;
-                _windowTimer = 2.4f;
+                _windowTimer = 1.9f;
                 _steadyElapsed = 0f;
                 _windowCatches = 0;
                 _ritual = RitualStage.Window;
-                GameState.Instance?.Toast("Click the lit window while its light is steady — three times seen. Not in the flicker.");
+                GameState.Instance?.Toast("Click the lit window while its light is steady — four times seen. Not in the flicker.");
             }
             else if (next == RitualStage.Hold)
             {
@@ -320,8 +329,8 @@ public partial class Porch447 : MemoryRoomBase
         float gap = (now - _lastKnockMsec) / 1000f;
         _lastKnockMsec = now;
         bool breath = _knockCount == 2;
-        bool ok = breath ? gap is >= 0.75f and <= 2.1f
-                         : gap is >= 0.16f and <= 0.95f;
+        bool ok = breath ? gap is >= 0.85f and <= 1.7f
+                         : gap is >= 0.16f and <= 0.75f;
         if (!ok)
         {
             _ = FailStageAsync("knock");
@@ -345,7 +354,7 @@ public partial class Porch447 : MemoryRoomBase
             if (win != null)
                 Hotspots.SpawnRipple(win.Center, new Color(1f, 0.88f, 0.55f));
             QueueRedraw();
-            if (_windowCatches >= 3)
+            if (_windowCatches >= 4)
                 _ = AdvanceStageAsync(RitualStage.Hold);
         }
         else
@@ -401,7 +410,7 @@ public partial class Porch447 : MemoryRoomBase
     private Vector2 EffectiveMouse()
     {
         Vector2 pos = GetGlobalMousePosition();
-        if (_sanity == SanityKind.Nausea)
+        if (NauseaOn)
             pos += _sway;
         return pos;
     }
@@ -410,9 +419,9 @@ public partial class Porch447 : MemoryRoomBase
     {
         double s = Time.GetTicksMsec() / 1000.0;
         var drift = new Vector2(
-            (float)System.Math.Sin(s * 0.6) * 8f,
-            (float)System.Math.Cos(s * 0.5) * 6f);
-        if (_sanity == SanityKind.Nausea)
+            (float)System.Math.Sin(s * 0.85) * 11f,
+            (float)System.Math.Cos(s * 0.75) * 8f);
+        if (NauseaOn)
             drift += _sway * 0.7f;
         return HandleBase + drift;
     }
@@ -422,13 +431,24 @@ public partial class Porch447 : MemoryRoomBase
     private void StartSanity()
     {
         SanityKind kind;
-        do { kind = (SanityKind)_rng.RandiRange(1, 3); }
-        while (kind == _lastSanity);
+        if (_ritual == RitualStage.Knock)
+        {
+            do { kind = (SanityKind)_rng.RandiRange(1, 3); }
+            while (kind == _lastSanity);
+        }
+        else
+        {
+            // Later stages: migraine and flicker alternate the main
+            // track; nausea rides its own schedule underneath.
+            kind = _lastSanity == SanityKind.Migraine ? SanityKind.Flicker
+                : _lastSanity == SanityKind.Flicker ? SanityKind.Migraine
+                : _rng.Randf() < 0.5f ? SanityKind.Migraine : SanityKind.Flicker;
+        }
         _sanity = kind;
         _lastSanity = kind;
         _sanityLeft = kind switch
         {
-            SanityKind.Migraine => 1.4f,
+            SanityKind.Migraine => 1.6f,
             SanityKind.Flicker => 1.1f,
             _ => 2.6f,
         };
@@ -466,29 +486,48 @@ public partial class Porch447 : MemoryRoomBase
     {
         _sanity = SanityKind.None;
         _sanityLeft = 0f;
-        _sanityTimer = _rng.RandfRange(6.5f, 10.5f);
+        _nauseaLeft = 0f;
+        _sanityTimer = _rng.RandfRange(4.5f, 7.5f);
         _sway = Vector2.Zero;
         Position = Vector2.Zero;
     }
 
     private void UpdateSanity(float dt)
     {
+        double s = Time.GetTicksMsec() / 1000.0;
+
+        // Nausea keeps its own schedule from the window onward and
+        // can ride underneath a migraine or a flicker.
+        if (_ritual is RitualStage.Window or RitualStage.Hold)
+        {
+            if (_nauseaLeft > 0f)
+                _nauseaLeft -= dt;
+            else
+            {
+                _nauseaTimer -= dt;
+                if (_nauseaTimer <= 0f)
+                {
+                    _nauseaLeft = 2.6f;
+                    _nauseaTimer = _rng.RandfRange(5f, 8.5f);
+                    AudioManager.Play(Sfx.CorruptionWhisper, -13f, 0.85f);
+                    if (!_sawNausea)
+                    {
+                        _sawNausea = true;
+                        GameState.Instance?.Toast("Nausea. The porch sways, and her aim with it. Aim by the small ring, not the hand.");
+                    }
+                }
+            }
+        }
+        if (NauseaOn)
+        {
+            _sway = new Vector2(
+                (float)System.Math.Sin(s * 0.9) * 15f,
+                (float)System.Math.Cos(s * 0.7) * 9f);
+        }
+
         if (_sanity != SanityKind.None)
         {
             _sanityLeft -= dt;
-            double s = Time.GetTicksMsec() / 1000.0;
-            if (_sanity == SanityKind.Nausea)
-            {
-                _sway = new Vector2(
-                    (float)System.Math.Sin(s * 0.9) * 15f,
-                    (float)System.Math.Cos(s * 0.7) * 9f);
-                Position = _sway * 0.55f;
-            }
-            else if (_sanity == SanityKind.Migraine && !Settings.ReduceMotionOrDefault())
-            {
-                Position = new Vector2(
-                    _rng.RandfRange(-3.5f, 3.5f), _rng.RandfRange(-2.5f, 2.5f));
-            }
             if (_sanityLeft <= 0f)
                 EndSanity();
         }
@@ -497,6 +536,21 @@ public partial class Porch447 : MemoryRoomBase
             _sanityTimer -= dt;
             if (_sanityTimer <= 0f)
                 StartSanity();
+        }
+
+        // One place decides where the room sits this frame.
+        if (_sanity == SanityKind.Migraine && !Settings.ReduceMotionOrDefault())
+        {
+            Position = new Vector2(
+                _rng.RandfRange(-3.5f, 3.5f), _rng.RandfRange(-2.5f, 2.5f));
+        }
+        else if (NauseaOn)
+        {
+            Position = _sway * 0.55f;
+        }
+        else
+        {
+            Position = Vector2.Zero;
         }
     }
 
@@ -534,14 +588,14 @@ public partial class Porch447 : MemoryRoomBase
                     if (_windowTimer <= 0f)
                     {
                         _windowLitPhase = false;
-                        _windowTimer = _rng.RandfRange(0.5f, 1.1f);
+                        _windowTimer = _rng.RandfRange(0.6f, 1.3f);
                     }
                 }
                 else if (_windowTimer <= 0f)
                 {
                     _windowLitPhase = true;
                     _steadyElapsed = 0f;
-                    _windowTimer = _rng.RandfRange(1.6f, 3.0f);
+                    _windowTimer = _rng.RandfRange(1.2f, 2.2f);
                 }
             }
             else if (_ritual == RitualStage.Hold)
@@ -560,7 +614,7 @@ public partial class Porch447 : MemoryRoomBase
                 }
                 else
                 {
-                    _holdProgress = Mathf.Max(0f, _holdProgress - dt * 1.6f);
+                    _holdProgress = Mathf.Max(0f, _holdProgress - dt * 2.2f);
                 }
             }
         }
@@ -626,9 +680,9 @@ public partial class Porch447 : MemoryRoomBase
                 {
                     DrawRect(win.Rect, new Color(0.01f, 0.012f, 0.03f, 0.82f), true);
                 }
-                for (int i = 0; i < 3; i++)
+                for (int i = 0; i < 4; i++)
                 {
-                    Vector2 pip = win.Center + new Vector2((i - 1) * 30f, 178f);
+                    Vector2 pip = win.Center + new Vector2((i - 1.5f) * 30f, 178f);
                     DrawCircle(pip, 6.5f, i < _windowCatches
                         ? new Color(1f, 0.84f, 0.45f, 0.98f)
                         : new Color(0.9f, 0.84f, 0.68f, 0.3f));
@@ -650,7 +704,7 @@ public partial class Porch447 : MemoryRoomBase
             DrawCircle(center, 4f, new Color(0.72f, 0.55f, 0.27f, 0.98f));
         }
 
-        if (_sanity == SanityKind.Nausea)
+        if (NauseaOn)
         {
             // Where her hand actually is, while the porch disagrees.
             Vector2 aim = EffectiveMouse();

@@ -16,7 +16,8 @@ using Godot;
 /// (the clock run to 4:47, the red book changed chairs, the letter
 /// vanished, the cup gone over). Name them all before the room goes
 /// and the evening steadies — and sets a little door key down on the
-/// side table, in the real room, to be picked up by hand. Run out of
+/// beside the globe, in the real room, to be picked up by hand.
+/// Run out of
 /// time and the memory does what strained memories do: it breaks.
 ///
 /// This is a standalone Node2D rather than a MemoryRoomBase room for
@@ -35,7 +36,7 @@ public partial class DifferenceInvestigation : Node2D
     private const string SolvedFlag = "difference_room2_solved";
     private const string DoorKeyFlag = "item_hall_key_door";
     private const string ArrivalHeardFlag = "difference_arrival_heard";
-    private const float CrumbleSeconds = 75f;
+    private const float CrumbleSeconds = 45f;
     private const float WrongClickTimeCost = 4f;
 
     // The painted fireplace's mouth, in 1152×648 design space — where
@@ -119,6 +120,8 @@ public partial class DifferenceInvestigation : Node2D
     private bool _broken;
     private bool _sawShatter;
     private bool _left;
+    private float _glitchTimer = 3f;
+    private float _glitchLeft;
     private bool _cursorOwned;
     private int _wrongClicks;
     private Vector2 _lastWrongPosition;
@@ -232,6 +235,19 @@ public partial class DifferenceInvestigation : Node2D
                 await Say("…Only something's off. I can feel it before I can see it, like a word said in the wrong order. Something here is not the way the photograph kept it.");
                 if (!StillHere())
                     return;
+
+                // Remembering this hard has a price, and it bills
+                // just behind the eye.
+                AudioManager.Play(Sfx.ScreenCrack2, -11f, 0.75f);
+                _lightTarget = 0.3f;
+                _glitchLeft = 0.55f;
+                await WaitSeconds(0.55f);
+                if (!StillHere())
+                    return;
+                _lightTarget = 1f;
+                await Say("—and there it is. Right behind the eye. The migraine that lives in this house with me. Breathe through it. It passes. It has manners like that. The room, on the other hand—");
+                if (!StillHere())
+                    return;
                 gs?.SetFlag(ArrivalHeardFlag, save: false);
             }
             else
@@ -322,8 +338,18 @@ public partial class DifferenceInvestigation : Node2D
                 _rumbleTimer -= dt;
                 if (_rumbleTimer <= 0f)
                 {
-                    _rumbleTimer = _rng.RandfRange(2.0f, 3.0f);
+                    _rumbleTimer = _rng.RandfRange(1.4f, 2.4f);
                     AudioManager.Play(Sfx.CrumbleRumble, -13f, _rng.RandfRange(0.82f, 1.0f));
+                }
+
+                // The migraine keeps touching the edges of the room:
+                // light stutters, the walls jump a frame sideways.
+                _glitchTimer -= dt;
+                if (_glitchTimer <= 0f)
+                {
+                    _glitchTimer = _rng.RandfRange(2.2f, 4.6f);
+                    _glitchLeft = _rng.RandfRange(0.14f, 0.3f);
+                    AudioManager.Play(Sfx.ScreenCrack3, -15f, _rng.RandfRange(0.8f, 1.1f));
                 }
 
                 if (_crumbleRemaining <= 0f)
@@ -334,6 +360,7 @@ public partial class DifferenceInvestigation : Node2D
         {
             Position = Vector2.Zero;
         }
+        _glitchLeft = Mathf.Max(0f, _glitchLeft - dt);
 
         if (_broken && !_left)
         {
@@ -359,7 +386,9 @@ public partial class DifferenceInvestigation : Node2D
             Position = Vector2.Zero;
             return;
         }
-        float amp = (1.2f + 3.4f * gone) * (1f - 0.13f * _found.Count);
+        float amp = (2.2f + 5.5f * gone) * (1f - 0.13f * _found.Count);
+        if (_glitchLeft > 0f)
+            amp *= 2.4f;
         Position = new Vector2(
             _rng.RandfRange(-amp, amp),
             _rng.RandfRange(-amp * 0.7f, amp * 0.7f));
@@ -549,7 +578,7 @@ public partial class DifferenceInvestigation : Node2D
             if (!StillHere())
                 return;
 
-            await Say("And on the little table between the chairs, where no key was a minute ago — a key. The room set it down like a held breath let out. He was right to trust the condition. Annoyingly, lovingly right.");
+            await Say("And beside the globe, where the letter used to live its ordinary life and no key was a minute ago — a key. The room set it down like a held breath let out. He was right to trust the condition. Annoyingly, lovingly right.");
             if (!StillHere())
                 return;
         }
@@ -564,7 +593,7 @@ public partial class DifferenceInvestigation : Node2D
             gs.NotifyPuzzleSolved();
             gs.SetFlag(SolvedFlag, save: false);
             gs.UnlockClue("difference_room");
-            gs.Toast("The memory held. A little door key is waiting on the side table in the sitting room.");
+            gs.Toast("The memory held. A little door key is waiting beside the globe in the sitting room.");
             gs.SaveGame("difference investigation solved");
         }
 
@@ -646,7 +675,17 @@ public partial class DifferenceInvestigation : Node2D
     {
         var screen = new Rect2(Vector2.Zero, new Vector2(1152, 648));
         if (_background != null)
+        {
             DrawTextureRect(_background, screen, false);
+            if (_glitchLeft > 0f && !Settings.ReduceMotionOrDefault())
+            {
+                float off = _rng.RandfRange(-9f, 9f);
+                DrawTextureRect(_background, new Rect2(new Vector2(off, 0), screen.Size), false,
+                    new Color(1f, 0.6f, 0.6f, 0.28f));
+                DrawTextureRect(_background, new Rect2(new Vector2(-off * 0.7f, 2f), screen.Size), false,
+                    new Color(0.55f, 0.75f, 1f, 0.22f));
+            }
+        }
         else
             DrawRect(screen, new Color(0.08f, 0.066f, 0.05f), true);
 
@@ -689,7 +728,8 @@ public partial class DifferenceInvestigation : Node2D
 
     private void DrawDarkness()
     {
-        float dark = (1f - Mathf.Clamp(_lightLevel, 0f, 1f)) * 0.88f;
+        float level = _glitchLeft > 0f ? Mathf.Min(_lightLevel, 0.5f) : _lightLevel;
+        float dark = (1f - Mathf.Clamp(level, 0f, 1f)) * 0.88f;
         if (dark <= 0.01f)
             return;
         DrawRect(new Rect2(Vector2.Zero, new Vector2(1152, 648)),

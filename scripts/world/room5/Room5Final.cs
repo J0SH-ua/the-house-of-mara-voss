@@ -727,7 +727,12 @@ public partial class Room5Final : MemoryRoomBase
 
     private async Task WaitForHandsFreeAsync()
     {
-        while ((Busy || Dialogue.IsShowing) &&
+        // Hands free means *free*: no dialogue, and nothing still
+        // rising in her palm on its way into the bag. The lamp's
+        // dying is a thing to be watched with both eyes, not read
+        // about afterwards over a held keepsake.
+        while ((Busy || Dialogue.IsShowing ||
+                (GameUI.Instance?.IsHeldMomentPending() ?? false)) &&
             GodotObject.IsInstanceValid(this) && IsInsideTree())
             await WaitSeconds(0.25f);
     }

@@ -98,6 +98,8 @@ public partial class AudioManager : Node
     private const string AmbienceGardenPath = SfxDir + "ambience_garden.wav";
     private const string AmbiencePorchPath = SfxDir + "ambience_porch.wav";
     private const string AmbienceBasementPath = SfxDir + "ambience_basement.wav";
+    private const string AmbienceDripsPath = SfxDir + "ambience_drips.wav";
+    private const string AmbienceVentAirPath = SfxDir + "ambience_vent_air.wav";
     public const string AmbienceRoomToneLoopPath = AmbiencePath;
     public const string AmbienceRainLoopPath = AmbienceRainPath;
     public const string AmbienceGardenLoopPath = AmbienceGardenPath;
@@ -449,7 +451,8 @@ public partial class AudioManager : Node
 
         bool puzzle = scene.Contains("puzzle");
         (string path, float volume) ambience =
-            scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("breaker_box") ? (AmbienceBasementPath, -14f)
+            scene.Contains("vent_crawl") ? (AmbienceVentAirPath, -13f)
+            : scene.Contains("basement") || scene.Contains("breaker_box") ? (AmbienceDripsPath, -13f)
             : scene.Contains("lockpick") ? (AmbiencePath, -20f)
             : scene.Contains("porch") || scene.Contains("bridge_repair") ? (AmbiencePorchPath, -16f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -15f)

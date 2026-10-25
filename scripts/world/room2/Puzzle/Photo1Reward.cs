@@ -22,7 +22,8 @@ public partial class Photo1Reward : Area2D
 {
 	private const string NextScenePath = "res://scenes/world/room_3.tscn";
 	private const string JourneyScenePath = "res://scenes/world/journey_to_room_3.tscn";
-	private const string DifferenceScenePath = "res://scenes/world/difference_investigation.tscn";
+	// The investigation itself is entered from the sitting room
+	// (Room2's wind beat), never straight from this drawer.
 	private const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
 	private const string FragmentText =
 		"She used to fall asleep in that chair and think it was the best thing in the world — " +
@@ -149,16 +150,19 @@ public partial class Photo1Reward : Area2D
 		await WindTakesTheRoomAsync();
 	}
 
-	/// <summary>The wind that ends every version of this moment: a gust
-	/// through a closed house, the fire out, the dark arriving — and
-	/// then the other room.</summary>
+	/// <summary>Every version of this moment ends in the real sitting
+	/// room. The wind itself belongs there — standing in front of the
+	/// actual fire while it goes out — so the drawer only raises the
+	/// weather's flag and puts Mara back in the room to meet it. (The
+	/// flag is unsaved on purpose: quit mid-beat and clicking the
+	/// photograph simply raises it again.)</summary>
 	private async System.Threading.Tasks.Task WindTakesTheRoomAsync()
 	{
-		AudioManager.Play(Sfx.WindGust, -8f);
-		await Dialogue.ShowText(this, "Wind — through a closed house. The fire just— gone. All right. All right. Wherever this is going, I know what the room is supposed to look like.", 5.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+		await Dialogue.ShowText(this, "Something about holding this makes the whole room feel watched. The room itself, then. Let me look at the room itself.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		if (!GodotObject.IsInstanceValid(this))
 			return;
-		SceneManager.ChangeScene(DifferenceScenePath);
+		GameState.Instance?.SetFlag("difference_wind_pending", save: false);
+		SceneManager.ChangeScene("res://scenes/world/room_2.tscn");
 	}
 
 	/// <summary>Hold the flipped photograph up to the light and study

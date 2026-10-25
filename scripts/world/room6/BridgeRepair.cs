@@ -72,6 +72,8 @@ public partial class BridgeRepair : Node2D
     private int _strikesOnCurrent;
     private int _falls;
     private float _lurch;
+    private float _plunge;
+    private bool _plunging;
     private bool _cursorOwned;
     private bool _hintedAim;
 
@@ -324,10 +326,18 @@ public partial class BridgeRepair : Node2D
             return;
         _busy = true;
         _falls++;
-        _lurch = 0.55f;
         _strikesOnCurrent = 0;
         try
         {
+            // Twice she catches the rail. The third time, the memory
+            // stops letting her.
+            if (_falls >= 3)
+            {
+                await FallCutsceneAsync();
+                return;
+            }
+
+            _lurch = 0.55f;
             AudioManager.Play(Sfx.HammerGlance, -6f);
             AudioManager.Play(Sfx.BridgeCreak, -5f, 0.9f);
             Dialogue.BeginInputBlock();
@@ -339,9 +349,6 @@ public partial class BridgeRepair : Node2D
             {
                 Dialogue.EndInputBlock();
             }
-            // Every fall is paid for in the only currency this house
-            // takes. Enough of them, and the memory breaks the
-            // ordinary way — nailed planks stay nailed regardless.
             GameState.Instance?.AddCorruption(2);
         }
         finally
@@ -349,6 +356,44 @@ public partial class BridgeRepair : Node2D
             _busy = false;
             if (StillHere())
                 QueueRedraw();
+        }
+    }
+
+    /// <summary>The fall the little catches were rehearsals for: the
+    /// world tips, the water takes her, and the memory breaks the
+    /// ordinary way. Nailed planks stay nailed; she wakes gathered
+    /// at the near bank with the falls forgiven.</summary>
+    private async Task FallCutsceneAsync()
+    {
+        Dialogue.BeginInputBlock();
+        try
+        {
+            AudioManager.Play(Sfx.HammerGlance, -5f);
+            AudioManager.Play(Sfx.BridgeCreak, -3f, 0.75f);
+            await Say("The plank goes— the whole world tips— the rail isn't—");
+            if (!StillHere())
+                return;
+
+            _plunging = true;
+            await WaitSeconds(0.95f);
+            if (!StillHere())
+                return;
+
+            AudioManager.Play(Sfx.TruthWaterSplash, -3f);
+            AudioManager.Play(Sfx.ScreenCrack1, -4f, 0.85f);
+            await Say("Cold. October cold, all the way down. And the memory—");
+            if (!StillHere())
+                return;
+
+            _falls = 0;
+            GameState.Instance?.AddCorruption(GameState.ShatterThreshold);
+            await WaitSeconds(1.4f);
+            _plunging = false;
+            _plunge = 0f;
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
         }
     }
 
@@ -434,6 +479,8 @@ public partial class BridgeRepair : Node2D
     public override void _Process(double delta)
     {
         _lurch = Mathf.Max(0f, _lurch - (float)delta);
+        if (_plunging)
+            _plunge = Mathf.MoveToward(_plunge, 1f, (float)delta / 0.85f);
         UpdateCursor();
         QueueRedraw();
     }
@@ -482,13 +529,16 @@ public partial class BridgeRepair : Node2D
 
     public override void _Draw()
     {
-        bool lurching = _lurch > 0.01f && !Settings.ReduceMotionOrDefault();
+        bool lurching = (_lurch > 0.01f && !Settings.ReduceMotionOrDefault()) || _plunge > 0.01f;
         if (lurching)
         {
-            float s = 7f * (_lurch / 0.55f);
-            DrawSetTransform(new Vector2(
-                _rng.RandfRange(-s, s), _rng.RandfRange(-s * 0.5f, s * 0.8f)),
-                _rng.RandfRange(-0.006f, 0.006f) * (_lurch / 0.55f), Vector2.One);
+            float s = _lurch > 0.01f && !Settings.ReduceMotionOrDefault() ? 7f * (_lurch / 0.55f) : 0f;
+            var offset = new Vector2(
+                _rng.RandfRange(-s, s), _rng.RandfRange(-s * 0.5f, s * 0.8f))
+                + new Vector2(0, _plunge * 310f);
+            float rot = _rng.RandfRange(-0.006f, 0.006f) * (s > 0f ? _lurch / 0.55f : 0f)
+                + _plunge * 0.13f;
+            DrawSetTransform(offset, rot, Vector2.One);
         }
 
         DrawRoad();
@@ -498,6 +548,9 @@ public partial class BridgeRepair : Node2D
 
         if (lurching)
             DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+        if (_plunge > 0.01f)
+            DrawRect(new Rect2(0, 0, 1152, 648),
+                new Color(0.004f, 0.01f, 0.016f, _plunge * 0.94f), true);
 
         DrawLeaveControl();
         DrawRect(new Rect2(0, 0, 1152, 22), new Color(0, 0, 0, 0.28f), true);

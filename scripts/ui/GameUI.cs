@@ -540,6 +540,7 @@ public partial class GameUI : CanvasLayer
     private PhotoCanvas _photoCanvas;
     private Action _photoClosedCallback;
     private Button _bagPhotoButton;
+    private Button _bagUseButton;
     private bool _memoryWarned;
 
     // Clarity-collapse countdown overlay (house taking the room back)
@@ -1425,14 +1426,17 @@ public partial class GameUI : CanvasLayer
             return;
 
         var gs = GameState.Instance;
-        string cacheKey = $"{SceneManager.CurrentScenePath}|{gs?.FurthestScenePath}";
+        bool darkTrek = gs != null && gs.HasFlag("blackout_active") && !gs.HasFlag("backup_power_on");
+        string cacheKey = $"{SceneManager.CurrentScenePath}|{gs?.FurthestScenePath}|{(darkTrek ? 1 : 0)}";
         if (cacheKey != _forwardCacheKey)
         {
             _forwardCacheKey = cacheKey;
             if (gs != null && gs.TryGetForwardScene(out string target))
             {
                 _forwardTargetPath = target;
-                _forwardButton.Text = $"Return to {ForwardSceneName(target)} \u2192";
+                _forwardButton.Text = darkTrek
+                    ? "Next Room \u2192"
+                    : $"Return to {ForwardSceneName(target)} \u2192";
             }
             else
             {
@@ -2094,6 +2098,68 @@ public partial class GameUI : CanvasLayer
 
     public bool IsPhotoOpen => _photoPanel?.Visible ?? false;
 
+    // --------------------------------------------------------- negatives
+
+    private static string NegativesHeldHereFlag()
+    {
+        string path = SceneManager.CurrentScenePath ?? string.Empty;
+        int slash = path.LastIndexOf('/');
+        string file = slash >= 0 ? path.Substring(slash + 1) : path;
+        return "negatives_held_" + file.Replace(".tscn", string.Empty);
+    }
+
+    /// <summary>The trunk's negatives, finally good for something:
+    /// held to a light, once in any place, they steady her — a
+    /// little corruption undone, a breath of Clarity back. Memory
+    /// first aid, rationed by geography so it stays a kindness
+    /// rather than a system to farm.</summary>
+    private async Task UseNegativesAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || !gs.HasFlag("basement_negatives_taken"))
+            return;
+        string flag = NegativesHeldHereFlag();
+        if (gs.HasFlag(flag))
+        {
+            ShowToast("Already held to this light. The reversed weather has said its piece here.");
+            return;
+        }
+        gs.SetFlag(flag, save: false);
+        CloseBag(backToPause: false);
+
+        string[] lines =
+        [
+            "Held to the light, the negatives burn backwards: dark faces, bright grass, the canal gone white as bone. Two girls at the edge of an ordinary afternoon. Unprinted isn't unloved. Some of it was only too much, that year, to look at straight.",
+            "Reversed weather. Ida mid-laugh, black against a burning garden. She never saw these. Neither did Mum, in the end. I'm the only one left who looks — so I look.",
+            "The light through them turns everything honest-side-out: the dark things bright, the bright things bearable. Breathe. Even this can be held up and looked at.",
+        ];
+        int pick = 0;
+        foreach (char ch in flag)
+            pick += ch;
+
+        Dialogue.BeginInputBlock();
+        try
+        {
+            AudioManager.Play(Sfx.PageTurn, -10f, 0.9f);
+            await Dialogue.ShowText(this, lines[Math.Abs(pick) % lines.Length],
+                6f, 576f, 486f, fontSize: 24);
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+
+        gs.AddCorruption(-3);
+        bool clarity = gs.RefillClarity(1);
+        AudioManager.Play(Sfx.WordChime, -10f, 0.95f);
+        ShowToast(clarity
+            ? "Steadier. MEMORY eased, Clarity +1."
+            : "Steadier. MEMORY eased.");
+        gs.SaveGame("negatives held to the light");
+    }
+
     // ------------------------------------------------------- the warning
 
     /// <summary>When MEMORY runs low enough to break, the meter stops
@@ -2293,6 +2359,13 @@ public partial class GameUI : CanvasLayer
         _bagPhotoButton.Pressed += () => ShowPhotograph();
         detail.AddChild(_bagPhotoButton);
 
+        // One keepsake can be *used*: the unprinted negatives.
+        _bagUseButton = MakeButton("Hold them to the light");
+        _bagUseButton.Visible = false;
+        _bagUseButton.FocusMode = Control.FocusModeEnum.None;
+        _bagUseButton.Pressed += () => _ = UseNegativesAsync();
+        detail.AddChild(_bagUseButton);
+
         var scroll = new ScrollContainer
         {
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
@@ -2445,7 +2518,7 @@ public partial class GameUI : CanvasLayer
                 inserted
                     ? home ? "Standing in the hallway door's centre keyhole"
                            : $"Standing in the hallway door's {bed} keyhole — somebody else's bed"
-                    : "Left waiting on the sitting room's side table",
+                    : "Left waiting beside the sitting room globe",
                 "A little iron key whose bow is a miniature door, complete with its own impossible knob.\n\nIt waited behind the photograph until Mara remembered that room right while it crumbled around her. It belongs beneath the hallway door's little-door plate.",
                 inBag: !inserted));
         }
@@ -2530,7 +2603,7 @@ public partial class GameUI : CanvasLayer
                 "res://assets/images/core/items/negatives.png",
                 "IN BAG",
                 "Taken from the locked trunk below the house",
-                "A tin of negatives their mother never had printed. Held to a light they are all reversed weather: dark faces, bright grass, two girls at the edge of an ordinary afternoon.\n\nNot everything unprinted was unloved. Some of it was only too much, that year, to look at straight."));
+                "A tin of negatives their mother never had printed. Held to a light they are all reversed weather: dark faces, bright grass, two girls at the edge of an ordinary afternoon.\n\nNot everything unprinted was unloved. Some of it was only too much, that year, to look at straight. Held up and looked at, they steady her — once in any place (MEMORY eased, Clarity +1)."));
         }
 
         return items;
@@ -2573,6 +2646,7 @@ public partial class GameUI : CanvasLayer
         if (gs == null)
         {
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
+            if (_bagUseButton != null) _bagUseButton.Visible = false;
             _bagSummary.Text = "Nothing can be carried yet.";
             _bagDetailTitle.Text = "An empty bag";
             _bagDetailStatus.Text = "";
@@ -2818,6 +2892,19 @@ public partial class GameUI : CanvasLayer
         if (selectedItem != null)
         {
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
+            if (_bagUseButton != null)
+            {
+                bool negatives = selectedItem.Id == "basement_negatives_taken";
+                _bagUseButton.Visible = negatives;
+                if (negatives)
+                {
+                    bool usedHere = gs.HasFlag(NegativesHeldHereFlag());
+                    _bagUseButton.Disabled = usedHere;
+                    _bagUseButton.Text = usedHere
+                        ? "Already held to this light"
+                        : "Hold them to the light";
+                }
+            }
             _bagDetailTitle.Text = selectedItem.Name;
             _bagDetailStatus.Text = selectedItem.DetailStatus;
             _bagDetailBody.Text = selectedItem.Body;
@@ -2825,6 +2912,7 @@ public partial class GameUI : CanvasLayer
         else if (_bagSelectedIndex >= 0 && gs.IsShardRecovered(_bagSelectedIndex))
         {
             int index = _bagSelectedIndex;
+            if (_bagUseButton != null) _bagUseButton.Visible = false;
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = index == 1;
             _bagDetailTitle.Text = GameState.ShardTitles[index];
             _bagDetailStatus.Text = Globals.SHARDS_COLLECTED[index]
@@ -2838,6 +2926,7 @@ public partial class GameUI : CanvasLayer
         else
         {
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
+            if (_bagUseButton != null) _bagUseButton.Visible = false;
             _bagDetailTitle.Text = "Nothing carried yet";
             _bagDetailStatus.Text = "The bag is light.";
             _bagDetailBody.Text = "[i]Fragments Mara recovers will be kept here until the last room asks for them back. The Memory Journal (J) still keeps everything she has heard.[/i]";

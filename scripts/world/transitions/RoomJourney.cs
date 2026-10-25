@@ -33,7 +33,7 @@ public partial class RoomJourney : Node2D
     private const float HeldPalmY = 0.36f;
     private const float HeldHandAspect = 1.332f;
     private const float RecoverShakeSeconds = 0.55f;
-    private const float MigraineChance = 0.4f;
+    private const float MigraineChance = 0.65f;
     private const float FirstWalkingMonologueChance = 0.7f;
     private const float RepeatWalkingMonologueChance = 0.35f;
 

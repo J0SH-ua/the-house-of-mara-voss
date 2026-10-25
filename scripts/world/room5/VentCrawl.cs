@@ -64,8 +64,8 @@ public partial class VentCrawl : Node2D
 
     private readonly RandomNumberGenerator _rng = new();
     private int _kicksLanded;
-    private float _kickPhase;
-    private float _kickDir = 1f;
+    private float _ringRadius = 168f;
+    private float _ringDir = -1f;
     private float _grateShake;
     private int _kickMisses;
 
@@ -165,22 +165,26 @@ public partial class VentCrawl : Node2D
         TryKick();
     }
 
-    private float KickHalfWindow => _kicksLanded switch
+    // Each kick's gold ring sits at a different diameter — wide,
+    // narrower, narrowest — and the travelling ring breathes in and
+    // out between its stops. The boot lands when the two meet.
+    private float TargetRadius => _kicksLanded switch
     {
-        0 => 0.13f,
-        1 => 0.11f,
-        _ => 0.09f,
+        0 => 114f,
+        1 => 90f,
+        _ => 68f,
     };
+
+    private float KickTolerance => _kicksLanded >= 2 ? 9f : 11f;
 
     private void TryKick()
     {
-        float off = Mathf.Abs(_kickPhase - 0.5f);
-        if (off <= KickHalfWindow)
+        if (Mathf.Abs(_ringRadius - TargetRadius) <= KickTolerance)
         {
             _kicksLanded++;
             _grateShake = 0.35f;
-            _kickPhase = 0f;
-            _kickDir = 1f;
+            _ringRadius = 168f;
+            _ringDir = -1f;
             AudioManager.Play(Sfx.VentKick, -3f, 0.95f + _kicksLanded * 0.06f);
             if (_kicksLanded >= 3)
             {
@@ -221,8 +225,8 @@ public partial class VentCrawl : Node2D
                 return;
             _stage = CrawlStage.Kicking;
             _kicksLanded = 0;
-            _kickPhase = 0f;
-            _kickDir = 1f;
+            _ringRadius = 168f;
+            _ringDir = -1f;
         }
         finally
         {
@@ -301,10 +305,10 @@ public partial class VentCrawl : Node2D
         }
         else if (_stage == CrawlStage.Kicking && !blocked)
         {
-            float speed = 0.55f + 0.2f * _kicksLanded;
-            _kickPhase += _kickDir * speed * dt;
-            if (_kickPhase >= 1f) { _kickPhase = 1f; _kickDir = -1f; }
-            else if (_kickPhase <= 0f) { _kickPhase = 0f; _kickDir = 1f; }
+            float speed = 105f + 38f * _kicksLanded;
+            _ringRadius += _ringDir * speed * dt;
+            if (_ringRadius >= 168f) { _ringRadius = 168f; _ringDir = -1f; }
+            else if (_ringRadius <= 38f) { _ringRadius = 38f; _ringDir = 1f; }
             _gratePromptTimer -= dt;
         }
         else if (_stage == CrawlStage.Leaving && !Dialogue.IsShowing && !_left)
@@ -530,10 +534,9 @@ public partial class VentCrawl : Node2D
         {
             // The closing ring and the gold it has to meet.
             Vector2 center = new(576, 324);
-            float ringR = 150f - _kickPhase * 96f;
-            DrawArc(center, 102f, 0f, Mathf.Tau, 56,
+            DrawArc(center, TargetRadius, 0f, Mathf.Tau, 56,
                 new Color(1f, 0.84f, 0.45f, 0.85f), 3f, true);
-            DrawArc(center, ringR, 0f, Mathf.Tau, 56,
+            DrawArc(center, _ringRadius, 0f, Mathf.Tau, 56,
                 new Color(0.88f, 0.86f, 0.8f, 0.9f), 3f, true);
             for (int i = 0; i < 3; i++)
             {

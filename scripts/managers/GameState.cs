@@ -1042,6 +1042,32 @@ public partial class GameState : Node
     /// scene, whenever the player has stepped back behind it.</summary>
     public bool TryGetForwardScene(out string scenePath)
     {
+        // A house with no power is crossed the way she crossed it as a
+        // child: one dark room at a time, by hand along the walls.
+        // While the blackout lasts there is no teleporting "Return" —
+        // the forward button walks her to the *next* room only.
+        if (HasFlag("blackout_active") && !HasFlag("backup_power_on"))
+        {
+            string[] roomWalk =
+            [
+                "bedroom_prologue.tscn", "room_1.tscn", "room_2.tscn",
+                "room_3.tscn", "room_4.tscn", "room_5.tscn",
+            ];
+            int here = SceneProgressIndex(SceneManager.CurrentScenePath);
+            int furthest = SceneProgressIndex(_furthestScenePath);
+            foreach (string roomFile in roomWalk)
+            {
+                int idx = SceneProgressIndex(roomFile);
+                if (idx > here && idx <= furthest)
+                {
+                    scenePath = "res://scenes/world/" + roomFile;
+                    return true;
+                }
+            }
+            scenePath = string.Empty;
+            return false;
+        }
+
         scenePath = _furthestScenePath;
         if (string.IsNullOrWhiteSpace(scenePath))
             return false;
@@ -1156,7 +1182,7 @@ public partial class GameState : Node
         }
 
         if (file == "room_2.tscn" && HasFlag("difference_room2_solved") && !HasFlag("item_hall_key_door"))
-            return "Something small and metal is waiting where the evening set it down — on the side table, between the chairs.";
+            return "Something small and metal is waiting where the evening set it down — beside the globe, where the letter used to live.";
         if (file == "bridge_repair.tscn")
             return HasFlag("item_hammer_nails")
                 ? "Nail the bridge true again. Strike each nail as its glint crosses — a glanced blow can put her within the water's reach."
@@ -1170,7 +1196,7 @@ public partial class GameState : Node
                     : "Open the five-dial padlock. The kitchen remembers the combination.";
             case "room_2_puzzle.tscn":
                 if (IsShardRecovered(1) && HasFlag("difference_room2_solved") && !HasFlag("item_hall_key_door"))
-                    return "The drawer is just a drawer now. What the evening gave up is waiting on the side table in the sitting room.";
+                    return "The drawer is just a drawer now. What the evening gave up is waiting beside the globe in the sitting room.";
                 if (IsShardRecovered(1) && !HasFlag("difference_room2_solved"))
                     return "The photograph is Mara's. But its backing still nags at her — something small is taped behind what the house edited.";
                 if (Room2Puzzle.IsUnlocked && !IsShardRecovered(1))

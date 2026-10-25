@@ -30,6 +30,7 @@ public partial class JarCloseup : Node2D
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     private const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
     private const string CircleKeyIconPath = "res://assets/images/core/items/circle_key.png";
+    private const string HairpinIconPath = "res://assets/images/core/items/hairpin.png";
     private const string Room3ScenePath = "res://scenes/world/room_3.tscn";
     private const string JourneyScenePath = "res://scenes/world/journey_to_room_4.tscn";
     private const string HairpinFlag = "item_hairpin";
@@ -67,6 +68,8 @@ public partial class JarCloseup : Node2D
 
     private FontFile _font;
     private Texture2D _circleKeyTexture;
+    private Texture2D _hairpinTexture;
+    private float _pinIntro = 1f;
     private Label _helpLabel;
     private Label _leaveLabel;
 
@@ -95,6 +98,7 @@ public partial class JarCloseup : Node2D
     {
         _font = GD.Load<FontFile>(FontPath);
         _circleKeyTexture = GD.Load<Texture2D>(CircleKeyIconPath);
+        _hairpinTexture = GD.Load<Texture2D>(HairpinIconPath);
         _rng.Randomize();
 
         var gs = GameState.Instance;
@@ -231,6 +235,10 @@ public partial class JarCloseup : Node2D
 
     private void StartTapGame()
     {
+        // Out of the bag first — visibly. The pin travels up to the
+        // seal before the counting starts.
+        _pinIntro = 0f;
+        GameState.Instance?.Toast("Out of the bag: Mum's hairpin.");
         _tapsLanded = 0;
         _needleAngle = -Mathf.Pi / 2f;
         // Counter-clockwise first, the way she started every jar.
@@ -253,7 +261,7 @@ public partial class JarCloseup : Node2D
 
     private void TapJar()
     {
-        if (!_tapReady || _busy || _state != JarState.Sealed)
+        if (!_tapReady || _busy || _state != JarState.Sealed || _pinIntro < 1f)
             return;
 
         if (AngularDistance(_needleAngle, _targetAngle) <= Mathf.DegToRad(TapWindowDegrees))
@@ -380,7 +388,9 @@ public partial class JarCloseup : Node2D
         if (_lidPopped && _lidLift < 1f)
             _lidLift = Mathf.MoveToward(_lidLift, 1f, dt / 0.5f);
 
-        if (_state == JarState.Sealed && _hasHairpin && _tapReady && !_busy &&
+        if (_pinIntro < 1f)
+            _pinIntro = Mathf.MoveToward(_pinIntro, 1f, dt / 0.9f);
+        if (_state == JarState.Sealed && _hasHairpin && _tapReady && _pinIntro >= 1f && !_busy &&
             !Dialogue.IsShowing && !Dialogue.IsInputBlocked && !GetTree().Paused &&
             !(GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()))
         {
@@ -834,25 +844,43 @@ public partial class JarCloseup : Node2D
 
     private void DrawWorkingLine()
     {
-        // The hairpin under the rubber, travelling the rim the way her
-        // hand travels it: a steel line from the seal's heart to the
-        // working point, the pin's two legs astride the rim at the tip.
+        // Mum's hairpin itself, under the rubber, travelling the rim
+        // the way her hand travels it — first rising out of the bag
+        // to the seal, then turning with the work. A hairline of
+        // light from the seal's heart keeps the timing readable.
         Vector2 dir = Vector2.FromAngle(_needleAngle);
-        Vector2 side = new(-dir.Y, dir.X);
-        Vector2 hub = SealCenter + dir * 34f;
-        Vector2 tip = SealCenter + dir * (SealRadius + 6f);
-        var steel = new Color(0.88f, 0.86f, 0.8f, 0.98f);
-        var shadow = new Color(0.03f, 0.03f, 0.03f, 0.55f);
+        Vector2 tip = SealCenter + dir * SealRadius;
 
-        DrawCircle(SealCenter + new Vector2(1.5f, 2f), 7f, shadow);
-        DrawCircle(SealCenter, 7f, new Color(0.45f, 0.42f, 0.38f, 0.98f));
-        DrawLine(hub + new Vector2(1.5f, 1.5f), tip + new Vector2(1.5f, 1.5f), shadow, 4.5f, true);
-        DrawLine(hub, tip, steel, 3.5f, true);
+        Vector2 pinPos = tip;
+        float pinAngle = _needleAngle + Mathf.Pi / 2f;
+        if (_pinIntro < 1f)
+        {
+            float eased = _pinIntro * _pinIntro * (3f - 2f * _pinIntro);
+            pinPos = new Vector2(576f, 706f).Lerp(tip, eased);
+            pinAngle = Mathf.Lerp(-0.5f, pinAngle, eased);
+        }
+        else
+        {
+            DrawLine(SealCenter, tip, new Color(1f, 0.9f, 0.66f, 0.3f), 2f, true);
+            DrawCircle(SealCenter, 5f, new Color(0.45f, 0.42f, 0.38f, 0.9f));
+        }
 
-        Vector2 legBack = tip + dir * 16f;
-        DrawLine(tip + side * 4f, legBack + side * 4f, steel, 3f, true);
-        DrawLine(tip - side * 4f, legBack - side * 4f, steel, 3f, true);
-        DrawLine(legBack + side * 4f, legBack - side * 4f, steel, 3f, true);
+        if (_hairpinTexture != null)
+        {
+            DrawSetTransform(pinPos + new Vector2(2, 3), pinAngle, Vector2.One);
+            DrawTextureRect(_hairpinTexture, new Rect2(-44, -44, 88, 88), false,
+                new Color(0f, 0f, 0f, 0.35f));
+            DrawSetTransform(pinPos, pinAngle, Vector2.One);
+            DrawTextureRect(_hairpinTexture, new Rect2(-44, -44, 88, 88), false);
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+        }
+        else
+        {
+            var steel = new Color(0.88f, 0.86f, 0.8f, 0.98f);
+            Vector2 side = new(-dir.Y, dir.X);
+            DrawLine(pinPos + side * 4f, pinPos + dir * 22f + side * 4f, steel, 3f, true);
+            DrawLine(pinPos - side * 4f, pinPos + dir * 22f - side * 4f, steel, 3f, true);
+        }
 
         if (_tapFlash > 0f)
         {
