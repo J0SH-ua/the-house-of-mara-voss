@@ -18,11 +18,12 @@ using Godot;
 /// spot. A layer turned all the way home sets with the unlocked
 /// click of a little lock inside the lock, and stays set; deeper
 /// layers sit narrower. And the picks *break*: the roll holds
-/// seven, forcing a bind until the trembling tops out snaps one,
-/// and every snap costs Mara a little more of her nerve. Break
-/// them all and the panic takes the room — unless she has Clarity
-/// saved to spend the whole moment away and wake back at the
-/// flashlight, remembering nothing. That is what saving it is for.
+/// seven, forcing a bind until the trembling tops out snaps one.
+/// A snap costs the pick and Mara nerve — never MEMORY. Break
+/// them all and the panic takes the room, but the choice comes
+/// before the fall: spend every saved Clarity charge to rewind
+/// to the flashlight, remembering nothing, or let go and MEMORY
+/// empties all at once. That is what saving Clarity is for.
 ///
 /// The scene serves both locks in the under-house chain. Choice of
 /// target arrives through saved transient flags (with a progress-based
@@ -126,6 +127,10 @@ public partial class LockpickPuzzle : Node2D
     private float _panicLeft;
     private float _panicRumbleTimer;
     private bool _panicDecided;
+    // The fall has been chosen (or the seconds have run out), so
+    // the view keeps coming apart through her last line even
+    // though the state has already moved on to Leaving.
+    private bool _panicCollapse;
     // The snap's red weather: a hot flash at the edges of her
     // vision the moment steel goes, cooling over about a second.
     private float _snapFlashLeft;
@@ -249,7 +254,7 @@ public partial class LockpickPuzzle : Node2D
         _rewindLabel = MakeLabel(string.Empty,
             RewindRect.Position, RewindRect.Size, 21,
             new Color(0.97f, 0.93f, 0.82f, 0.98f));
-        _letGoLabel = MakeLabel("Let it take me",
+        _letGoLabel = MakeLabel("Let MEMORY go",
             LetGoRect.Position, LetGoRect.Size, 21,
             new Color(0.94f, 0.88f, 0.78f, 0.98f));
         _rewindLabel.Visible = false;
@@ -666,13 +671,11 @@ public partial class LockpickPuzzle : Node2D
         int broken = gs?.BrokenPickCount ?? 1;
         AudioManager.Play(Sfx.ScreenCrack1, -4f, 1.1f);
         AudioManager.Play(Sfx.LockpickTick, -6f, 0.45f);
-        // Every snap is a small panic, and the house keeps count —
-        // except the seventh. That one IS the emergency: the
-        // ten-second choice must get to happen, not be pre-empted
-        // by a corruption shatter landing on the same frame.
-        // Letting the seconds run out still falls, in FallToShatter.
-        if ((gs?.PicksLeft ?? 1) > 0)
-            gs?.AddCorruption(2);
+        // A snap costs a pick, not MEMORY — not the first, not
+        // the sixth, and not even the seventh in the instant it
+        // breaks. The seventh opens the ten-second choice first;
+        // MEMORY is drained only if Mara lets go or those
+        // seconds run out, in FallToShatterAsync.
         UpdateStatus();
         QueueRedraw();
         _ = SnapBeatAsync(broken);
@@ -694,7 +697,11 @@ public partial class LockpickPuzzle : Node2D
                 return;
             }
 
+            // The words come out through the shaking, and each
+            // emptier pocket in the roll makes the shaking worse.
+            Dialogue.BeginPanic(0.55f + 0.17f * broken);
             await Say(SnapLines[Mathf.Min(broken - 1, SnapLines.Length - 1)]);
+            Dialogue.EndPanic();
             if (!StillHere())
                 return;
             // A fresh pick out of the roll: unbent steel, whatever
@@ -711,17 +718,20 @@ public partial class LockpickPuzzle : Node2D
     }
 
     /// <summary>Seven gone. The room starts coming apart at the
-    /// glass, and she has ten seconds to decide what her saved
-    /// Clarity was for.</summary>
+    /// glass, but MEMORY does not move yet: she has ten seconds
+    /// to decide what her saved Clarity was for.</summary>
     private void BeginPanic()
     {
         _state = PickState.Panic;
         _panicLeft = PanicSeconds;
         _panicRumbleTimer = 0.2f;
         _panicDecided = false;
+        _panicCollapse = false;
         AudioManager.Play(Sfx.ScreenCrack2, -3f, 0.8f);
         AudioManager.Play(Sfx.CrumbleRumble, -6f, 0.8f);
-        Dialogue.Gust(2.2f, 1.1f);
+        // Sustained, not a two-second gust: every word she gets
+        // out during the choice shakes with her.
+        Dialogue.BeginPanic(1.9f);
 
         var gs = GameState.Instance;
         int clarity = gs?.ClarityCount ?? 0;
@@ -730,8 +740,8 @@ public partial class LockpickPuzzle : Node2D
         if (_helpLabel != null)
         {
             _helpLabel.Text = clarity > 0
-                ? "Her breath goes. The glass goes. Everything goes — unless the Clarity she saved can buy the whole moment back."
-                : "Her breath goes. The glass goes. And there is no Clarity left to buy any of it back with.";
+                ? "Her breath goes. The glass goes. Choose first — spend every saved Clarity charge to go back, or let MEMORY empty all at once."
+                : "Her breath goes. The glass goes. There is no Clarity left to buy the moment back; when the seconds end, MEMORY empties all at once.";
         }
         if (_rewindLabel != null)
         {
@@ -775,6 +785,7 @@ public partial class LockpickPuzzle : Node2D
             AudioManager.Play(Sfx.WordChime, -7f, 0.7f);
             AudioManager.Play(Sfx.BreathSlow, -9f, 0.8f);
             await Say("Back. Take it all — every clear thought I've been saving, take them — just give me back the bit where my hands hadn't—");
+            Dialogue.EndPanic();
             if (!StillHere())
                 return;
 
@@ -822,6 +833,7 @@ public partial class LockpickPuzzle : Node2D
         if (_state != PickState.Panic)
             return;
         _state = PickState.Leaving;
+        _panicCollapse = true;
         Dialogue.BeginInputBlock();
         try
         {
@@ -832,16 +844,19 @@ public partial class LockpickPuzzle : Node2D
         }
         finally
         {
+            Dialogue.EndPanic();
             Dialogue.EndInputBlock();
         }
         if (!StillHere())
             return;
 
-        // The memory does what strained memories do in this house.
-        // It shatters, it is gathered — and the gathering puts her
-        // father's roll back together too (GameState sees to it),
-        // so the lock can be faced again rather than never.
-        GameState.Instance?.AddCorruption(GameState.ShatterThreshold);
+        // Only now — after the rewind was refused or the choice
+        // ran out — does MEMORY move, and it does not trickle:
+        // the whole meter empties in one step. The gathering
+        // after the shatter puts her father's roll back together
+        // too (GameState sees to it), so the lock can be faced
+        // again rather than never.
+        GameState.Instance?.DrainMemoryToShatter();
     }
 
     private async Task SucceedAsync()
@@ -970,6 +985,7 @@ public partial class LockpickPuzzle : Node2D
 
     public override void _ExitTree()
     {
+        Dialogue.EndPanic();
         if (_leaveCursorOwned)
         {
             CursorHelper.EndHover(this);
@@ -991,20 +1007,43 @@ public partial class LockpickPuzzle : Node2D
 
     public override void _Draw()
     {
+        var screen = new Rect2(0, 0, 1152, 648);
+        DrawRect(screen, new Color(0.02f, 0.015f, 0.01f), true);
+
+        // Panic is in Mara eyes before it is in the glass: the
+        // painted lock and tools shake as one view, while the
+        // labels, clickable controls, cracks and choice boxes
+        // stay fixed to the viewport over them.
+        Vector2 viewOffset = PanicViewOffset();
+        bool viewShaking = viewOffset != Vector2.Zero;
+        if (viewShaking)
+            DrawSetTransform(viewOffset, 0f, Vector2.One);
+
+        var backgroundRect = viewShaking
+            ? new Rect2(-20, -20, 1192, 688)
+            : screen;
         if (_background != null)
-            DrawTextureRect(_background, new Rect2(0, 0, 1152, 648), false);
+            DrawTextureRect(_background, backgroundRect, false);
         else
-            DrawRect(new Rect2(0, 0, 1152, 648), new Color(0.08f, 0.07f, 0.06f), true);
+            DrawRect(backgroundRect, new Color(0.08f, 0.07f, 0.06f), true);
+
+        if (viewShaking)
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
         DrawRect(new Rect2(250, 8, 652, 122), new Color(0.03f, 0.025f, 0.02f, 0.68f), true);
         DrawRect(new Rect2(250, 8, 652, 122), new Color(0.72f, 0.58f, 0.34f, 0.55f), false, 1.5f);
         DrawRect(new Rect2(300, 548, 552, 58), new Color(0.03f, 0.025f, 0.02f, 0.68f), true);
         DrawRect(new Rect2(300, 548, 552, 58), new Color(0.72f, 0.58f, 0.34f, 0.45f), false, 1.5f);
 
-        DrawLeaveControl();
+        if (viewShaking)
+            DrawSetTransform(viewOffset, 0f, Vector2.One);
         DrawPlugAndTools();
         DrawLayerPips();
         DrawPickRoll();
+        if (viewShaking)
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+
+        DrawLeaveControl();
 
         // A held-breath vignette, in plain strips so it stays in the
         // game's chunky visual language.
@@ -1024,6 +1063,52 @@ public partial class LockpickPuzzle : Node2D
         }
     }
 
+    /// <summary>How far Mara view of the lock is knocked off
+    /// centre this frame. A snap jolts it; her lines afterwards
+    /// are spoken through a tremor that worsens with every lost
+    /// pick; the seventh turns it into a shaking that grows as
+    /// the ten seconds drain. Reduce Motion stills all of it.</summary>
+    private Vector2 PanicViewOffset()
+    {
+        if (Settings.ReduceMotionOrDefault())
+            return Vector2.Zero;
+
+        int broken = GameState.Instance?.BrokenPickCount ?? 0;
+        float amp = 0f;
+        if (_panicCollapse)
+        {
+            amp = 12f;
+        }
+        else if (_state == PickState.Panic)
+        {
+            float gone = 1f - Mathf.Clamp(_panicLeft / PanicSeconds, 0f, 1f);
+            amp = 5f + 8f * gone;
+        }
+        else if (_state == PickState.Broken)
+        {
+            amp = 2f + 0.75f * broken;
+        }
+        else if (_state == PickState.Rewinding)
+        {
+            amp = 3f * (1f - _rewindT);
+        }
+        else if (_state == PickState.Picking)
+        {
+            amp = 0.18f * broken + 3.2f * _stress;
+        }
+
+        amp += 6f * Mathf.Clamp(_snapFlashLeft / 0.9f, 0f, 1f);
+        if (amp <= 0.05f)
+            return Vector2.Zero;
+
+        double t = Time.GetTicksMsec() / 1000.0;
+        return new Vector2(
+            (float)((Math.Sin(t * 37.0) +
+                0.55 * Math.Sin(t * 61.0 + 1.7)) * amp * 0.62),
+            (float)((Math.Cos(t * 43.0 + 0.6) +
+                0.5 * Math.Sin(t * 71.0 + 2.3)) * amp * 0.38));
+    }
+
     /// <summary>The panic itself: a red held breath over everything,
     /// the screen's glass walking apart segment by segment, the
     /// two ways out of the next ten seconds, and the seconds.</summary>
@@ -1035,11 +1120,16 @@ public partial class LockpickPuzzle : Node2D
             ? 0.3f
             : 0.3f + 0.12f * (float)Math.Sin(Time.GetTicksMsec() / 120.0);
         DrawRect(screen, new Color(0.3f, 0.02f, 0.02f, 0.24f + 0.3f * gone), true);
+        DrawPanicTears(0.25f + 0.75f * gone);
         var edge = new Color(0.55f, 0.05f, 0.04f, pulse);
-        DrawRect(new Rect2(0, 0, 1152, 60), edge, true);
-        DrawRect(new Rect2(0, 588, 1152, 60), edge, true);
-        DrawRect(new Rect2(0, 0, 60, 648), edge, true);
-        DrawRect(new Rect2(1092, 0, 60, 648), edge, true);
+        float edgeDepth = 54f + 34f * gone +
+            (Settings.ReduceMotionOrDefault()
+                ? 0f
+                : 6f * (float)Math.Sin(Time.GetTicksMsec() / 120.0));
+        DrawRect(new Rect2(0, 0, 1152, edgeDepth), edge, true);
+        DrawRect(new Rect2(0, 648 - edgeDepth, 1152, edgeDepth), edge, true);
+        DrawRect(new Rect2(0, 0, edgeDepth, 648), edge, true);
+        DrawRect(new Rect2(1152 - edgeDepth, 0, edgeDepth, 648), edge, true);
 
         var bright = new Color(0.93f, 0.96f, 1f, 0.25f + 0.6f * gone);
         var faint = new Color(0.93f, 0.96f, 1f, 0.08f + 0.25f * gone);
@@ -1073,6 +1163,33 @@ public partial class LockpickPuzzle : Node2D
         DrawRect(rect, new Color(0.05f, 0.04f, 0.03f, live ? (hover ? 0.95f : 0.86f) : 0.6f), true);
         DrawRect(rect, new Color(0.82f, 0.68f, 0.45f, live ? (hover ? 1f : 0.65f) : 0.3f),
             false, hover ? 2.5f : 1.5f);
+    }
+
+    /// <summary>Her vision will not hold one picture: pale and
+    /// dark strips skate across it in plain chunky bands, each
+    /// with a darker twin a few pixels below, so the world looks
+    /// briefly doubled before it tears on.</summary>
+    private void DrawPanicTears(float severity)
+    {
+        if (severity <= 0f || Settings.ReduceMotionOrDefault())
+            return;
+
+        float strength = Mathf.Clamp(severity, 0f, 1f);
+        var tearRng = new RandomNumberGenerator();
+        tearRng.Seed = (ulong)(Time.GetTicksMsec() / 85);
+        int tears = 2 + Mathf.RoundToInt(4f * strength);
+        for (int i = 0; i < tears; i++)
+        {
+            float y = tearRng.RandfRange(0f, 648f);
+            float h = tearRng.RandfRange(2f, 5f + 10f * strength);
+            bool pale = tearRng.Randf() > 0.48f;
+            var tear = pale
+                ? new Color(0.92f, 0.94f, 0.96f, 0.05f + 0.11f * strength)
+                : new Color(0f, 0f, 0f, 0.08f + 0.14f * strength);
+            DrawRect(new Rect2(0, y, 1152, h), tear, true);
+            DrawRect(new Rect2(0, y + h + 2f, 1152, 2f),
+                new Color(0.35f, 0.02f, 0.02f, 0.08f + 0.12f * strength), true);
+        }
     }
 
     private void DrawLeaveControl()
@@ -1271,6 +1388,9 @@ public partial class LockpickPuzzle : Node2D
         int broken = GameState.Instance?.BrokenPickCount ?? 0;
         if (broken <= 0 || _state == PickState.Success)
             return;
+
+        if (_state == PickState.Broken || _panicCollapse)
+            DrawPanicTears(0.22f + 0.09f * broken);
 
         var line = new Color(0.93f, 0.96f, 1f, 0.1f + 0.045f * broken);
         var twin = new Vector2(1.5f, 1.5f);

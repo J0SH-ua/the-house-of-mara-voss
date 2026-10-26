@@ -1710,6 +1710,27 @@ public partial class GameState : Node
         }
     }
 
+    /// <summary>Empty MEMORY in one step and shatter it. This is
+    /// deliberately separate from ordinary corruption: a caller
+    /// that offers Mara a way back must let her choose it before
+    /// invoking the drain.</summary>
+    public void DrainMemoryToShatter()
+    {
+        if (Globals.Instance == null || _shattered)
+            return;
+
+        int need = ShatterThreshold - Globals.Instance.CORRUPTION_COUNT;
+        if (need > 0)
+        {
+            AddCorruption(need);
+            return;
+        }
+
+        _shattered = true;
+        EndCollapse(rescued: false, silent: true);
+        MemoryShattered?.Invoke();
+    }
+
     /// <summary>After the bad ending: pull the memory back from the brink —
     /// still Fractured (the house doesn't forget being dropped), a little
     /// Clarity to stand on, saved. Also un-latches the shatter.</summary>

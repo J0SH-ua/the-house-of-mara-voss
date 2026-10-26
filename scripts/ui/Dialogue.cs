@@ -75,6 +75,27 @@ public partial class Dialogue : Control
         _gustStrength = Mathf.Max(_gustStrength, strength);
     }
 
+    // Panic gets into the words differently from weather: not a
+    // passing lean, but a rapid, uneven tremor that stays with
+    // every line until the moment that caused it is over. The
+    // owner must end it; LockpickPuzzle also ends it on _ExitTree
+    // so the state can never leak into an unrelated conversation.
+    private static bool _panicActive;
+    private static float _panicStrength;
+
+    public static void BeginPanic(float strength = 1f)
+    {
+        _panicActive = true;
+        _panicStrength = Mathf.Clamp(
+            Mathf.Max(_panicStrength, strength), 0.1f, 2.2f);
+    }
+
+    public static void EndPanic()
+    {
+        _panicActive = false;
+        _panicStrength = 0f;
+    }
+
     // ------------------------------------------------------------ input hooks
 
     /// <summary>Called by GameUI's root-level _Input (always reachable, unlike
@@ -122,24 +143,38 @@ public partial class Dialogue : Control
         if (!Input.IsMouseButtonPressed(MouseButton.Left))
             _mouseReleasedSinceLineStart = true;
 
-        // Wind on the words: while a gust deadline stands, the bubble
-        // rides it — a fast shiver over a slower lean — and settles
-        // flat again as the gust dies.
+        // Wind and panic both get their hands on the words. A
+        // gust is a fast shiver over a slower lean, settling as
+        // its deadline dies. Panic is quicker, less even, and
+        // does not politely expire in the middle of a line: it
+        // trembles until its owner says the moment is over.
         ulong nowMsec = Time.GetTicksMsec();
+        double t = nowMsec / 1000.0;
+        Vector2 weatherOffset = Vector2.Zero;
         if (nowMsec < _gustUntilMsec)
         {
             float remain = (float)(_gustUntilMsec - nowMsec) / 1000f;
             float amp = Mathf.Min(1f, remain / 0.9f) * 8f * _gustStrength;
-            double t = nowMsec / 1000.0;
-            Position = new Vector2(
+            weatherOffset += new Vector2(
                 (float)(Math.Sin(t * 23.0) * amp + Math.Sin(t * 6.7) * amp * 1.7f),
                 (float)(Math.Sin(t * 31.0 + 1.3) * amp * 0.45f));
         }
-        else if (Position != Vector2.Zero)
+        else
         {
-            Position = Vector2.Zero;
             _gustStrength = 0f;
         }
+
+        if (_panicActive && !Settings.ReduceMotionOrDefault())
+        {
+            float amp = 6.5f * _panicStrength;
+            weatherOffset += new Vector2(
+                (float)((Math.Sin(t * 41.0) +
+                    0.6 * Math.Sin(t * 67.0 + 1.9) +
+                    0.35 * Math.Sin(t * 97.0)) * amp * 0.62),
+                (float)((Math.Sin(t * 53.0 + 0.7) +
+                    0.55 * Math.Cos(t * 79.0 + 2.1)) * amp * 0.5));
+        }
+        Position = weatherOffset;
 
         if (_advanceIndicator != null)
         {
