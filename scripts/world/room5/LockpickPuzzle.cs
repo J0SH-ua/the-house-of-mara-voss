@@ -78,7 +78,17 @@ public partial class LockpickPuzzle : Node2D
     private static readonly Rect2 RewindRect = new(216, 468, 350, 54);
     private static readonly Rect2 LetGoRect = new(586, 468, 350, 54);
     private const float PanicSeconds = 10f;
+    // A broken pick is only a broken pick until the roll is down
+    // to its last three. From there the panic presentation joins
+    // the mechanical strain: the shaking bubble, the red flinch,
+    // the tearing/cracking glass and the red edge pulse.
+    private const int PanicEffectsMaxPicksLeft = 3;
     private const string RewindJourneyScenePath = "res://scenes/world/lockpick_rewind.tscn";
+
+    private int PicksLeftNow => GameState.Instance?.PicksLeft ?? GameState.LockpickTotal;
+    private bool PanicEffectsActive => PicksLeftNow <= PanicEffectsMaxPicksLeft;
+    private int PanicEffectsDepth =>
+        Mathf.Clamp(PanicEffectsMaxPicksLeft - PicksLeftNow, 0, PanicEffectsMaxPicksLeft);
 
     // The screen's own glass, giving up while the choice runs out.
     private static readonly Vector2[][] PanicCracks =
@@ -662,15 +672,19 @@ public partial class LockpickPuzzle : Node2D
         _binding = false;
         _stress = 0f;
         _plugDegrees = CurrentLayerStart;
-        // The panic shows on the screen before it reaches her
-        // mouth: red at the edges of the world, then the words.
-        _snapFlashLeft = 0.9f;
 
         var gs = GameState.Instance;
         gs?.RegisterPickBroken();
         int broken = gs?.BrokenPickCount ?? 1;
-        AudioManager.Play(Sfx.ScreenCrack1, -4f, 1.1f);
+        // Every snap is steel going. Only once this break leaves
+        // three picks or fewer does the panic also show on the
+        // screen: red at the edges of the world and a crack in
+        // its glass, before the words arrive.
+        _snapFlashLeft = PanicEffectsActive ? 0.9f : 0f;
+        AudioManager.Play(Sfx.LockpickSnap, -5f, 1f);
         AudioManager.Play(Sfx.LockpickTick, -6f, 0.45f);
+        if (PanicEffectsActive)
+            AudioManager.Play(Sfx.ScreenCrack1, -4f, 1.1f);
         // A snap costs a pick, not MEMORY — not the first, not
         // the sixth, and not even the seventh in the instant it
         // breaks. The seventh opens the ten-second choice first;
@@ -697,11 +711,16 @@ public partial class LockpickPuzzle : Node2D
                 return;
             }
 
-            // The words come out through the shaking, and each
-            // emptier pocket in the roll makes the shaking worse.
-            Dialogue.BeginPanic(0.55f + 0.17f * broken);
+            // Mara still has a line for every snap. The words
+            // only come out through the dialogue bubble's panic
+            // shake once three picks or fewer remain, and each
+            // emptier pocket from there makes that shake worse.
+            bool panicDialogue = PanicEffectsActive;
+            if (panicDialogue)
+                Dialogue.BeginPanic(0.9f + 0.3f * PanicEffectsDepth);
             await Say(SnapLines[Mathf.Min(broken - 1, SnapLines.Length - 1)]);
-            Dialogue.EndPanic();
+            if (panicDialogue)
+                Dialogue.EndPanic();
             if (!StillHere())
                 return;
             // A fresh pick out of the roll: unbent steel, whatever
@@ -883,6 +902,29 @@ public partial class LockpickPuzzle : Node2D
         // too (GameState sees to it), so the lock can be faced
         // again rather than never.
         GameState.Instance?.DrainMemoryToShatter();
+    }
+
+    /// <summary>The shatter's gathering is finished and the roll
+    /// is whole again. This close-up, though, was left in its
+    /// non-interactive Leaving state by the fall: simply fading
+    /// back to it would strand Mara at a lock she can neither
+    /// work nor walk away from. Put her back in the room the
+    /// lock belongs to, where she can face it again on purpose.
+    /// Ordinary shatters during picking do not take this exit:
+    /// only the seventh-pick collapse arms it.</summary>
+    public void RecoverAfterShatter()
+    {
+        if (!_panicCollapse || !StillHere())
+            return;
+
+        _panicCollapse = false;
+        _snapFlashLeft = 0f;
+        Dialogue.EndPanic();
+
+        var gs = GameState.Instance;
+        if (gs != null)
+            ClearTargetFlags(gs);
+        ReturnFromLock();
     }
 
     private async Task SucceedAsync()
@@ -1112,16 +1154,18 @@ public partial class LockpickPuzzle : Node2D
     }
 
     /// <summary>How far Mara view of the lock is knocked off
-    /// centre this frame. A snap jolts it; her lines afterwards
-    /// are spoken through a tremor that worsens with every lost
-    /// pick; the seventh turns it into a shaking that grows as
-    /// the ten seconds drain. Reduce Motion stills all of it.</summary>
+    /// centre this frame. Ordinary binding strain stays in the
+    /// pick itself; the whole view only starts to tremor once
+    /// three picks or fewer remain. The seventh turns that into
+    /// a shaking that grows as the ten seconds drain. Reduce
+    /// Motion stills all of it.</summary>
     private Vector2 PanicViewOffset()
     {
         if (Settings.ReduceMotionOrDefault())
             return Vector2.Zero;
 
-        int broken = GameState.Instance?.BrokenPickCount ?? 0;
+        bool panicEffects = PanicEffectsActive;
+        int depth = PanicEffectsDepth;
         float amp = 0f;
         if (_panicCollapse)
         {
@@ -1134,7 +1178,7 @@ public partial class LockpickPuzzle : Node2D
         }
         else if (_state == PickState.Broken)
         {
-            amp = 2f + 0.75f * broken;
+            amp = panicEffects ? 2.4f + 1.1f * depth : 0f;
         }
         else if (_state == PickState.Rewinding)
         {
@@ -1142,7 +1186,7 @@ public partial class LockpickPuzzle : Node2D
         }
         else if (_state == PickState.Picking)
         {
-            amp = 0.18f * broken + 3.2f * _stress;
+            amp = panicEffects ? 0.65f + 0.45f * depth + 3.2f * _stress : 0f;
         }
 
         amp += 6f * Mathf.Clamp(_snapFlashLeft / 0.9f, 0f, 1f);
@@ -1309,11 +1353,12 @@ public partial class LockpickPuzzle : Node2D
             // The trembling is the durability gauge she was born
             // with: strain now, damage underneath it. A pick that
             // has been forced hard trembles worse at every later
-            // bind — and her hands themselves worsen with every
-            // pick already lost. No numbers anywhere; just shake.
+            // bind at any point in the roll. Her hands add their
+            // own panic nerves only once three picks or fewer
+            // remain. No numbers anywhere; just shake.
             float strain = Mathf.Max(_stress,
                 _binding ? _pickDamage * 0.9f : _pickDamage * 0.22f);
-            float nerves = 0.35f * (GameState.Instance?.BrokenPickCount ?? 0);
+            float nerves = PanicEffectsActive ? 0.7f + 0.45f * PanicEffectsDepth : 0f;
             float shake = Mathf.Max(0f, strain - 0.18f) * 9f + nerves;
             jitter = side * (float)Math.Sin(Time.GetTicksMsec() / 28.0) * shake;
         }
@@ -1426,23 +1471,25 @@ public partial class LockpickPuzzle : Node2D
         }
     }
 
-    /// <summary>What stays on the screen after each snap: one more
-    /// hairline in the glass for every broken pick, and a red
-    /// pulse at the edges of her vision that breathes faster the
-    /// emptier the roll gets. The panic is legible at a glance —
-    /// it just never becomes a number.</summary>
+    /// <summary>What stays on the screen once the roll is down
+    /// to its last three: one more hairline in the glass for
+    /// each further snap, and a red pulse at the edges of her
+    /// vision that breathes faster the emptier the roll gets.
+    /// Above that threshold a snap leaves only the broken steel
+    /// and Mara words. The panic never becomes a number.</summary>
     private void DrawEchoCracks()
     {
         int broken = GameState.Instance?.BrokenPickCount ?? 0;
-        if (broken <= 0 || _state == PickState.Success)
+        if (broken <= 0 || _state == PickState.Success || !PanicEffectsActive)
             return;
 
+        int depth = PanicEffectsDepth;
         if (_state == PickState.Broken || _panicCollapse)
-            DrawPanicTears(0.22f + 0.09f * broken);
+            DrawPanicTears(0.3f + 0.13f * depth);
 
-        var line = new Color(0.93f, 0.96f, 1f, 0.1f + 0.045f * broken);
+        var line = new Color(0.93f, 0.96f, 1f, 0.19f + 0.05f * depth);
         var twin = new Vector2(1.5f, 1.5f);
-        for (int c = 0; c < Mathf.Min(broken, PanicCracks.Length); c++)
+        for (int c = 0; c < Mathf.Min(depth + 1, PanicCracks.Length); c++)
         {
             var chain = PanicCracks[c];
             for (int i = 0; i < chain.Length - 1; i++)
@@ -1453,11 +1500,11 @@ public partial class LockpickPuzzle : Node2D
             }
         }
 
-        float pace = 460f - 36f * broken;
+        float pace = 390f - 45f * depth;
         float pulse = Settings.ReduceMotionOrDefault()
             ? 0.5f
             : 0.5f + 0.5f * (float)Math.Sin(Time.GetTicksMsec() / (double)pace);
-        var edge = new Color(0.55f, 0.05f, 0.04f, (0.05f + 0.022f * broken) * pulse + 0.02f * broken);
+        var edge = new Color(0.55f, 0.05f, 0.04f, (0.085f + 0.03f * depth) * pulse + 0.035f * depth);
         DrawRect(new Rect2(0, 0, 1152, 44), edge, true);
         DrawRect(new Rect2(0, 604, 1152, 44), edge, true);
         DrawRect(new Rect2(0, 0, 44, 648), edge, true);

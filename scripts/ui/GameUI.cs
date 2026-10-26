@@ -125,6 +125,10 @@ public partial class GameUI : CanvasLayer
     private Control _endingRoot;
     private TextureRect _endingImage;
     private ColorRect _endingFade;
+    private ColorRect _endingLidTop;
+    private ColorRect _endingLidBottom;
+    private Tween _endingLidTween;
+    private float _endingEyelidOpen = 1f;
     private Label _endingTitle;
     private Label _endingCaption;
     private Label _endingStats;
@@ -4900,6 +4904,13 @@ public partial class GameUI : CanvasLayer
         _shatterPlaying = false;
         RefreshHud();
         Hotspots.RefreshPersistent();
+
+        // A seventh-pick collapse leaves its close-up already
+        // on its way out. Fading back to that state would strand
+        // Mara there; the lock scene wakes her in its room
+        // instead, with the gathered roll whole again.
+        if (SceneManager.Instance?.CurrentScene is LockpickPuzzle lockpick)
+            lockpick.RecoverAfterShatter();
     }
 
     private void BuildEndingOverlay()
@@ -4925,6 +4936,41 @@ public partial class GameUI : CanvasLayer
         _endingFade = new ColorRect { Color = new Color(1, 1, 1, 0), MouseFilter = Control.MouseFilterEnum.Ignore };
         _endingFade.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _endingRoot.AddChild(_endingFade);
+
+        // Mara eyelids, borrowed from the first room: black
+        // bars closing from above and below over the still. They
+        // sit below the captions so her words stay readable even
+        // while her eyes are barely open.
+        _endingLidTop = new ColorRect
+        {
+            Color = Colors.Black,
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            AnchorLeft = 0,
+            AnchorRight = 1,
+            AnchorTop = 0,
+            AnchorBottom = 0,
+            OffsetLeft = 0,
+            OffsetRight = 0,
+            OffsetTop = 0,
+            OffsetBottom = 0,
+        };
+        _endingRoot.AddChild(_endingLidTop);
+        _endingLidBottom = new ColorRect
+        {
+            Color = Colors.Black,
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            AnchorLeft = 0,
+            AnchorRight = 1,
+            AnchorTop = 1,
+            AnchorBottom = 1,
+            OffsetLeft = 0,
+            OffsetRight = 0,
+            OffsetTop = 0,
+            OffsetBottom = 0,
+        };
+        _endingRoot.AddChild(_endingLidBottom);
 
         _endingTitle = MakeLabel(string.Empty, 54, new Color(0.9f, 0.78f, 0.56f));
         _endingTitle.HorizontalAlignment = HorizontalAlignment.Center;
@@ -5090,18 +5136,22 @@ public partial class GameUI : CanvasLayer
     /// <summary>Before the last conversation, they have to reach each
     /// other — and both ways go down before they get up: the
     /// migraine collects its price and Mara passes out either way.
-    /// If she chose to wake, she comes to under open sky, looks
-    /// around the garden, finds Ida leaning over her, and stands
-    /// to face her. If she chose the house, she comes to on wet
-    /// concrete in the rain and looks right, to where Ida stands
-    /// in it. First person throughout. Leaves the stage dark and
-    /// quiet for the conversation's own opening frame.</summary>
+    /// She comes back through her eyelids, as she did in the
+    /// first room. If she chose to wake, she opens them on sky,
+    /// looks around the garden, finds Ida leaning over her, and
+    /// stands to face her. If she chose the house, she opens
+    /// them on a dark rainy sky, looks left to nobody, then
+    /// right to where Ida stands. First person throughout.
+    /// Leaves the stage dark and quiet for the conversation's
+    /// own opening frame.</summary>
     private async System.Threading.Tasks.Task PlayEndingApproachAsync(
         string endingId,
         (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo)
     {
         _endingImage.PivotOffset = _endingImage.Size / 2f;
+        _endingImage.Position = Vector2.Zero;
         _endingImage.Modulate = new Color(1, 1, 1, 0);
+        SetEndingEyelids(1f);
 
         if (endingId == "waking")
             await WakingApproachAsync(convo);
@@ -5112,11 +5162,15 @@ public partial class GameUI : CanvasLayer
             return;
         _endingTween?.Kill();
         _endingTween = null;
+        _endingLidTween?.Kill();
+        _endingLidTween = null;
+        SetEndingEyelids(1f);
         _endingCaption.Text = string.Empty;
         _endingCaption.Modulate = new Color(1, 1, 1, 0);
         if (_endingSkipRequested)
             AudioManager.Instance?.StopAmbience();
         _endingImage.Modulate = new Color(1, 1, 1, 0);
+        _endingImage.Position = Vector2.Zero;
         _endingImage.Scale = Vector2.One * 1.03f;
     }
 
@@ -5159,12 +5213,132 @@ public partial class GameUI : CanvasLayer
         if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
             return;
         _endingImage.Texture = GD.Load<Texture2D>(texturePath);
+        _endingImage.Position = Vector2.Zero;
         _endingImage.Scale = Vector2.One * fromScale;
         _endingTween?.Kill();
         _endingTween = CreateTween();
         _endingTween.SetPauseMode(Tween.TweenPauseMode.Process);
         _endingTween.TweenProperty(_endingImage, "modulate:a", 1f, 0.7f);
         _endingTween.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * toScale, zoomSeconds);
+    }
+
+    private void SetEndingEyelids(float openFraction)
+    {
+        _endingEyelidOpen = Mathf.Clamp(openFraction, 0f, 1f);
+        float height = GetViewport().GetVisibleRect().Size.Y;
+        if (height <= 0f)
+            height = 648f;
+        float lidHeight = (1f - _endingEyelidOpen) * height * 0.5f;
+
+        if (_endingLidTop != null)
+        {
+            _endingLidTop.Visible = lidHeight > 0.5f;
+            _endingLidTop.OffsetBottom = lidHeight;
+        }
+        if (_endingLidBottom != null)
+        {
+            _endingLidBottom.Visible = lidHeight > 0.5f;
+            _endingLidBottom.OffsetTop = -lidHeight;
+        }
+    }
+
+    private async System.Threading.Tasks.Task EndingBlinkToAsync(float openFraction, float seconds)
+    {
+        if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
+            return;
+
+        float target = Mathf.Clamp(openFraction, 0f, 1f);
+        if (seconds <= 0f || Mathf.Abs(target - _endingEyelidOpen) < 0.001f)
+        {
+            SetEndingEyelids(target);
+            return;
+        }
+
+        _endingLidTween?.Kill();
+        _endingLidTween = CreateTween();
+        _endingLidTween.SetPauseMode(Tween.TweenPauseMode.Process);
+        _endingLidTween.TweenMethod(
+            Callable.From<float>(SetEndingEyelids),
+            _endingEyelidOpen,
+            target,
+            seconds);
+        await ToSignal(_endingLidTween, Tween.SignalName.Finished);
+    }
+
+    /// <summary>The first room taught the house how Mara wakes:
+    /// not all at once, but in fought-for openings that keep
+    /// almost closing again. Reduce Motion gets one clean
+    /// opening instead, just as it did under the ceiling.</summary>
+    private async System.Threading.Tasks.Task EndingWakeEyelidsAsync()
+    {
+        if (_endingSkipRequested)
+            return;
+        if (Settings.ReduceMotionOrDefault())
+        {
+            await EndingBlinkToAsync(1f, 0.9f);
+            return;
+        }
+
+        await EndingBeatAsync(0.55f);
+        if (_endingSkipRequested) return;
+        await EndingBlinkToAsync(0.25f, 0.28f);
+        await EndingBeatAsync(0.16f);
+        if (_endingSkipRequested) return;
+        await EndingBlinkToAsync(0.02f, 0.22f);
+        await EndingBeatAsync(0.22f);
+        if (_endingSkipRequested) return;
+        await EndingBlinkToAsync(0.55f, 0.3f);
+        await EndingBeatAsync(0.18f);
+        if (_endingSkipRequested) return;
+        await EndingBlinkToAsync(0.1f, 0.2f);
+        await EndingBeatAsync(0.26f);
+        if (_endingSkipRequested) return;
+        await EndingBlinkToAsync(1f, 0.45f);
+    }
+
+    /// <summary>Put the waking view behind closed eyes, start its
+    /// slow drift, then let Mara eyelids discover it.</summary>
+    private async System.Threading.Tasks.Task EndingWakeShotAsync(
+        string texturePath, float fromScale, float toScale, float zoomSeconds)
+    {
+        if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
+            return;
+
+        _endingTween?.Kill();
+        SetEndingEyelids(0f);
+        _endingImage.Texture = GD.Load<Texture2D>(texturePath);
+        _endingImage.Position = Vector2.Zero;
+        _endingImage.Scale = Vector2.One * fromScale;
+        _endingImage.Modulate = Colors.White;
+
+        _endingTween = CreateTween();
+        _endingTween.SetPauseMode(Tween.TweenPauseMode.Process);
+        _endingTween.TweenProperty(_endingImage, "scale", Vector2.One * toScale, zoomSeconds);
+
+        AudioManager.Play(Sfx.BreathSlow, -13f, 0.95f);
+        await EndingWakeEyelidsAsync();
+    }
+
+    /// <summary>Turn Mara head while she is still on the
+    /// ground. A positive offset moves the world right in her
+    /// view, which is what looking left does; negative is her
+    /// look to the right.</summary>
+    private async System.Threading.Tasks.Task EndingLookAsync(float xOffset, float seconds)
+    {
+        if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
+            return;
+
+        float targetX = Settings.ReduceMotionOrDefault() ? xOffset * 0.35f : xOffset;
+        var look = CreateTween();
+        look.SetPauseMode(Tween.TweenPauseMode.Process);
+        look.TweenProperty(
+                _endingImage,
+                "position",
+                new Vector2(targetX, _endingImage.Position.Y),
+                seconds)
+            .SetTrans(Tween.TransitionType.Cubic)
+            .SetEase(Tween.EaseType.InOut);
+        await ToSignal(look, Tween.SignalName.Finished);
     }
 
     /// <summary>The way into BOTH endings now: the memory's price
@@ -5211,23 +5385,16 @@ public partial class GameUI : CanvasLayer
         await EndingMigrainePassOutAsync(convo.Frames[2]);
         if (_endingSkipRequested) return;
 
-        // Waking the slow way. The game opened on a ceiling;
-        // it ends on sky. First she only looks at it, the way
-        // she stared at that ceiling — then her eyes move,
+        // Waking the slow way, through the same eyelids that
+        // opened on her childhood ceiling. The game opened
+        // looking up at plaster; it ends looking up at sky.
+        // First she only looks at it — then her eyes move,
         // then the one face in the world moves into her sky,
         // upside down the way faces are to someone on the
         // ground, and only then does standing up turn her
         // the right way round at last.
         AudioManager.Instance?.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -20f);
-        await EndingShotAsync("res://assets/images/bgs/Ending_Waking_Lap.png", 1.5f, 1.22f, 9f);
-        await EndingBeatAsync(0.9f);
-        if (_endingSkipRequested) return;
-        var blink = CreateTween();
-        blink.SetPauseMode(Tween.TweenPauseMode.Process);
-        blink.TweenProperty(_endingImage, "modulate:a", 0.25f, 0.28f);
-        blink.TweenProperty(_endingImage, "modulate:a", 1f, 0.5f);
-        AudioManager.Play(Sfx.BreathSlow, -13f, 0.95f);
-        await ToSignal(blink, Tween.SignalName.Finished);
+        await EndingWakeShotAsync("res://assets/images/bgs/Ending_Waking_Lap.png", 1.5f, 1.22f, 9f);
         if (_endingSkipRequested) return;
 
         await EndingCaptionAsync("Mara", "…sky. Not a ceiling. Sky, going pink, with the evening coming up through it.", 6.0f);
@@ -5262,15 +5429,25 @@ public partial class GameUI : CanvasLayer
         await EndingMigrainePassOutAsync("res://assets/images/bgs/Truth_Bridge.png");
         if (_endingSkipRequested) return;
 
-        // Up from the concrete: the world at cheek height, wet
-        // stone and dark, with the rain getting in everywhere.
-        _endingImage.Modulate = new Color(0.5f, 0.55f, 0.68f, 0f);
-        await EndingShotAsync("res://assets/images/bgs/Truth_Bridge.png", 1.22f, 1.16f, 9f);
-        await EndingCaptionAsync("Mara", "Cold. Wet. Concrete under my cheek, and the rain — how long was I—", 5.8f);
+        // Back through her eyelids, but onto the other sky:
+        // dark cloud and rain straight overhead, with nobody
+        // in it yet.
+        await EndingWakeShotAsync("res://assets/images/bgs/Ending_Kept_Rain_Sky.png", 1.28f, 1.16f, 12f);
+        if (_endingSkipRequested) return;
+        await EndingCaptionAsync("Mara", "Rain. A dark sky, all rain, straight over me. How long was I—", 5.8f);
         if (_endingSkipRequested) return;
 
-        // And to the right, standing in it: her.
-        _endingImage.Modulate = new Color(1, 1, 1, 0);
+        // Left first: the world slides the way a turned head
+        // makes it slide, and there is no one in it.
+        await EndingLookAsync(82f, 1.35f);
+        if (_endingSkipRequested) return;
+        await EndingCaptionAsync("Mara", "Left — more rain tearing out of the dark. Branches. Nobody.", 5.2f);
+        if (_endingSkipRequested) return;
+
+        // Then right, all the way across the empty sky, to
+        // where Ida is standing in it.
+        await EndingLookAsync(-82f, 1.5f);
+        if (_endingSkipRequested) return;
         await EndingShotAsync(convo.Frames[0], 1.18f, 1.07f, 12f);
         await EndingCaptionAsync("Mara", "—Ida?", 3.6f);
         AudioManager.Play(Sfx.PhotoPickup, -13f, 0.75f);
@@ -5305,6 +5482,8 @@ public partial class GameUI : CanvasLayer
         _endingCaption.Modulate = new Color(1, 1, 1, 0);
         if (_endingFade != null)
             _endingFade.Color = new Color(1, 1, 1, 0);
+        _endingImage.Position = Vector2.Zero;
+        SetEndingEyelids(1f);
         GetTree().Paused = true;
 
         var (imagePath, finalStillPath, musicPath, title, finalCaption, cards) = EndingData(endingId);
@@ -6049,12 +6228,16 @@ public partial class GameUI : CanvasLayer
     private static Color HeldTorchTint(float level, float alpha) =>
         new Color(level, level * 0.96f, level * 0.84f, alpha);
 
-    /// <summary>All blackout light for the held moment, in one
-    /// place. No bagged flashlight: near-black dim, no decorative
-    /// glow, hand and held thing cold silhouettes. Bagged
-    /// flashlight: the same dim, but the beam is the player's —
-    /// the mouse aims it, and the hand and held thing are only
-    /// as bright as the light actually landing on them.</summary>
+    /// <summary>All darkness light for the held moment, in one
+    /// place. The house blackout is one kind of dark; under the
+    /// house is another. The basement, duct and breaker box stay
+    /// flashlight places even after backup power returns to the
+    /// rooms above, just as their own world light does. No
+    /// bagged flashlight: near-black dim, no decorative glow,
+    /// hand and held thing cold silhouettes. Bagged flashlight:
+    /// the same dim, but the beam is the player's — the mouse
+    /// aims it, and the hand and held thing are only as bright
+    /// as the light actually landing on them.</summary>
     private void UpdateHeldTorchLighting(bool snapBeamToMouse = false)
     {
         if (_heldRoot == null || _heldHand == null || _heldIcon == null)
@@ -6063,15 +6246,19 @@ public partial class GameUI : CanvasLayer
         var gs = GameState.Instance;
         bool blackoutDark = gs != null && gs.HasFlag("blackout_active") &&
             !gs.HasFlag("backup_power_on");
-        bool torchLit = blackoutDark && FlashlightInBagForHeldBeam(gs);
+        string sceneFile = SceneFileName(SceneManager.CurrentScenePath);
+        bool underHouseDark = sceneFile is
+            "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn";
+        bool heldDark = blackoutDark || underHouseDark;
+        bool torchLit = heldDark && FlashlightInBagForHeldBeam(gs);
         _heldTorchLit = torchLit && _heldShowing;
 
         if (_heldDim != null)
-            _heldDim.Color = blackoutDark
+            _heldDim.Color = heldDark
                 ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
                 : new Color(0.02f, 0.015f, 0.01f, 0.62f);
         if (_heldGlow != null)
-            _heldGlow.Visible = !blackoutDark;
+            _heldGlow.Visible = !heldDark;
 
         if (_heldBeam != null)
         {
@@ -6092,7 +6279,7 @@ public partial class GameUI : CanvasLayer
 
         float handAlpha = _heldHand.Modulate.A;
         float iconAlpha = _heldIcon.Modulate.A;
-        if (!blackoutDark)
+        if (!heldDark)
         {
             _heldHand.Modulate = new Color(1f, 1f, 1f, handAlpha);
             _heldIcon.Modulate = new Color(1f, 1f, 1f, iconAlpha);

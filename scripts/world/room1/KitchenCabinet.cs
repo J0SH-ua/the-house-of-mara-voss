@@ -106,16 +106,9 @@ public partial class KitchenCabinet : Node2D
                 _doorSwing = 1f;
                 if (_helpLabel != null)
                     _helpLabel.Text = "Candles, matches, and a torch-shaped space. The cabinet has done its providing.";
-                await Say("…Huh.");
+                await Say("Huh. Feels like I've done this before? — Nevermind. I need to open the vent.");
                 if (!StillHere())
                     return;
-                await Say("I feel like I've done this before. This exact cupboard, this exact dark. Like I lost something small and steel and important — and the losing got… unhappened.");
-                if (!StillHere())
-                    return;
-                await Say("Nevermind. Torch in hand, picks in my pocket — seven, I just counted. Don't ask me why I counted. I need to open that vent. Slowly, this time. Like he taught me.");
-                if (!StillHere())
-                    return;
-                gsRewind.Toast("Back at the kitchen cabinet, certain she's stood here twice. The lock waits where she left it — and the roll is whole.");
                 return;
             }
 
