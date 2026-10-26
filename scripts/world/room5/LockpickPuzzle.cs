@@ -78,7 +78,7 @@ public partial class LockpickPuzzle : Node2D
     private static readonly Rect2 RewindRect = new(216, 468, 350, 54);
     private static readonly Rect2 LetGoRect = new(586, 468, 350, 54);
     private const float PanicSeconds = 10f;
-    private const string KitchenCabinetScenePath = "res://scenes/world/kitchen_cabinet.tscn";
+    private const string RewindJourneyScenePath = "res://scenes/world/lockpick_rewind.tscn";
 
     // The screen's own glass, giving up while the choice runs out.
     private static readonly Vector2[][] PanicCracks =
@@ -796,6 +796,7 @@ public partial class LockpickPuzzle : Node2D
             // turns itself un-done — and her own voice runs past
             // her ears in reverse, word over word, too fast to hold.
             _state = PickState.Rewinding;
+            GameUI.Instance?.SetMonochromeFlashback(1f);
             _rewindT = 0f;
             _rewindSnippet = -1;
             _rewindSnippetTimer = 0f;
@@ -812,15 +813,40 @@ public partial class LockpickPuzzle : Node2D
                 _rewindBigLabel.Visible = false;
             AudioManager.Play(Sfx.BreathSlow, -9f, 0.9f);
 
+            // Snapshot the attempt as it stands before unmaking
+            // it: the backwards run home shows these very things
+            // coming undone (lamps cooling, looks un-looked, the
+            // duct's far grille settling back into its frame).
+            bool fromBasement = _targetTrunk;
+            bool breakerWasOn = gs.HasFlag("backup_power_on");
+            bool ductWasOpen = fromBasement ||
+                gs.HasFlag("room5_vent_open") || gs.HasFlag("basement_entered");
+            int investigatedMask = BasementInvestigatedMask();
+
             gs.SpendAllClarityForRewind();
             gs.RestoreAllPicks("time rewound before the breaking");
             ClearTargetFlags(gs);
+            // The places rewind with the picks: duct shut and
+            // un-entered, the basement's investigated things
+            // un-investigated, and a thrown breaker un-thrown.
+            gs.ResetUnderHouseForLockpickRewind();
+            if (fromBasement)
+                gs.SetFlag(LockpickRewindJourney.FromBasementFlag, save: false);
+            else
+                gs.ClearFlag(LockpickRewindJourney.FromBasementFlag, save: false);
+            if (breakerWasOn)
+                gs.SetFlag(LockpickRewindJourney.BreakerWasOnFlag, save: false);
+            else
+                gs.ClearFlag(LockpickRewindJourney.BreakerWasOnFlag, save: false);
             // She does not remember the attempt. That is the mercy
             // and the price of it. The cabinet will ask her the
-            // rest ("I feel like I've done this before…").
+            // rest ("I feel like I've done this before…") — after
+            // she has watched the house run backwards to reach it.
             gs.SetFlag("lockpick_rewound", save: false);
             gs.SaveGame("clarity rewind from the lock");
-            SceneManager.ChangeScene(KitchenCabinetScenePath);
+            LockpickRewindJourney.Arm(
+                fromBasement, breakerWasOn, ductWasOpen, investigatedMask);
+            SceneManager.ChangeScene(RewindJourneyScenePath);
         }
         finally
         {
@@ -948,6 +974,22 @@ public partial class LockpickPuzzle : Node2D
         gs.ClearFlag("lockpick_origin_basement", save: false);
     }
 
+    /// <summary>Which of the basement's investigated things Mara had
+    /// already looked at on this attempt (bit 0 furnace, bit 1
+    /// preserve shelves, bit 2 toy crate) — captured before the
+    /// reset so the backwards run can show those looks closing.</summary>
+    private static int BasementInvestigatedMask()
+    {
+        string[] ids = ["Furnace", "PreserveShelves", "ToyCrate"];
+        int mask = 0;
+        for (int i = 0; i < ids.Length; i++)
+        {
+            if (RoomExamineTracker.GetClickedLayers("Basement", ids[i]) != null)
+                mask |= 1 << i;
+        }
+        return mask;
+    }
+
     private void UpdateStatus()
     {
         if (_statusLabel == null)
@@ -986,6 +1028,12 @@ public partial class LockpickPuzzle : Node2D
     public override void _ExitTree()
     {
         Dialogue.EndPanic();
+        // Hand the colour back on any exit that is not the rewind
+        // route's (the route scene re-arms the monochrome itself
+        // the moment it is added, before the next frame draws).
+        if (_state == PickState.Rewinding && GameUI.Instance != null &&
+            GodotObject.IsInstanceValid(GameUI.Instance))
+            GameUI.Instance.SetMonochromeFlashback(0f);
         if (_leaveCursorOwned)
         {
             CursorHelper.EndHover(this);

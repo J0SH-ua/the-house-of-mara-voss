@@ -269,6 +269,7 @@ public partial class BreakerBox : Node2D
                     return;
                 AudioManager.Play(Sfx.WordChime, -4f, 0.8f);
                 gs.SetFlag(PowerFlag, save: false);
+                gs.ClearFlag(GameState.RewoundBackupPowerResetFlag, save: false);
                 gs.ClearFlag("blackout_active", save: false);
                 await Say("THUMP. And then — a hum, low and certain, rising through the soles of my shoes. Three small green eyes open in the box. Kettle. The way through. Mum's chair, and the fire.");
                 if (!StillHere())

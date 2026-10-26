@@ -6437,6 +6437,12 @@ public partial class GameUI : CanvasLayer
         _corruptionMaterial?.SetShaderParameter("flashback", Mathf.Clamp(amount, 0f, 1f));
     }
 
+    /// <summary>The lockpick Clarity rewind is watched in true
+    /// black-and-white from the snapping lock all the way back to
+    /// the kitchen. It borrows the room-flash monochrome for that
+    /// one backwards run and hands the colour back on arrival.</summary>
+    public void SetMonochromeFlashback(float amount) => SetRoomFlashAmount(amount);
+
     private async Task WaitArrivalSeconds(float seconds)
     {
         await ToSignal(GetTree().CreateTimer(seconds, true), SceneTreeTimer.SignalName.Timeout);

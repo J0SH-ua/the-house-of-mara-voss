@@ -126,6 +126,7 @@ public partial class GameState : Node
         ["room_5.tscn"] = "Room5",
         ["apartment_now.tscn"] = "Room5",
         ["lockpick_puzzle.tscn"] = "Room5",
+        ["lockpick_rewind.tscn"] = "Room5",
         ["vent_crawl.tscn"] = "Room5",
         ["basement.tscn"] = "Room5",
         ["breaker_box.tscn"] = "Room5",
@@ -1033,6 +1034,7 @@ public partial class GameState : Node
             "flashback_landing.tscn" => "room_4.tscn",
             "apartment_now.tscn" => "room_5.tscn",
             "lockpick_puzzle.tscn" => "room_5.tscn",
+            "lockpick_rewind.tscn" => "room_5.tscn",
             "vent_crawl.tscn" => "room_5.tscn",
             "basement.tscn" => "room_5.tscn",
             "breaker_box.tscn" => "room_5.tscn",
@@ -1086,9 +1088,11 @@ public partial class GameState : Node
             "flashback_landing.tscn" => "Room4Flashback",
             "apartment_now.tscn" => "ApartmentNow",
             "basement.tscn" => "Basement",
-            // The lockpick close-up and vent are thresholds/puzzles, not
-            // rooms whose loose clicks should use a tracker-room penalty.
+            // The lockpick close-up, its Clarity rewind and the vent are
+            // thresholds/puzzles, not rooms whose loose clicks should
+            // use a tracker-room penalty.
             "lockpick_puzzle.tscn" => null,
+            "lockpick_rewind.tscn" => null,
             "vent_crawl.tscn" => null,
             // The investigation grades its own clicks; it is a memory
             // test, not a room of examinables to loose-click through.
@@ -1165,6 +1169,9 @@ public partial class GameState : Node
 
         string file = FileNameOf(path);
         string room = CurrentRoomName();
+
+        if (file == "lockpick_rewind.tscn")
+            return "Back through every place she crossed — until the kitchen cabinet, and the hand that knew it.";
 
         // While the house is out of power, every room has the same small
         // liturgy to finish: cabinet, flashlight, basement box, light.
@@ -1845,6 +1852,42 @@ public partial class GameState : Node
         return spent;
     }
 
+    /// <summary>Set while a Clarity rewind has deliberately un-thrown
+    /// the breaker. The old-save backfill must not infer "power long
+    /// restored" over the top of that reset; only throwing Father's
+    /// breaker again clears this guard.</summary>
+    public const string RewoundBackupPowerResetFlag = "lockpick_rewind_power_reset";
+
+    /// <summary>Roll the under-house attempt itself back with the
+    /// picks: the vent latch is shut, the duct has not been entered,
+    /// the basement's investigated things are un-investigated, and a
+    /// breaker already thrown is un-thrown (so the blackout it ended
+    /// is the blackout Mara wakes into again). What is already in
+    /// Mara's Bag is not revoked — the mercy rewinds the attempt and
+    /// the places it touched, not the things she is carrying.</summary>
+    public void ResetUnderHouseForLockpickRewind()
+    {
+        // Guard first: every clear below can notify listeners, and
+        // no progress inference gets to undo this reset mid-flight.
+        SetFlag(RewoundBackupPowerResetFlag, save: false);
+
+        ClearFlag("room5_vent_open", save: false);
+        ClearFlag("basement_entered", save: false);
+        ClearFlag("basement_seen", save: false);
+        ClearFlag("story_lesson_basement", save: false);
+        _roomsCompleted.Remove("Basement");
+        _hintLevelByRoom.Remove("Basement");
+        RoomExamineTracker.ResetProgress("Basement");
+
+        ClearFlag("backup_power_on", save: false);
+        ClearFlag("room5_power_restored_seen", save: false);
+        if (HasFlag("blackout_began"))
+            SetFlag("blackout_active", save: false);
+
+        ObjectiveChanged?.Invoke();
+        Logger.Info("[GameState] Under-house reset for the lockpick Clarity rewind: duct, basement investigates and backup power rewound.");
+    }
+
     // ------------------------------------------------------------- memory verbs
 
     public static string VerbDisplayName(MemoryVerb verb) => verb switch
@@ -2060,9 +2103,20 @@ public partial class GameState : Node
             !string.IsNullOrEmpty(CompletedEnding))
         {
             AddItem("blackout_began", null);
-            AddItem("backup_power_on", null);
-            if (HasFlag("blackout_active"))
-                ClearFlag("blackout_active", save: false);
+            // A Clarity rewind may have deliberately un-thrown the
+            // breaker after all that progress. That newer, explicit
+            // fact wins over this older-save inference until Mara
+            // sets and throws the box again herself.
+            if (!HasFlag(RewoundBackupPowerResetFlag))
+            {
+                AddItem("backup_power_on", null);
+                if (HasFlag("blackout_active"))
+                    ClearFlag("blackout_active", save: false);
+            }
+            else
+            {
+                AddItem("blackout_active", null);
+            }
         }
         // Power restored is the one fact that ends the dark, however the
         // flags arrived.
