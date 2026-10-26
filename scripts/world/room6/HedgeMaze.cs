@@ -1089,6 +1089,7 @@ public partial class HedgeMaze : Node2D
         float focal = ScreenWidth * 0.5f / Mathf.Tan(FieldOfView * 0.5f);
         float halfWidth = ScreenWidth * 0.5f / focal;
         float eyePixels = ProjectionScale * _eyeHeight;
+        Vector2 textureSize = new(_grassTexture.GetWidth(), _grassTexture.GetHeight());
 
         const int bands = 20;
         float bandHeight = (ScreenHeight - Horizon) / bands;
@@ -1113,10 +1114,10 @@ public partial class HedgeMaze : Node2D
             };
             var uvs = new Vector2[]
             {
-                new Vector2(farLeft.X * GrassTexScale, farLeft.Y * GrassTexScale),
-                new Vector2(farRight.X * GrassTexScale, farRight.Y * GrassTexScale),
-                new Vector2(nearRight.X * GrassTexScale, nearRight.Y * GrassTexScale),
-                new Vector2(nearLeft.X * GrassTexScale, nearLeft.Y * GrassTexScale),
+                Norm(new Vector2(farLeft.X * GrassTexScale, farLeft.Y * GrassTexScale), textureSize),
+                Norm(new Vector2(farRight.X * GrassTexScale, farRight.Y * GrassTexScale), textureSize),
+                Norm(new Vector2(nearRight.X * GrassTexScale, nearRight.Y * GrassTexScale), textureSize),
+                Norm(new Vector2(nearLeft.X * GrassTexScale, nearLeft.Y * GrassTexScale), textureSize),
             };
             float lightFar = SurfaceLight(depthFar);
             float lightNear = SurfaceLight(depthNear);
@@ -1272,6 +1273,7 @@ public partial class HedgeMaze : Node2D
 
         float vTop = 0f;
         float vBottom = wallTop * texScale;
+        Vector2 textureSize = new(texture.GetWidth(), texture.GetHeight());
         var points = new Vector2[]
         {
             new Vector2(screenX, top),
@@ -1281,10 +1283,10 @@ public partial class HedgeMaze : Node2D
         };
         var uvs = new Vector2[]
         {
-            new Vector2(uLeft, vTop),
-            new Vector2(uRight, vTop),
-            new Vector2(uRight, vBottom),
-            new Vector2(uLeft, vBottom),
+            Norm(new Vector2(uLeft, vTop), textureSize),
+            Norm(new Vector2(uRight, vTop), textureSize),
+            Norm(new Vector2(uRight, vBottom), textureSize),
+            Norm(new Vector2(uLeft, vBottom), textureSize),
         };
         DrawPolygon(points, new Color[] { shade, shade, shade, shade }, uvs, texture);
 
@@ -1335,6 +1337,7 @@ public partial class HedgeMaze : Node2D
             return 0f;
 
         float v = crown / groundLineHeight * HedgeTexScale;
+        Vector2 textureSize = new(_hedgeTexture.GetWidth(), _hedgeTexture.GetHeight());
         var points = new Vector2[]
         {
             new Vector2(screenX, top - crown),
@@ -1344,10 +1347,10 @@ public partial class HedgeMaze : Node2D
         };
         var uvs = new Vector2[]
         {
-            new Vector2(uLeft, 0f),
-            new Vector2(uRight, 0f),
-            new Vector2(uRight, v),
-            new Vector2(uLeft, v),
+            Norm(new Vector2(uLeft, 0f), textureSize),
+            Norm(new Vector2(uRight, 0f), textureSize),
+            Norm(new Vector2(uRight, v), textureSize),
+            Norm(new Vector2(uLeft, v), textureSize),
         };
         Color crownShade = shade;
         if (hit.Tile == 'T')
@@ -1370,6 +1373,7 @@ public partial class HedgeMaze : Node2D
             return;
 
         float baseScale = _hedgeBaseTexture.GetWidth() / 1.78f;
+        Vector2 textureSize = new(_hedgeBaseTexture.GetWidth(), _hedgeBaseTexture.GetHeight());
         var points = new Vector2[]
         {
             new Vector2(screenX, bottom - bandHeight),
@@ -1379,10 +1383,10 @@ public partial class HedgeMaze : Node2D
         };
         var uvs = new Vector2[]
         {
-            new Vector2(uLeft / HedgeTexScale * baseScale, 0f),
-            new Vector2(uRight / HedgeTexScale * baseScale, 0f),
-            new Vector2(uRight / HedgeTexScale * baseScale, _hedgeBaseTexture.GetHeight()),
-            new Vector2(uLeft / HedgeTexScale * baseScale, _hedgeBaseTexture.GetHeight()),
+            Norm(new Vector2(uLeft / HedgeTexScale * baseScale, 0f), textureSize),
+            Norm(new Vector2(uRight / HedgeTexScale * baseScale, 0f), textureSize),
+            Norm(new Vector2(uRight / HedgeTexScale * baseScale, textureSize.Y), textureSize),
+            Norm(new Vector2(uLeft / HedgeTexScale * baseScale, textureSize.Y), textureSize),
         };
         DrawPolygon(points, new Color[] { shade, shade, shade, shade }, uvs, _hedgeBaseTexture);
     }
@@ -1524,6 +1528,7 @@ public partial class HedgeMaze : Node2D
     {
         float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
         float vScale = _skyTexture.GetHeight() / Horizon;
+        Vector2 textureSize = new(_skyTexture.GetWidth(), _skyTexture.GetHeight());
         Color tint = new Color(0.92f, 0.96f, 1f, 1f);
 
         for (int column = 0; column < ColumnCount; column++)
@@ -1550,14 +1555,20 @@ public partial class HedgeMaze : Node2D
             };
             var uvs = new Vector2[]
             {
-                new Vector2(u0, vTop),
-                new Vector2(u1, vTop),
-                new Vector2(u1, vBottom),
-                new Vector2(u0, vBottom),
+                Norm(new Vector2(u0, vTop), textureSize),
+                Norm(new Vector2(u1, vTop), textureSize),
+                Norm(new Vector2(u1, vBottom), textureSize),
+                Norm(new Vector2(u0, vBottom), textureSize),
             };
             DrawPolygon(points, new Color[] { tint, tint, tint, tint }, uvs, _skyTexture);
         }
     }
+
+    /// <summary>Godot's polygons want their texture coordinates as a
+    /// fraction of the texture, not as a pixel in it.</summary>
+    private static Vector2 Norm(Vector2 pixelUv, Vector2 textureSize) => new(
+        pixelUv.X / Mathf.Max(textureSize.X, 1f),
+        pixelUv.Y / Mathf.Max(textureSize.Y, 1f));
 
     /// <summary>The flat night the sky was before it was painted.</summary>
     private void DrawFlatSky()
