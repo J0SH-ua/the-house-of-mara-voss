@@ -25,6 +25,10 @@ public partial class BlackoutOverlay : Control
     private static readonly string[] DarkenableScenes =
     [
         "room_1.tscn", "room_2.tscn", "room_3.tscn", "room_4.tscn", "room_5.tscn",
+        // The hallways between them lose their light too — the
+        // flashlight trek is walked now, both ways: silhouettes
+        // on the way to the kitchen, the beam on the way back.
+        "journey_to_room_2.tscn", "journey_to_room_3.tscn", "journey_to_room_4.tscn",
     ];
 
     private Vector2 _beamPosition = new(576, 324);

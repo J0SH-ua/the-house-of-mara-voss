@@ -324,6 +324,51 @@ public partial class RoomJourney : Node2D
             FootstepVolumeDb = -13f,
             FootstepIntervalSeconds = 0.84f,
         },
+        // The stretch of hallway past the brass door — walked both
+        // ways like every other leg now (hosted by the Room 4
+        // journey scene under pending ids). Half the blackout
+        // trek's road runs through here, so the lines keep their
+        // footing in the dark: no lamps, no weather, just carpet.
+        ["Room4ToRoom5"] = new JourneySpec
+        {
+            TexturePath = "res://assets/images/bgs/Journey_Hallway_Door.png",
+            Lines =
+            [
+                "Beyond my father's door, the hall stops pretending it ends. Carpet. Photographs with their faces to the wall. And at the end of it, a door I have been not-opening for twelve years.",
+                "One foot, then the other. The plan has held this long. It can hold a hallway.",
+            ],
+            RepeatLines = ["Past the brass door again. The hall measures me and lets me pass."],
+            RandomWalkingLines =
+            [
+                "The photographs keep facing the wall. I've stopped taking it personally.",
+                "Dad's keys sit quiet in their holes behind me. Good. Stay.",
+            ],
+            Focus = new Vector2(580f, 318f),
+            FinalScale = 1.7f,
+            TargetRect = new Rect2(372f, 12f, 410f, 620f),
+            Prompt = "Click the door to open it",
+            CameraSeconds = 6.8f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.84f,
+        },
+        ["Room5ToRoom4"] = new JourneySpec
+        {
+            TexturePath = "res://assets/images/bgs/Journey_Hallway_Door.png",
+            Lines =
+            [
+                "Back down the hall. The door with three locks keeps its side of the bargain. I keep mine: I walk.",
+            ],
+            RepeatLines = ["Down the hall again. It isn't getting longer. It's only honest about the distance."],
+            Focus = new Vector2(580f, 318f),
+            FinalScale = 1.7f,
+            TargetRect = new Rect2(372f, 12f, 410f, 620f),
+            Prompt = "Click the door to open it",
+            CameraSeconds = 6.2f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.84f,
+        },
         ["PorchToRoom6"] = new JourneySpec
         {
             TexturePath = "res://assets/images/bgs/Journey_Empty_Road.png",
@@ -1034,7 +1079,14 @@ public partial class RoomJourney : Node2D
         chip.ContentMarginTop = 4;
         chip.ContentMarginBottom = 4;
         _promptLabel.AddThemeStyleboxOverride("normal", chip);
-        AddChild(_promptLabel);
+        // The prompt is navigation, not scenery: it rides its own
+        // canvas layer just above the blackout's (layer 1), so the
+        // dark hallway journeys of the flashlight trek keep their
+        // "Hold W to walk" readable — HUD and dialogue already
+        // stay lit in the black by the same rule.
+        var promptLayer = new CanvasLayer { Name = "JourneyPrompt", Layer = 2 };
+        AddChild(promptLayer);
+        promptLayer.AddChild(_promptLabel);
     }
 
     private void SetHovering(bool hover)

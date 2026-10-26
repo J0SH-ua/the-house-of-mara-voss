@@ -92,7 +92,12 @@ public partial class JarCloseup : Node2D
 
     private bool TapeTaken => GameState.Instance?.IsShardRecovered(2) ?? false;
     private bool KeyTaken => GameState.Instance?.HasFlag(CircleKeyFlag) ?? false;
-    private bool JarOpened => (GameState.Instance?.HasFlag(JarOpenedFlag) ?? false) || TapeTaken;
+    // Open means the lid was actually worked off — nothing else.
+    // (This used to also accept "tape taken", which let any stray
+    // grant of shard 2 present the jar already open, puzzle and
+    // all skipped. The one proof the tape gives is handled as a
+    // migration in _Ready, below.)
+    private bool JarOpened => GameState.Instance?.HasFlag(JarOpenedFlag) ?? false;
 
     public override void _Ready()
     {
@@ -105,6 +110,12 @@ public partial class JarCloseup : Node2D
         _hasHairpin = gs?.HasFlag(HairpinFlag) ?? false;
         if (gs?.HasFlag(BareAttemptFlag) == true)
             _crackProgress = 1f;
+        // Migration, and the limit of what the tape proves: the
+        // tape has only ever been reachable inside an opened jar,
+        // so a save carrying it without the flag popped this lid
+        // in a design that didn't record the fact. Record it.
+        if (TapeTaken && gs?.HasFlag(JarOpenedFlag) != true)
+            gs?.SetFlag(JarOpenedFlag, save: false);
         if (JarOpened)
         {
             _lidPopped = true;

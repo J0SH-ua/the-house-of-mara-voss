@@ -124,14 +124,14 @@ public partial class SceneManager : Node
 	/// seen flags only pick first-vs-repeat lines and a shorter
 	/// road. Centralised here so that *how* she leaves — Leave
 	/// button, Step Back, an in-world arrow, a door — no longer
-	/// decides whether the walk happens. Never during the blackout,
-	/// when the dark house is crossed one room at a time instead.</summary>
+	/// decides whether the walk happens. The blackout is no
+	/// exception: the flashlight trek is walked too, both ways,
+	/// in the dark (the hallway journeys are in the blackout
+	/// overlay's scope, silhouettes outbound, beam homeward).</summary>
 	private static string ApplyFirstDepartureJourney(string scenePath)
 	{
 		var gs = GameState.Instance;
 		if (gs == null)
-			return scenePath;
-		if (gs.HasFlag("blackout_active") && !gs.HasFlag("backup_power_on"))
 			return scenePath;
 
 		string from = FileNameOf(CurrentScenePath);
@@ -152,10 +152,27 @@ public partial class SceneManager : Node
 		if (journey != null)
 			return "res://scenes/world/" + journey;
 
+		// The stretch of hallway past the brass door never got a
+		// walk of its own because the Return button used to carry
+		// it. It has one now, in both directions — the Room 4
+		// journey scene hosts it by pending id, the same trick
+		// the reverse legs use below. The way opened by
+		// Room4Puzzle's ProceedThroughDoor walks like any other
+		// leaving (through the blackout too: this is half the
+		// flashlight trek's road home).
+		if (to == "room_5.tscn" && (from == "room_4.tscn" || from == "Room_4_puzzle.tscn"))
+		{
+			RoomJourney.PendingJourneyId = "Room4ToRoom5";
+			RoomJourney.PendingDestination = scenePath;
+			return "res://scenes/world/journey_to_room_4.tscn";
+		}
+
 		// And the way back is walked too. Neighbouring rooms borrow
 		// the forward leg's scene with a pending reverse id, so
 		// going back for a forgotten thing has feet in it again.
-		// Longer returns stay the navigation buttons' mercy.
+		// There are no longer returns anymore — no button carries
+		// her farther than one room, so every road home is a chain
+		// of these walked legs.
 		(string Shell, string Id) back = (from, to) switch
 		{
 			("room_2.tscn" or "room_2_puzzle.tscn", "room_1.tscn" or "room_1_puzzle.tscn")
@@ -164,6 +181,8 @@ public partial class SceneManager : Node
 				=> ("journey_to_room_3.tscn", "Room3ToRoom2"),
 			("room_4.tscn", "room_3.tscn")
 				=> ("journey_to_room_4.tscn", "Room4ToRoom3"),
+			("room_5.tscn", "room_4.tscn")
+				=> ("journey_to_room_4.tscn", "Room5ToRoom4"),
 			("porch_447.tscn", "room_6.tscn")
 				=> ("journey_to_porch.tscn", "PorchToRoom6"),
 			_ => (null, null),

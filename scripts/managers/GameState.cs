@@ -1041,42 +1041,6 @@ public partial class GameState : Node
         return System.Array.IndexOf(MainPathSceneFiles, file);
     }
 
-    /// <summary>The "go back to the new room" target: the furthest main-path
-    /// scene, whenever the player has stepped back behind it.</summary>
-    public bool TryGetForwardScene(out string scenePath)
-    {
-        // A house with no power is crossed the way she crossed it as a
-        // child: one dark room at a time, by hand along the walls.
-        // While the blackout lasts there is no teleporting "Return" —
-        // the forward button walks her to the *next* room only.
-        if (HasFlag("blackout_active") && !HasFlag("backup_power_on"))
-        {
-            string[] roomWalk =
-            [
-                "bedroom_prologue.tscn", "room_1.tscn", "room_2.tscn",
-                "room_3.tscn", "room_4.tscn", "room_5.tscn",
-            ];
-            int here = SceneProgressIndex(SceneManager.CurrentScenePath);
-            int furthest = SceneProgressIndex(_furthestScenePath);
-            foreach (string roomFile in roomWalk)
-            {
-                int idx = SceneProgressIndex(roomFile);
-                if (idx > here && idx <= furthest)
-                {
-                    scenePath = "res://scenes/world/" + roomFile;
-                    return true;
-                }
-            }
-            scenePath = string.Empty;
-            return false;
-        }
-
-        scenePath = _furthestScenePath;
-        if (string.IsNullOrWhiteSpace(scenePath))
-            return false;
-        return SceneProgressIndex(scenePath) > SceneProgressIndex(SceneManager.CurrentScenePath);
-    }
-
     /// <summary>The Leave button's target: once a room's fragment is
     /// Mara's, the next room is hers to walk to whenever she chooses —
     /// collecting a fragment never carries her anywhere by itself.
@@ -1166,7 +1130,7 @@ public partial class GameState : Node
 
     /// <summary>A finished room the player has moved beyond: it can be
     /// looked at, but nothing in it answers anymore. Navigation (Step Back /
-    /// Return) is never sealed, and neither is a room still being worked —
+    /// Leave) is never sealed, and neither is a room still being worked —
     /// stepping back mid-puzzle to re-read a clue stays possible.</summary>
     public bool IsRoomSealed(string trackerRoom)
     {
@@ -2118,27 +2082,35 @@ public partial class GameState : Node
     /// </summary>
     public void EnsureFinalActProgress()
     {
+        // NOTE: room *completion* (the examine set finished) is NOT
+        // evidence a fragment was collected — in the current design
+        // fragments sit behind puzzles beyond examining (Room 3's
+        // jars cannot even be touched until the room is "complete",
+        // yet its fragment still sleeps in the last jar). Deriving
+        // shards from completion silently granted them and left
+        // puzzles standing open. Only standing in a LATER room, or
+        // already holding the shard, proves anything now.
         int order = RoomOrder(CurrentRoomName());
 
-        if (IsRoomCompleted("Room3") || order >= 4 || IsShardRecovered(2))
+        if (order >= 4 || IsShardRecovered(2))
         {
             if (!IsShardRecovered(2))
                 CollectShard(2, null, silent: true);
             UnlockVerb(MemoryVerb.Echo, announce: false);
         }
-        if (IsRoomCompleted("Room4") || order >= 5 || IsShardRecovered(3))
+        if (order >= 5 || IsShardRecovered(3))
         {
             if (!IsShardRecovered(3))
                 CollectShard(3, null, silent: true);
             UnlockVerb(MemoryVerb.Anchor, announce: false);
         }
-        if (IsRoomCompleted("Room5") || order >= 6 || IsShardRecovered(4))
+        if (order >= 6 || IsShardRecovered(4))
         {
             if (!IsShardRecovered(4))
                 CollectShard(4, null, silent: true);
             UnlockVerb(MemoryVerb.Trace, announce: false);
         }
-        if (IsRoomCompleted("Room6") || order >= 7 || IsShardRecovered(5))
+        if (order >= 7 || IsShardRecovered(5))
         {
             if (!IsShardRecovered(5))
                 CollectShard(5, null, silent: true);

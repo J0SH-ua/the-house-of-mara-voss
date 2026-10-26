@@ -1383,13 +1383,14 @@ public partial class GameUI : CanvasLayer
         SceneManager.ChangeScene(_backTargetPath);
     }
 
-    /// <summary>The Step Back button's mirror, bottom-right: after stepping
-    /// back through finished rooms, this returns to the furthest ("new")
-    /// room reached — finished rooms in between no longer answer clicks,
-    /// so the way forward lives here instead of in their doors.</summary>
+    /// <summary>Step Back's mirror, bottom-right — and only ever a
+    /// one-room step: the Leave her current fragment has earned.
+    /// There is deliberately no "return to the new room": every
+    /// trip through this house is walked, both ways, every time,
+    /// in the dark as much as in the light.</summary>
     private void BuildForwardButton()
     {
-        _forwardButton = new Button { Text = "Return \u2192", Visible = false };
+        _forwardButton = new Button { Text = "Leave \u2192", Visible = false };
         if (_font != null)
             _forwardButton.AddThemeFontOverride("font", _font);
         _forwardButton.AddThemeFontSizeOverride("font_size", 20);
@@ -1425,7 +1426,7 @@ public partial class GameUI : CanvasLayer
         _forwardButton.OffsetRight = -16;
         _forwardButton.OffsetTop = -88;
         _forwardButton.OffsetBottom = -44;
-        _forwardButton.TooltipText = "Return to the furthest room you have reached";
+        _forwardButton.TooltipText = "Leave this room — walked, like everywhere in this house";
         _forwardButton.FocusMode = Control.FocusModeEnum.None;
         _forwardButton.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -9f);
         _forwardButton.Pressed += GoForward;
@@ -1438,27 +1439,21 @@ public partial class GameUI : CanvasLayer
             return;
 
         var gs = GameState.Instance;
-        bool darkTrek = gs != null && gs.HasFlag("blackout_active") && !gs.HasFlag("backup_power_on");
-        string cacheKey = $"{SceneManager.CurrentScenePath}|{gs?.FurthestScenePath}|{(darkTrek ? 1 : 0)}|{LeaveSignature(gs)}";
+        string cacheKey = $"{SceneManager.CurrentScenePath}|{LeaveSignature(gs)}";
         if (cacheKey != _forwardCacheKey)
         {
             _forwardCacheKey = cacheKey;
-            if (gs != null && gs.TryGetForwardScene(out string target))
+            // There is no "Return" anymore — no button carries Mara
+            // to a room her feet aren't taken to. This button only
+            // ever walks ONE room onward, the room her current
+            // fragment has opened, and SceneManager turns the trip
+            // into the walked journey like every other leaving.
+            // The blackout changes nothing here: the dark house is
+            // crossed the same way, one walked room at a time (and
+            // the afternoon still refuses her in the dark, at the
+            // wardrobe, in her own words).
+            if (gs != null && gs.TryGetLeaveScene(out string leaveTarget))
             {
-                _forwardTargetPath = target;
-                _forwardButton.Text = darkTrek
-                    ? "Next Room \u2192"
-                    : $"Return to {ForwardSceneName(target)} \u2192";
-                _forwardButton.TooltipText = "Return to the furthest room you have reached";
-            }
-            else if (gs != null && gs.TryGetLeaveScene(out string leaveTarget) &&
-                (!darkTrek || leaveTarget.EndsWith("room_6.tscn")))
-            {
-                // At the frontier with the fragment in hand, the same
-                // button becomes hers to leave by: collecting never
-                // carries Mara anywhere, but the way on stands open —
-                // and if something practical still sleeps here, the
-                // click is where she asks herself about it.
                 _forwardTargetPath = leaveTarget;
                 _forwardButton.Text = $"Leave for {ForwardSceneName(leaveTarget)} \u2192";
                 _forwardButton.TooltipText = "Leave this room — what you carry is enough, and you can come back";
@@ -5040,14 +5035,14 @@ public partial class GameUI : CanvasLayer
     }
 
     /// <summary>Before the last conversation, they have to reach each
-    /// other — and how depends on what Mara chose. If she chose to
-    /// wake: a knock in the dark, in the family's rhythm; disbelief;
-    /// a run across twelve years; a hug. If she chose the house: the
-    /// walk back in gathering rain, a child crossing *the* bridge,
-    /// the old panic at a run — caught up with this time, and safe,
-    /// and somehow still not the point. First person throughout.
-    /// Leaves the stage dark and quiet for the conversation's own
-    /// opening frame.</summary>
+    /// other — and both ways go down before they get up: the
+    /// migraine collects its price and Mara passes out either way.
+    /// If she chose to wake, she comes to under open sky, looks
+    /// around the garden, finds Ida leaning over her, and stands
+    /// to face her. If she chose the house, she comes to on wet
+    /// concrete in the rain and looks right, to where Ida stands
+    /// in it. First person throughout. Leaves the stage dark and
+    /// quiet for the conversation's own opening frame.</summary>
     private async System.Threading.Tasks.Task PlayEndingApproachAsync(
         string endingId,
         (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo)
@@ -5163,10 +5158,15 @@ public partial class GameUI : CanvasLayer
         await EndingMigrainePassOutAsync(convo.Frames[2]);
         if (_endingSkipRequested) return;
 
-        // Waking the slow way: light first, then a face in it,
-        // close the way faces are from a lap — the very face the
-        // conversation is about to hold.
-        await EndingShotAsync(convo.Frames[2], 1.3f, 1.07f, 10f);
+        // Waking the slow way. The game opened on a ceiling;
+        // it ends on sky. First she only looks at it, the way
+        // she stared at that ceiling — then her eyes move,
+        // then the one face in the world moves into her sky,
+        // upside down the way faces are to someone on the
+        // ground, and only then does standing up turn her
+        // the right way round at last.
+        AudioManager.Instance?.PlayCutsceneAmbience(AudioManager.AmbienceGardenLoopPath, -20f);
+        await EndingShotAsync("res://assets/images/bgs/Ending_Waking_Lap.png", 1.5f, 1.22f, 9f);
         await EndingBeatAsync(0.9f);
         if (_endingSkipRequested) return;
         var blink = CreateTween();
@@ -5177,11 +5177,22 @@ public partial class GameUI : CanvasLayer
         await ToSignal(blink, Tween.SignalName.Finished);
         if (_endingSkipRequested) return;
 
-        await EndingCaptionAsync("Mara", "…warm. Someone's lap. Someone's hand, keeping the hair off my face the way—", 6.0f);
+        await EndingCaptionAsync("Mara", "…sky. Not a ceiling. Sky, going pink, with the evening coming up through it.", 6.0f);
+
+        // Looking around with only her eyes: the frame widens
+        // out to the whole of what overhead means now.
+        await EndingShotAsync("res://assets/images/bgs/Ending_Waking_Lap.png", 1.22f, 1.03f, 9f);
+        await EndingCaptionAsync("Mara", "Grass, if I turn my eyes. The garden going gold. Someone close enough to shadow me — someone's hand, keeping the hair off my face the way—", 6.4f);
         await EndingCaptionAsync("Mara", "Ida? Is— is that you?", 4.8f);
         await EndingCaptionAsync("Ida", "Steady. You went down like the ceiling did. I caught the important part.", 5.8f);
-        await EndingCaptionAsync("Mara", "Don't let go of my head yet. Just — one more second of this being true.", 6.0f);
+        await EndingCaptionAsync("Mara", "Give me a second. Just — one more second of the sky being true.", 6.0f);
         await EndingCaptionAsync("Ida", "One second. I'm counting. …Done. Up you get. On your feet, Mara.", 6.0f);
+        if (_endingSkipRequested) return;
+
+        // Standing turns the world — and her — the right way up.
+        await EndingShotAsync(convo.Frames[0], 1.22f, 1.06f, 9f);
+        AudioManager.Play(Sfx.PhotoPickup, -13f, 0.75f);
+        await EndingCaptionAsync("Mara", "The world tips once, coming up to meet me. Then it holds. So does she.", 6.0f);
     }
 
     private async System.Threading.Tasks.Task KeptApproachAsync(

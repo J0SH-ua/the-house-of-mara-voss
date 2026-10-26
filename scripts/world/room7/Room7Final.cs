@@ -930,7 +930,7 @@ public partial class Room7Final : Node2D
             return true;
 
         if (position.X >= 876f && position.Y >= 552f &&
-            GameState.Instance != null && GameState.Instance.TryGetForwardScene(out _))
+            GameState.Instance != null && GameState.Instance.TryGetLeaveScene(out _))
             return true;
 
         var gs = GameState.Instance;
