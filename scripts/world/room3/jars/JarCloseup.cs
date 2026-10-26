@@ -909,7 +909,7 @@ public partial class JarCloseup : Node2D
             // Her bag hangs bottom-right, ON screen — the pin's
             // whole errand happens where eyes can follow it: first
             // it rises clear of the bag's mouth, then it travels.
-            DrawBagProp(Mathf.Clamp01(_pinIntro * 3f));
+            DrawBagProp(Mathf.Clamp(_pinIntro * 3f, 0f, 1f));
             Vector2 bagPos = new(1008f, 566f);
             pinPos = bagPos.Lerp(needlePos, eased);
             pinPos.Y -= Mathf.Sin(eased * Mathf.Pi) * 52f;

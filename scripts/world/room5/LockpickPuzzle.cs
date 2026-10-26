@@ -406,7 +406,7 @@ public partial class LockpickPuzzle : Node2D
         // every other rule in the room for its 2.6 seconds.
         if (_state == PickState.Rewinding)
         {
-            _rewindT = Mathf.Clamp01(_rewindT + dt / RewindSeconds);
+            _rewindT = Mathf.Clamp(_rewindT + dt / RewindSeconds, 0f, 1f);
             _plugDegrees = Mathf.MoveToward(_plugDegrees, 0f, 150f * dt);
             _rewindSnippetTimer -= dt;
             if (_rewindSnippetTimer <= 0f && _rewindT < 1f)
@@ -1260,7 +1260,7 @@ public partial class LockpickPuzzle : Node2D
     {
         if (_snapFlashLeft <= 0f)
             return;
-        float heat = Mathf.Clamp01(_snapFlashLeft / 0.9f);
+        float heat = Mathf.Clamp(_snapFlashLeft / 0.9f, 0f, 1f);
         bool on = Settings.ReduceMotionOrDefault()
             ? true
             : (Time.GetTicksMsec() / 80) % 2 == 0;
