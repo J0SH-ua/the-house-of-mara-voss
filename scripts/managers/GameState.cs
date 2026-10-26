@@ -1074,6 +1074,33 @@ public partial class GameState : Node
         return SceneProgressIndex(scenePath) > SceneProgressIndex(SceneManager.CurrentScenePath);
     }
 
+    /// <summary>The Leave button's target: once a room's fragment is
+    /// Mara's, the next room is hers to walk to whenever she chooses —
+    /// collecting a fragment never carries her anywhere by itself.
+    /// Rooms whose exit is a thing in the world keep that exit
+    /// instead: Room 4's brass door, the porch's front door, the
+    /// bedroom's tutorial door. The first-departure walks and the
+    /// once-per-room "am I ready to leave?" ride along inside
+    /// SceneManager.ChangeScene.</summary>
+    public bool TryGetLeaveScene(out string scenePath)
+    {
+        scenePath = string.Empty;
+        string file = FileNameOf(SceneManager.CurrentScenePath ?? string.Empty);
+        string next = file switch
+        {
+            "room_1.tscn" or "room_1_puzzle.tscn" => IsShardRecovered(0) ? "room_2.tscn" : null,
+            "room_2.tscn" or "room_2_puzzle.tscn" => IsShardRecovered(1) ? "room_3.tscn" : null,
+            "room_3.tscn" or "jar_closeup.tscn" => IsShardRecovered(2) ? "room_4.tscn" : null,
+            "room_5.tscn" => IsShardRecovered(4) && HasFlag("backup_power_on") ? "room_6.tscn" : null,
+            "room_6.tscn" => IsShardRecovered(5) ? "porch_447.tscn" : null,
+            _ => null,
+        };
+        if (next == null)
+            return false;
+        scenePath = "res://scenes/world/" + next;
+        return true;
+    }
+
     /// <summary>Tracker room for a scene file, keeping side places distinct
     /// (CurrentRoomName folds them into their parent room on purpose).</summary>
     private static string SceneTrackerRoomName(string scenePath)

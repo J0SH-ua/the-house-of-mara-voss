@@ -20,8 +20,6 @@ using Godot;
 /// </summary>
 public partial class Photo1Reward : Area2D
 {
-	private const string NextScenePath = "res://scenes/world/room_3.tscn";
-	private const string JourneyScenePath = "res://scenes/world/journey_to_room_3.tscn";
 	// The investigation itself is entered from the sitting room
 	// (Room2's wind beat), never straight from this drawer.
 	private const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
@@ -178,7 +176,7 @@ public partial class Photo1Reward : Area2D
 		Dialogue.BeginInputBlock();
 		try
 		{
-			ui.ShowPhotograph(() => putAway = true);
+			ui.ShowPhotograph(() => putAway = true, flipIntro: true);
 			while (!putAway && GodotObject.IsInstanceValid(this) && IsInsideTree())
 				await ToSignal(GetTree().CreateTimer(0.1, true), SceneTreeTimer.SignalName.Timeout);
 		}
@@ -242,11 +240,13 @@ public partial class Photo1Reward : Area2D
 		// Passing through again on a later visit — keep it brief.
 		await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
 
-		// The walk belongs to the first departure with the fragment,
-		// not the first collection: by seen-flag, so solving the
-		// investigation first can never eat the journey.
-		bool goJourney = GameState.Instance != null &&
-			!GameState.Instance.HasFlag("journey_seen_Room2ToRoom3");
-		SceneManager.ChangeScene(goJourney ? JourneyScenePath : NextScenePath);
+		// Having the fragment opens the way on; taking it is the
+		// Leave button's work now (top right of the screen) — and the
+		// first-departure walk waits there, by seen-flag, however
+		// long she looks around first.
+		_collecting = false;
+		if (GameState.Instance != null &&
+			!GameState.Instance.HasFlag("journey_seen_Room2ToRoom3"))
+			GameState.Instance.Toast("The way on is open. Leave (top right) when you're ready.");
 	}
 }

@@ -28,6 +28,7 @@
 [ext_resource type="Texture2D" uid="uid://b2wcw7jqpsrgp" path="res://assets/images/core/shards/brass_key.png" id="30_qxf5x"]
 [ext_resource type="Script" uid="uid://djtmmilrt81by" path="res://scripts/ui/ClarityToggle.cs" id="31_oasvk"]
 [ext_resource type="Texture2D" uid="uid://bfmel5fosknmo" path="res://assets/images/core/arrow.png" id="32_h6hnl"]
+[ext_resource type="Script" uid="uid://bp5w7676hgkxi" path="res://scripts/world/room2/Room2.cs" id="33_room2root"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_wlug7"]
 texture = ExtResource("3_4730r")
@@ -1260,6 +1261,7 @@ size = Vector2(341.81848, 254.54538)
 
 [node name="Room2" type="TileMapLayer" unique_id=927437449]
 tile_set = ExtResource("1_j1llv")
+script = ExtResource("33_room2root")
 
 [node name="Background" type="Sprite2D" parent="." unique_id=1699132744]
 z_index = -1

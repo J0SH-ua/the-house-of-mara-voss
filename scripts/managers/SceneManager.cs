@@ -118,6 +118,59 @@ public partial class SceneManager : Node
 		}
 	}
 
+	/// <summary>The first departure from a finished room is a walk, not
+	/// a cut: the first time Mara travels a leg that has a journey
+	/// scene, the journey carries her (and remembers itself, so it is
+	/// never compulsory twice). Centralised here so that *how* she
+	/// leaves — Leave button, an in-world arrow, a door — no longer
+	/// decides whether the walk happens. Never during the blackout,
+	/// when the dark house is crossed one room at a time instead.</summary>
+	private static string ApplyFirstDepartureJourney(string scenePath)
+	{
+		var gs = GameState.Instance;
+		if (gs == null)
+			return scenePath;
+		if (gs.HasFlag("blackout_active") && !gs.HasFlag("backup_power_on"))
+			return scenePath;
+
+		string from = FileNameOf(CurrentScenePath);
+		string to = FileNameOf(scenePath);
+		string journey = null;
+		string seen = null;
+		if (to == "room_2.tscn" && (from == "room_1.tscn" || from == "room_1_puzzle.tscn"))
+		{
+			journey = "journey_to_room_2.tscn";
+			seen = "journey_seen_Room1ToRoom2";
+		}
+		else if (to == "room_3.tscn" && (from == "room_2.tscn" || from == "room_2_puzzle.tscn"))
+		{
+			journey = "journey_to_room_3.tscn";
+			seen = "journey_seen_Room2ToRoom3";
+		}
+		else if (to == "room_4.tscn" && (from == "room_3.tscn" || from == "jar_closeup.tscn"))
+		{
+			journey = "journey_to_room_4.tscn";
+			seen = "journey_seen_Room3ToRoom4";
+		}
+		else if (to == "porch_447.tscn" && from == "room_6.tscn")
+		{
+			journey = "journey_to_porch.tscn";
+			seen = "journey_seen_Room6ToPorch";
+		}
+
+		if (journey != null && !gs.HasFlag(seen))
+			return "res://scenes/world/" + journey;
+		return scenePath;
+	}
+
+	private static string FileNameOf(string scenePath)
+	{
+		if (string.IsNullOrEmpty(scenePath))
+			return string.Empty;
+		int slash = scenePath.LastIndexOf('/');
+		return slash >= 0 ? scenePath.Substring(slash + 1) : scenePath;
+	}
+
 	public static async void ChangeScene(string scenePath)
 	{
 		if (string.IsNullOrWhiteSpace(scenePath))
@@ -129,6 +182,8 @@ public partial class SceneManager : Node
 			_pendingScenePath = scenePath;
 			return;
 		}
+
+		scenePath = ApplyFirstDepartureJourney(scenePath);
 
 		// A fragment just earned gets its moment before the house moves
 		// on: hold this request; GameUI resumes it once the fragment

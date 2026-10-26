@@ -538,6 +538,11 @@ public partial class GameUI : CanvasLayer
     // MEMORY meter's near-shatter warning.
     private Control _photoPanel;
     private PhotoCanvas _photoCanvas;
+    private Control _photoFlipCard;
+    private TextureRect _photoFlipImage;
+    private Texture2D _photoFrontTexture;
+    private Tween _photoFlipTween;
+    private int _photoFlipGen;
     private Action _photoClosedCallback;
     private Button _bagPhotoButton;
     private Button _bagUseButton;
@@ -1427,7 +1432,7 @@ public partial class GameUI : CanvasLayer
 
         var gs = GameState.Instance;
         bool darkTrek = gs != null && gs.HasFlag("blackout_active") && !gs.HasFlag("backup_power_on");
-        string cacheKey = $"{SceneManager.CurrentScenePath}|{gs?.FurthestScenePath}|{(darkTrek ? 1 : 0)}";
+        string cacheKey = $"{SceneManager.CurrentScenePath}|{gs?.FurthestScenePath}|{(darkTrek ? 1 : 0)}|{LeaveSignature(gs)}";
         if (cacheKey != _forwardCacheKey)
         {
             _forwardCacheKey = cacheKey;
@@ -1437,6 +1442,18 @@ public partial class GameUI : CanvasLayer
                 _forwardButton.Text = darkTrek
                     ? "Next Room \u2192"
                     : $"Return to {ForwardSceneName(target)} \u2192";
+                _forwardButton.TooltipText = "Return to the furthest room you have reached";
+            }
+            else if (gs != null && !darkTrek && gs.TryGetLeaveScene(out string leaveTarget))
+            {
+                // At the frontier with the fragment in hand, the same
+                // button becomes hers to leave by: collecting never
+                // carries Mara anywhere, but the way on stands open —
+                // and if something practical still sleeps here, the
+                // click is where she asks herself about it.
+                _forwardTargetPath = leaveTarget;
+                _forwardButton.Text = $"Leave for {ForwardSceneName(leaveTarget)} \u2192";
+                _forwardButton.TooltipText = "Leave this room — what you carry is enough, and you can come back";
             }
             else
             {
@@ -1450,6 +1467,21 @@ public partial class GameUI : CanvasLayer
                                  && !Dialogue.IsShowing
                                  && !SceneManager.IsChanging
                                  && !GetTree().Paused;
+    }
+
+    /// <summary>Everything the Leave button's existence depends on, as
+    /// a short string for the nav cache key — so the moment a fragment
+    /// lands in the bag (same scene, same furthest), the button can
+    /// appear without waiting for a scene change to notice.</summary>
+    private static string LeaveSignature(GameState gs)
+    {
+        if (gs == null)
+            return "-";
+        string sig = string.Empty;
+        for (int i = 0; i < 6; i++)
+            sig += gs.IsShardRecovered(i) ? "1" : "0";
+        sig += gs.HasFlag("backup_power_on") ? "1" : "0";
+        return sig;
     }
 
     private static string ForwardSceneName(string scenePath)
@@ -2046,6 +2078,35 @@ public partial class GameUI : CanvasLayer
         _photoCanvas.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _photoPanel.AddChild(_photoCanvas);
 
+        // The flip: a paper-backed card that turns the print over in
+        // Mara's hands the first time — the faces on the front, then
+        // the room kept on the back. Sized to the canvas's own frame
+        // at design size, pivoting on its centre.
+        _photoFrontTexture = GD.Load<Texture2D>("res://assets/images/core/shards/photo.png");
+        _photoFlipCard = new Control { Name = "PhotoFlipCard", Visible = false };
+        _photoFlipCard.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _photoFlipCard.AnchorLeft = 0.5f; _photoFlipCard.AnchorRight = 0.5f;
+        _photoFlipCard.AnchorTop = 0.5f; _photoFlipCard.AnchorBottom = 0.5f;
+        _photoFlipCard.OffsetLeft = -407; _photoFlipCard.OffsetRight = 407;
+        _photoFlipCard.OffsetTop = -229; _photoFlipCard.OffsetBottom = 229;
+        _photoFlipCard.PivotOffset = new Vector2(407, 229);
+        var paper = new ColorRect { Color = new Color(0.93f, 0.9f, 0.82f, 1f) };
+        paper.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        paper.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _photoFlipCard.AddChild(paper);
+        _photoFlipImage = new TextureRect
+        {
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _photoFlipImage.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _photoFlipImage.OffsetLeft = 16; _photoFlipImage.OffsetRight = -16;
+        _photoFlipImage.OffsetTop = 16; _photoFlipImage.OffsetBottom = -16;
+        _photoFlipCard.AddChild(_photoFlipImage);
+        _photoPanel.AddChild(_photoFlipCard);
+
         var hint = MakeLabel("Mouse wheel — look closer · drag — move over it", 18,
             new Color(0.85f, 0.79f, 0.67f, 0.85f));
         hint.AnchorLeft = 0.5f; hint.AnchorRight = 0.5f;
@@ -2072,7 +2133,7 @@ public partial class GameUI : CanvasLayer
     /// the Bag it is a keepsake to study at leisure; from the drawer it
     /// is a threshold — <paramref name="onClosed"/> runs when Mara puts
     /// it away, and the wind is already rising.</summary>
-    public void ShowPhotograph(Action onClosed = null)
+    public void ShowPhotograph(Action onClosed = null, bool flipIntro = false)
     {
         if (_photoPanel == null)
         {
@@ -2083,12 +2144,86 @@ public partial class GameUI : CanvasLayer
         _photoCanvas?.ResetView();
         _photoPanel.Visible = true;
         AudioManager.Play(Sfx.PhotoPickup, -10f, 0.9f);
+
+        _photoFlipGen++;
+        bool flip = flipIntro && _photoFlipCard != null && _photoFlipImage != null &&
+            _photoFrontTexture != null && !Settings.ReduceMotionOrDefault();
+        if (_photoFlipCard != null)
+            _photoFlipCard.Visible = flip;
+        if (flip)
+        {
+            // Mara turns the print over in her hands: faces first,
+            // then the room on its back. The study viewer waits
+            // underneath for the moment it settles.
+            _photoFlipImage.Texture = _photoFrontTexture;
+            _photoFlipCard.Scale = Vector2.One;
+            _photoFlipCard.Rotation = 0f;
+            if (_photoCanvas != null)
+                _photoCanvas.Visible = false;
+            PlayPhotoFlipAsync(_photoFlipGen);
+        }
+        else if (_photoCanvas != null)
+        {
+            _photoCanvas.Visible = true;
+        }
+    }
+
+    /// <summary>The print turning over: a held breath on the faces,
+    /// edge-on at the swap (front to back with a paper sound),
+    /// settling a breath crooked — then the ordinary zoomable
+    /// viewer takes over exactly where it lay.</summary>
+    private async void PlayPhotoFlipAsync(int gen)
+    {
+        if (_photoFlipCard == null || _photoFlipImage == null)
+            return;
+
+        await ToSignal(GetTree().CreateTimer(0.85, true), SceneTreeTimer.SignalName.Timeout);
+        if (gen != _photoFlipGen || !GodotObject.IsInstanceValid(this))
+            return;
+
+        _photoFlipTween?.Kill();
+        _photoFlipTween = CreateTween();
+        _photoFlipTween.TweenProperty(_photoFlipCard, "scale:x", 0.02f, 0.34f)
+            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.In);
+        await ToSignal(_photoFlipTween, Tween.SignalName.Finished);
+        if (gen != _photoFlipGen || !GodotObject.IsInstanceValid(this))
+            return;
+
+        _photoFlipImage.Texture = GD.Load<Texture2D>(SittingRoomDetails.BackgroundPath);
+        AudioManager.Play(Sfx.PageTurn, -9f, 0.85f);
+        _photoFlipCard.Rotation = -0.024f;
+
+        _photoFlipTween = CreateTween();
+        _photoFlipTween.SetParallel(true);
+        _photoFlipTween.TweenProperty(_photoFlipCard, "scale:x", 1f, 0.42f)
+            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        _photoFlipTween.TweenProperty(_photoFlipCard, "rotation", 0f, 0.42f)
+            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        await ToSignal(_photoFlipTween, Tween.SignalName.Finished);
+        if (gen != _photoFlipGen || !GodotObject.IsInstanceValid(this))
+            return;
+
+        await ToSignal(GetTree().CreateTimer(0.3, true), SceneTreeTimer.SignalName.Timeout);
+        if (gen != _photoFlipGen || !GodotObject.IsInstanceValid(this))
+            return;
+
+        _photoFlipCard.Visible = false;
+        if (_photoCanvas != null)
+        {
+            _photoCanvas.Visible = true;
+            _photoCanvas.ResetView();
+        }
     }
 
     public void ClosePhoto()
     {
         if (_photoPanel == null || !_photoPanel.Visible)
             return;
+        _photoFlipGen++;
+        if (_photoFlipCard != null)
+            _photoFlipCard.Visible = false;
+        if (_photoCanvas != null)
+            _photoCanvas.Visible = true;
         _photoPanel.Visible = false;
         AudioManager.Play(Sfx.PageTurn, -11f, 0.9f);
         var callback = _photoClosedCallback;
@@ -4755,6 +4890,187 @@ public partial class GameUI : CanvasLayer
             });
     }
 
+    /// <summary>Before the last conversation, they have to reach each
+    /// other — and how depends on what Mara chose. If she chose to
+    /// wake: a knock in the dark, in the family's rhythm; disbelief;
+    /// a run across twelve years; a hug. If she chose the house: the
+    /// walk back in gathering rain, a child crossing *the* bridge,
+    /// the old panic at a run — caught up with this time, and safe,
+    /// and somehow still not the point. First person throughout.
+    /// Leaves the stage dark and quiet for the conversation's own
+    /// opening frame.</summary>
+    private async System.Threading.Tasks.Task PlayEndingApproachAsync(
+        string endingId,
+        (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo)
+    {
+        _endingImage.PivotOffset = _endingImage.Size / 2f;
+        _endingImage.Modulate = new Color(1, 1, 1, 0);
+
+        if (endingId == "waking")
+            await WakingApproachAsync(convo);
+        else
+            await KeptApproachAsync(convo);
+
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+        _endingTween?.Kill();
+        _endingTween = null;
+        _endingCaption.Text = string.Empty;
+        _endingCaption.Modulate = new Color(1, 1, 1, 0);
+        if (_endingSkipRequested)
+            AudioManager.Instance?.StopAmbience();
+        _endingImage.Modulate = new Color(1, 1, 1, 0);
+        _endingImage.Scale = Vector2.One * 1.03f;
+    }
+
+    /// <summary>Short, click-proof beats — a knock's rhythm, running
+    /// feet. Timers run through the ending's pause, like its tweens.</summary>
+    private async System.Threading.Tasks.Task EndingBeatAsync(float seconds)
+    {
+        await ToSignal(GetTree().CreateTimer(seconds, true), SceneTreeTimer.SignalName.Timeout);
+    }
+
+    private async System.Threading.Tasks.Task EndingCaptionAsync(string speaker, string text, float holdSeconds)
+    {
+        if (_endingSkipRequested)
+            return;
+        _endingCaption.Text = string.IsNullOrEmpty(speaker) ? text : $"{speaker}: {text}";
+        var capIn = CreateTween();
+        capIn.SetPauseMode(Tween.TweenPauseMode.Process);
+        capIn.TweenProperty(_endingCaption, "modulate:a", 1f, 0.5f);
+        AudioManager.Play(Sfx.PageTurn, -16f, 0.7f);
+        await WaitForEndingAdvance(holdSeconds);
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+        var capOut = CreateTween();
+        capOut.SetPauseMode(Tween.TweenPauseMode.Process);
+        capOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.4f);
+        await ToSignal(capOut, Tween.SignalName.Finished);
+    }
+
+    /// <summary>A dip, the swap, the rise — the same grammar as Ida's
+    /// changing expressions in the conversation itself, with a slow
+    /// push-in left running on the ending's shared tween.</summary>
+    private async System.Threading.Tasks.Task EndingShotAsync(string texturePath, float fromScale, float toScale, float zoomSeconds)
+    {
+        if (_endingSkipRequested)
+            return;
+        var dip = CreateTween();
+        dip.SetPauseMode(Tween.TweenPauseMode.Process);
+        dip.TweenProperty(_endingImage, "modulate:a", 0f, 0.45f);
+        await ToSignal(dip, Tween.SignalName.Finished);
+        if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
+            return;
+        _endingImage.Texture = GD.Load<Texture2D>(texturePath);
+        _endingImage.Scale = Vector2.One * fromScale;
+        _endingTween?.Kill();
+        _endingTween = CreateTween();
+        _endingTween.SetPauseMode(Tween.TweenPauseMode.Process);
+        _endingTween.TweenProperty(_endingImage, "modulate:a", 1f, 0.7f);
+        _endingTween.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * toScale, zoomSeconds);
+    }
+
+    private async System.Threading.Tasks.Task WakingApproachAsync(
+        (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo)
+    {
+        // Dark first. Then, out of nowhere a door has any right to
+        // be: the family's knock. Two — a breath — three.
+        await EndingBeatAsync(1.1f);
+        if (_endingSkipRequested) return;
+        AudioManager.Play(Sfx.KnockWood, -6f, 0.95f);
+        await EndingBeatAsync(0.38f);
+        AudioManager.Play(Sfx.KnockWood, -6f, 0.99f);
+        await EndingBeatAsync(0.95f);
+        AudioManager.Play(Sfx.KnockWood, -5f, 1.0f);
+        await EndingBeatAsync(0.36f);
+        AudioManager.Play(Sfx.KnockWood, -5f, 1.03f);
+        await EndingBeatAsync(0.36f);
+        AudioManager.Play(Sfx.KnockWood, -4f, 1.06f);
+        await EndingBeatAsync(0.8f);
+        if (_endingSkipRequested) return;
+
+        await EndingCaptionAsync("Mara", "Two. A breath. Three. That's — nobody knocks like that. Nobody living knocks like that.", 6.2f);
+        await EndingCaptionAsync("Mara", "I— Ida? Is that you?", 4.6f);
+        if (_endingSkipRequested) return;
+
+        // She is standing where the light is. The run is the shortest
+        // twelve years of Mara's life.
+        await EndingShotAsync(convo.Frames[2], 0.64f, 1.05f, 2.6f);
+        _endingCaption.Text = "Mara: I'm running before I've decided to. Twelve years — and my feet decide first.";
+        var runCap = CreateTween();
+        runCap.SetPauseMode(Tween.TweenPauseMode.Process);
+        runCap.TweenProperty(_endingCaption, "modulate:a", 1f, 0.5f);
+        AudioManager.PlayVaried(Sfx.FootstepDirtA, -8f, 1.05f, 0.02f);
+        await EndingBeatAsync(0.55f);
+        AudioManager.PlayVaried(Sfx.FootstepDirtB, -8f, 1.1f, 0.02f);
+        await EndingBeatAsync(0.48f);
+        AudioManager.PlayVaried(Sfx.FootstepDirtA, -7f, 1.15f, 0.02f);
+        await EndingBeatAsync(0.42f);
+        AudioManager.PlayVaried(Sfx.FootstepDirtB, -7f, 1.2f, 0.02f);
+        await EndingBeatAsync(0.7f);
+        if (_endingSkipRequested) return;
+
+        // The hug: the world goes close and dark and warm, the way it
+        // does with your face in your sister's shoulder.
+        _endingTween?.Kill();
+        var hug = CreateTween();
+        hug.SetPauseMode(Tween.TweenPauseMode.Process);
+        hug.TweenProperty(_endingImage, "modulate:a", 0.1f, 0.8f);
+        hug.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * 1.35f, 0.8f);
+        AudioManager.Play(Sfx.PhotoPickup, -13f, 0.7f);
+        var capOut = CreateTween();
+        capOut.SetPauseMode(Tween.TweenPauseMode.Process);
+        capOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.4f);
+        await ToSignal(hug, Tween.SignalName.Finished);
+        if (_endingSkipRequested) return;
+
+        await EndingCaptionAsync("Mara", "I've got you. I've got you. You're — God. You're really here.", 5.6f);
+        await EndingCaptionAsync("Ida", "…Okay. Okay. Breathe, Mara.", 4.6f);
+    }
+
+    private async System.Threading.Tasks.Task KeptApproachAsync(
+        (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo)
+    {
+        // The way back, in first person, with the weather turning.
+        AudioManager.Instance?.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -19f);
+        await EndingShotAsync("res://assets/images/bgs/Truth_Bridge.png", 1.04f, 1.12f, 14f);
+        await EndingCaptionAsync("Mara", "Going back is easy. That's the worst part. Somewhere behind me it starts to rain, and the rain just — follows.", 6.4f);
+        if (_endingSkipRequested) return;
+
+        // A child, crossing the bridge. This bridge. In this rain.
+        await EndingShotAsync("res://assets/images/bgs/Truth_Ida_Walks.png", 1.03f, 1.1f, 12f);
+        await EndingCaptionAsync("Mara", "There's a child on the bridge. In this rain. On THIS bridge—", 4.8f);
+        await EndingCaptionAsync("Mara", "IDA! Ida — wait! Stay where you are — don't touch the rail — PLEASE—", 5.6f);
+        if (_endingSkipRequested) return;
+
+        // The run she has been rehearsing for twelve years.
+        _endingTween?.Kill();
+        _endingTween = CreateTween();
+        _endingTween.SetPauseMode(Tween.TweenPauseMode.Process);
+        _endingTween.TweenProperty(_endingImage, "scale", Vector2.One * 1.24f, 2.1f);
+        AudioManager.Play(Sfx.TruthBridgeSteps, -6f, 1.1f);
+        _endingCaption.Text = "Mara: I run. The stones are wet and I do not care. Not this time. Not this time.";
+        var runCap = CreateTween();
+        runCap.SetPauseMode(Tween.TweenPauseMode.Process);
+        runCap.TweenProperty(_endingCaption, "modulate:a", 1f, 0.45f);
+        await EndingBeatAsync(2.2f);
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+        var capOut = CreateTween();
+        capOut.SetPauseMode(Tween.TweenPauseMode.Process);
+        capOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.35f);
+        await ToSignal(capOut, Tween.SignalName.Finished);
+        if (_endingSkipRequested) return;
+
+        // Caught up. Safe. And already, somehow, not the point.
+        await EndingShotAsync("res://assets/images/bgs/Truth_Ida_Waits.png", 1.05f, 1.1f, 16f);
+        await EndingCaptionAsync("Ida", "…Mara? You look like you've seen a ghost.", 5.2f);
+        await EndingCaptionAsync("Mara", "The railing. You were right beside the railing—", 5.2f);
+        await EndingCaptionAsync("Ida", "It's a bridge, Mara. People cross it every day.", 5.4f);
+        // The rain stays for what she says next. It was always going
+        // to: "she does not turn back. The rain takes the rest."
+    }
+
     /// <summary>Play one of the two authored endings chosen in Room 7.
     /// Reaching its title records cross-run completion and deletes the run
     /// save; Return to title deliberately does not call QuitToMenu/SaveGame.</summary>
@@ -4798,6 +5114,8 @@ public partial class GameUI : CanvasLayer
             {
                 convo = IdaConversation(endingId);
                 startImage = convo.Frames[convo.Lines[0].Frame];
+                // Before they speak, they have to reach each other.
+                await PlayEndingApproachAsync(endingId, convo);
             }
             _endingImage.Texture = GD.Load<Texture2D>(startImage);
             _endingImage.PivotOffset = _endingImage.Size / 2f;
@@ -4860,6 +5178,7 @@ public partial class GameUI : CanvasLayer
 
                 // Out of the conversation the way each choice deserves:
                 // waking dissolves into light; the kept house cuts to black.
+                AudioManager.Instance?.StopAmbience();
                 _endingCaption.Text = string.Empty;
                 _endingImage.Modulate = Colors.White;
                 _endingTween?.Kill();

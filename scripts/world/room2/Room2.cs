@@ -23,27 +23,28 @@ public partial class Room2 : ExamineHandler
 
     public override void _Ready()
     {
-        if (Globals.Instance != null && Globals.SHARDS_COLLECTED[1])
-        {
-            var rightArrow = GetNode<Area2D>("UI/RightArrow");
-            var leftArrow = GetNode<Area2D>("UI/LeftArrow");
-            var photo = GetNode<Sprite2D>("UI/Photo");
-
-            var rightArrowColor = rightArrow.Modulate;
-            rightArrowColor.A = 1.0f;
-            rightArrow.Modulate = rightArrowColor;
-
-            var leftArrowColor = leftArrow.Modulate;
-            leftArrowColor.A = 1.0f;
-            leftArrow.Modulate = leftArrowColor;
-
-            var photoColor = photo.Modulate;
-            photoColor.A = 1.0f;
-            photo.Modulate = photoColor;
-        }
-
+        // The wind beat first, before any legacy reveal bookkeeping:
+        // a scene edit must never be able to eat the weather. (For
+        // a long while this script was not attached to the scene at
+        // all, and its Photo lived at "UI/Photo" besides — either
+        // fault alone was enough to swallow the wind whole.)
         if (GameState.Instance?.HasFlag(WindPendingFlag) == true)
             _ = PlayWindBeatAsync();
+
+        if (Globals.Instance != null && Globals.SHARDS_COLLECTED[1])
+        {
+            var photo = GetNodeOrNull<Sprite2D>("UI/Inventory/Photo");
+            if (photo != null)
+            {
+                var photoColor = photo.Modulate;
+                photoColor.A = 1.0f;
+                photo.Modulate = photoColor;
+            }
+
+            // The room's old painted arrows stay folded away. They
+            // never had a script to carry Mara anywhere; leaving is
+            // the top-of-screen Leave button's work now (see GameUI).
+        }
     }
 
     private async Task PlayWindBeatAsync()

@@ -26,17 +26,18 @@ public partial class BrassKey1 : Area2D
 		"Every morning started here. Every morning she was already waiting, already loud, " +
 		"already herself. You could set your clock by her. That's not something you notice until it's gone.";
 
-	private const string NextScenePath = "res://scenes/world/room_2.tscn";
-	private const string JourneyScenePath = "res://scenes/world/journey_to_room_2.tscn";
 	private const string CopperKeyIconPath = "res://assets/images/core/items/bridge_key.png";
 	private string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
 
 	// Local-space shapes, in this Area2D's own scaled coordinates. The
-	// authored brass shape is 142.5x44 under a (1.54, 1.49) shape scale;
-	// the two added shapes sit below it in the open drawer and never
-	// overlap it, so a click always names exactly one thing.
+	// authored brass shape is 142.5x44 under a (1.54, 1.49) shape scale.
+	// The copper key lies up beside the brass one — nudged up and twice
+	// as far left from where it first slept — close enough to read as
+	// its neighbour in the drawer. (Its rect now kisses the brass rect's
+	// lower edge; the copper click is tested first, so a click in the
+	// shared sliver takes the smaller key — harmless, and then it is gone.)
 	private static readonly Rect2 BrassRect = new(23 - 110, -6 - 33, 220, 66);
-	private static readonly Rect2 CopperRect = new(82 - 60, 71 - 38, 120, 76);
+	private static readonly Rect2 CopperRect = new(22 - 60, 41 - 38, 120, 76);
 
 	private bool _collecting;
 	private Sprite2D _copperSprite;
@@ -112,8 +113,8 @@ public partial class BrassKey1 : Area2D
 
 		var gs = GameState.Instance;
 		// A sealed kitchen refuses ordinary traffic — but while the
-		// drawer still keeps something untaken, the brass key stays a
-		// way through, and leaving by it asks the look-around question.
+		// drawer still keeps something untaken, the brass key stays
+		// takeable, and the way out still asks the look-around question.
 		if (gs?.IsRoomSealed("Room1") == true &&
 			gs?.RoomHasUnclaimedPracticalItem("Room1") != true)
 		{
@@ -147,11 +148,13 @@ public partial class BrassKey1 : Area2D
 			await Dialogue.ShowText(this, "\"That's not something you notice until it's gone.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
 		}
 
-		// The walk belongs to the first time she leaves with the
-		// fragment — by seen-flag, not by collection, so looking
-		// around first (or fetching the copper key late) never eats it.
-		bool goJourney = gs != null && !gs.HasFlag("journey_seen_Room1ToRoom2");
-		SceneManager.ChangeScene(goJourney ? JourneyScenePath : NextScenePath);
+		// The fragment opens the way on; it does not take it for her.
+		// Leaving is the Leave button's work (top right of the screen),
+		// and the first-departure walk — and the once-only question
+		// about anything left sleeping in this drawer — wait there.
+		_collecting = false;
+		if (firstTime)
+			gs?.Toast("The way on is open. Leave (top right) when you're ready — the house lets her come back.");
 	}
 
 	private async System.Threading.Tasks.Task TakeCopperKeyAsync()
