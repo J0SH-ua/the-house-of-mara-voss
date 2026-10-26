@@ -11,18 +11,34 @@ using Godot;
 /// and no idea which green corridor was meant to be a road.
 ///
 /// This first version is deliberately only the explorable place:
-/// a code-drawn, chunky first-person hedge maze. Her body keeps
-/// the house's own manners. W and S walk at the same unhurried
-/// pace as every walked journey (footfalls 0.92 s apart on the
-/// dirt road); A and D turn her at one steady rate that stops the
-/// instant the key is let go, so the view can never drift. The
-/// mouse is her wrist on Father's flashlight: the same circle of
-/// light, with the same chunky dark around it, that the vent, the
-/// basement and the blackout use. Her left hand holds the torch
-/// in the same palm, drawn with the same art, as every item she
-/// has held up in first person. Jumping and crouching belong to
-/// Mara alone: the hand and torch rise, dip and lower, while the
-/// world itself stays still.
+/// a chunky first-person hedge maze. Her body keeps the house's
+/// own manners. W and S walk at the same unhurried pace as every
+/// walked journey (footfalls 0.92 s apart on the dirt road); A and
+/// D turn her at one steady rate that stops the instant the key is
+/// let go, so the view can never drift. The mouse is her wrist on
+/// Father's flashlight: the same circle of light, with the same
+/// chunky dark around it, that the vent, the basement and the
+/// blackout use.
+///
+/// The torch is a sprite of its own now - both hands wrapped round
+/// the cloth-bound head of it, drawn in the same pixel art as
+/// every other thing in this game (assets/images/core/
+/// hand_flashlight.png) - held low in the bottom-left corner and
+/// swung round to follow the circle of light the mouse puts on the
+/// dark. The world it lights is painted too: the night sky, the
+/// grass she walks on, the box-hedge walls and the stone pillars
+/// are all projected from the same tiles the garden outside is
+/// drawn from (assets/images/hedge/), so the maze finally looks
+/// like the house it belongs to instead of like coloured
+/// rectangles.
+///
+/// Crouching and jumping are hers again, and the camera goes with
+/// them: a crouch drops her eye, so the hedge tops lean in and
+/// less ground shows under her boots; a jump lifts her, so the
+/// whole maze falls away and comes back. Looking behind her is a
+/// thing she *holds*, not a thing she taps: keep Caps Lock down
+/// and the view turns all the way round at a calm, even rate,
+/// and lets go and it turns back.
 ///
 /// The south break returns to the bridge and the far north-west
 /// break continues to the last room, so exploring it can never
@@ -32,8 +48,14 @@ using Godot;
 public partial class HedgeMaze : Node2D
 {
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
-    private const string HandTexturePath = "res://assets/images/core/hand_palm.png";
-    private const string FlashlightTexturePath = "res://assets/images/core/items/flashlight.png";
+    // The torch she actually carries in here: both hands round the
+    // cloth-bound head, as one sprite, in the house's own pixel art.
+    private const string TorchHandsTexturePath = "res://assets/images/core/hand_flashlight.png";
+    private const string HedgeWallTexturePath = "res://assets/images/hedge/hedge_wall.png";
+    private const string HedgeBaseTexturePath = "res://assets/images/hedge/hedge_base.png";
+    private const string NightSkyTexturePath = "res://assets/images/hedge/night_sky.png";
+    private const string GrassTexturePath = "res://assets/images/hedge/grass_ground.png";
+    private const string StoneTexturePath = "res://assets/images/hedge/stone_tiles.png";
     private const string BridgeScenePath = "res://scenes/world/bridge_repair.tscn";
     private const string Room7ScenePath = "res://scenes/world/room_7.tscn";
 
@@ -44,16 +66,39 @@ public partial class HedgeMaze : Node2D
     private const float ScreenWidth = 1152f;
     private const float ScreenHeight = 648f;
 
-    // The world is never lifted, lowered or bobbed. Jumps, crouches
-    // and steps move Mara's hand instead of the horizon.
+    // The horizon sits still, but Mara's eye does not: a crouch
+    // drops it and a jump lifts it, so the maze leans in over her
+    // and falls away under her. Heights are in the same world units
+    // the maze grid uses.
     private const float Horizon = 324f;
     private const float ColumnWidth = 8f;
     private const int ColumnCount = 144;
     private const float FieldOfView = 1.08f;
     private const float ProjectionScale = 680f;
-    private const float EyeHeightPixels = ProjectionScale * 0.37f;
+    private const float BaseEyeHeight = 0.37f;
+    private const float CrouchEyeDrop = 0.16f;
+    private const float LandingEyeDip = 0.055f;
+    private const float EyeHeightResponse = 15f;
     private const float SkyBand = 24f;
     private const float PlayerRadius = 0.23f;
+
+    // How tall each kind of wall is, measured from the path. A wall
+    // is drawn as everything that rises above her eye, so dropping
+    // her eye makes the hedges lean in and lifting it lets them
+    // fall away again.
+    private const float HedgeWallHeight = 1.65f;
+    private const float PillarHeight = 1.45f;
+    private const float FountainHeight = 0.85f;
+    private const float TopiaryHeight = 1.79f;
+
+    // How much of each painted tile covers one world unit. The tiles
+    // are mirrored 2x2 by tools/build_hedge_art.py, so they repeat
+    // forever without a seam.
+    private const float HedgeTexScale = 150f;
+    private const float StoneTexScale = 165f;
+    private const float GrassTexScale = 132f;
+    private const float SkyPixelsPerRadian = 118f;
+    private const float HedgeBaseHeight = 0.16f;
 
     // Walking pace. Every walked journey sets its footfalls about
     // 0.92 s apart on the dirt road; the maze uses that cadence
@@ -72,32 +117,36 @@ public partial class HedgeMaze : Node2D
     // A/D turns, releasing stops on that frame.
     private const float TurnSpeed = 1.3f;
 
-    // Jump and crouch are Mara's body, shown through her hand.
+    // Looking behind her is a hold, and it turns at one even rate:
+    // a whole half-turn takes a little over half a second.
+    private const float LookBackTurnRate = 1.7f;
+
+    // Jump and crouch are Mara's body, shown through her hand and
+    // through the camera that follows it. A jump lifts the eye by a
+    // little less than she actually rises, so the maze falls away
+    // without the whole world turning into a floor.
     private const float JumpVelocity = 3.4f;
     private const float JumpGravity = 11f;
-    private const float HandJumpLift = 115f;
+    private const float JumpEyeScale = 0.55f;
 
     // The flashlight circle, exactly the basement's (the stronger
     // battery from older saves widens it the same way).
     private const float BeamRadius = 158f;
     private const float StrongBeamRadius = 208f;
 
-    // The held hand is GameUI's held-item hand: the same palm art,
-    // aspect and palm anchor, sized down for walking.
-    private const float HeldPalmX = 0.51f;
-    private const float HeldPalmY = 0.36f;
-    private const float HeldHandAspect = 1.332f;
-    private const float HandWidth = 260f;
-    private const float HandVisibleFraction = 0.78f;
-    private const float HandRestCentreX = 194f;
-    private const float TorchIconSize = 150f;
-
-    // The lens in the flashlight item art (512 px: about x 420,
-    // y 105), as a fraction of the icon from its centre.
-    private static readonly Vector2 TorchLensLocal = new(0.32f, -0.295f);
-    private static readonly float TorchLensBaseAngle = Mathf.Atan2(-0.295f, 0.32f);
-    private const float TorchMinRotation = -1.66f;
-    private const float TorchMaxRotation = 1.05f;
+    // The torch she carries in here is one sprite: both hands round
+    // the cloth-bound head of it, held low in the bottom-left corner
+    // and swung about her grip to follow the circle of light. The
+    // ember of the torch and the place her hands hold it are fixed
+    // points inside that sprite (measured by tools/build_hedge_art.py).
+    private const float TorchSpriteWidth = 248f;
+    private const float TorchRestX = 176f;
+    private const float TorchRestY = 596f;
+    private const float TorchRiseDistance = 330f;
+    private static readonly Vector2 TorchSpriteGrip = new(0.4133f, 0.4941f);
+    private static readonly Vector2 TorchSpriteLens = new(0.8382f, 0.1679f);
+    private const float TorchMinRotation = -1.6f;
+    private const float TorchMaxRotation = 0.85f;
 
     // # hedge, P stone pillar, F dry fountain, T topiary,
     // S south waking place, B bridge opening, X far opening.
@@ -141,8 +190,13 @@ public partial class HedgeMaze : Node2D
     public static void ArmEntry(bool fromNorth) => _pendingFromNorth = fromNorth;
 
     private FontFile _font;
-    private Texture2D _handTexture;
-    private Texture2D _torchTexture;
+    private Texture2D _torchHandsTexture;
+    private Texture2D _hedgeTexture;
+    private Texture2D _hedgeBaseTexture;
+    private Texture2D _skyTexture;
+    private Texture2D _grassTexture;
+    private Texture2D _stoneTexture;
+    private float _torchSpriteHeight = TorchSpriteWidth;
     private Label _titleLabel;
     private Label _promptLabel;
     private Label _exitLabel;
@@ -150,7 +204,8 @@ public partial class HedgeMaze : Node2D
     private Vector2 _playerPosition = new(13.5f, 17.5f);
     private Vector2 _velocity = Vector2.Zero;
     private float _yaw = Mathf.Pi;
-    private bool _lookingBack;
+    private float _lookBackAmount;
+    private bool _lookBackHeld;
     private bool _moving;
     private bool _running;
 
@@ -159,6 +214,7 @@ public partial class HedgeMaze : Node2D
     private float _verticalVelocity;
     private bool _grounded = true;
     private float _landDip;
+    private float _eyeHeight = BaseEyeHeight;
     private float _stepPhase;
     private bool _stepping;
     private float _bobAmount;
@@ -188,14 +244,33 @@ public partial class HedgeMaze : Node2D
     private readonly float[] _depthByColumn = new float[ColumnCount];
     private readonly float[] _shortDepthByColumn = new float[ColumnCount];
     private readonly float[] _skyLimitByColumn = new float[ColumnCount];
+    private readonly float[] _rayAngleByColumn = new float[ColumnCount];
+    private float _drawViewYaw;
+
+    /// <summary>How wide the world is at a depth of one: the number
+    /// of pixels one world unit covers across the screen.</summary>
+    private static readonly float FocalLength = ScreenWidth * 0.5f / Mathf.Tan(FieldOfView * 0.5f);
     private string _exitHintCache = string.Empty;
 
     public override void _Ready()
     {
         _font = GD.Load<FontFile>(FontPath);
-        _handTexture = GD.Load<Texture2D>(HandTexturePath);
-        _torchTexture = GD.Load<Texture2D>(FlashlightTexturePath);
+        _torchHandsTexture = GD.Load<Texture2D>(TorchHandsTexturePath);
+        _hedgeTexture = GD.Load<Texture2D>(HedgeWallTexturePath);
+        _hedgeBaseTexture = GD.Load<Texture2D>(HedgeBaseTexturePath);
+        _skyTexture = GD.Load<Texture2D>(NightSkyTexturePath);
+        _grassTexture = GD.Load<Texture2D>(GrassTexturePath);
+        _stoneTexture = GD.Load<Texture2D>(StoneTexturePath);
         TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
+        // The painted tiles are mirrored 2x2 and repeat across the
+        // maze, so they have to be allowed to run past their edges.
+        TextureRepeat = CanvasItem.TextureRepeatEnum.Enabled;
+
+        if (_torchHandsTexture != null && _torchHandsTexture.GetWidth() > 0)
+        {
+            _torchSpriteHeight = TorchSpriteWidth *
+                ((float)_torchHandsTexture.GetHeight() / _torchHandsTexture.GetWidth());
+        }
 
         bool fromNorth = _pendingFromNorth;
         _pendingFromNorth = false;
@@ -253,7 +328,8 @@ public partial class HedgeMaze : Node2D
             _yaw = Mathf.Pi; // west, along the corridor she wakes beside
         }
         _velocity = Vector2.Zero;
-        _lookingBack = false;
+        _lookBackAmount = 0f;
+        _lookBackHeld = false;
         _exitArmed = true;
     }
 
@@ -268,7 +344,7 @@ public partial class HedgeMaze : Node2D
             new Vector2(560, 530), new Vector2(568, 34), 25,
             new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Right);
         _promptLabel = MakeLabel(
-            "W/S walk · A/D turn · mouse aims the torch\nSHIFT run · C crouch · SPACE jump · CAPS LOCK look back",
+            "W/S walk · A/D turn · mouse aims the torch\nSHIFT run · C crouch · SPACE jump · HOLD CAPS LOCK to look back",
             new Vector2(480, 566), new Vector2(648, 56), 17,
             new Color(0.92f, 0.89f, 0.78f, 0.92f), HorizontalAlignment.Right);
 
@@ -480,11 +556,9 @@ public partial class HedgeMaze : Node2D
         if (!movementKey)
             return;
 
-        if (capsLock && keyEvent.Pressed && !keyEvent.Echo && InputFree())
-        {
-            _lookingBack = !_lookingBack;
-            AudioManager.Play(Sfx.PageTurn, -15f, _lookingBack ? 0.82f : 1.02f);
-        }
+        // Looking behind her is a hold, not a tap, so there is nothing
+        // to do on the press of Caps Lock: the key is claimed here and
+        // the turn itself is read every frame in UpdateLookBack.
         if (keyEvent.PhysicalKeycode == Key.Space && keyEvent.Pressed &&
             !keyEvent.Echo && InputFree())
         {
@@ -522,6 +596,8 @@ public partial class HedgeMaze : Node2D
         UpdateBeam(dt);
         UpdateCrouch(dt, free);
         UpdateJump(dt);
+        UpdateLookBack(dt, free);
+        UpdateEyeHeight(dt);
         if (free)
         {
             UpdateTurning(dt);
@@ -568,6 +644,35 @@ public partial class HedgeMaze : Node2D
         _crouchAmount = Mathf.MoveToward(_crouchAmount, wantsCrouch ? 1f : 0f, dt * 6f);
     }
 
+    /// <summary>Looking behind her is something she holds, not
+    /// something she taps. Keep the key down and the view turns all
+    /// the way round at one calm rate; let it go and the view comes
+    /// back to the way she is facing.</summary>
+    private void UpdateLookBack(float dt, bool free)
+    {
+        bool held = free && Input.IsPhysicalKeyPressed(Key.Capslock);
+        if (held && !_lookBackHeld)
+            AudioManager.Play(Sfx.PageTurn, -15f, 0.82f);
+        _lookBackHeld = held;
+
+        float target = held ? 1f : 0f;
+        _lookBackAmount = Mathf.MoveToward(_lookBackAmount, target, dt * LookBackTurnRate);
+    }
+
+    /// <summary>The camera goes with her body. A crouch drops her
+    /// eye, so the hedges lean in over her and the path comes up to
+    /// meet her; a jump lifts her, so the whole maze falls away and
+    /// settles back when she lands.</summary>
+    private void UpdateEyeHeight(float dt)
+    {
+        float target = BaseEyeHeight
+            - _crouchAmount * CrouchEyeDrop
+            + _jumpHeight * JumpEyeScale
+            + _landDip * LandingEyeDip;
+        float weight = Mathf.Clamp(1f - Mathf.Exp(-EyeHeightResponse * dt), 0f, 1f);
+        _eyeHeight = Mathf.Lerp(_eyeHeight, target, weight);
+    }
+
     private void UpdateJump(float dt)
     {
         if (!_grounded)
@@ -610,10 +715,13 @@ public partial class HedgeMaze : Node2D
         float speed = crouching ? CrouchSpeed : _running ? RunSpeed : WalkSpeed;
         if (forward < 0f)
             speed *= BackwardFactor;
-        if (_lookingBack)
+        if (_lookBackAmount > 0.5f)
             speed *= LookingBackFactor;
 
-        Vector2 facing = new(Mathf.Cos(_yaw), Mathf.Sin(_yaw));
+        // She walks the way she is looking: while the view is turned
+        // round behind her, W carries her backwards, watching it.
+        float moveYaw = ViewYaw;
+        Vector2 facing = new(Mathf.Cos(moveYaw), Mathf.Sin(moveYaw));
         Vector2 desired = facing * forward * speed;
         float weight = Mathf.Clamp(1f - Mathf.Exp(-MovementResponse * dt), 0f, 1f);
         _velocity = _velocity.Lerp(desired, weight);
@@ -682,8 +790,8 @@ public partial class HedgeMaze : Node2D
     /// mouse has put on the dark, at the beam's own smoothing.</summary>
     private void UpdateTorchAim(float dt)
     {
-        GetHandPose(out _, out _, out Vector2 palm);
-        Vector2 toBeam = _beamPosition - palm;
+        GetHandPose(out _, out _, out Vector2 lens);
+        Vector2 toBeam = _beamPosition - lens;
         float target = _torchRotation;
         if (toBeam.LengthSquared() > 1f)
         {
@@ -800,7 +908,7 @@ public partial class HedgeMaze : Node2D
             text = "The opening by the waking place — back toward the bridge";
         else if (_playerPosition.DistanceTo(north) < 2.45f)
             text = "A break in the hedge — the far side";
-        else if (_lookingBack)
+        else if (_lookBackAmount > 0.5f)
             text = "Looking behind her";
         else if (_crouchAmount >= 0.45f)
             text = "Crouching";
@@ -905,7 +1013,10 @@ public partial class HedgeMaze : Node2D
         };
     }
 
-    private float ViewYaw => NormalizeAngle(_yaw + (_lookingBack ? Mathf.Pi : 0f));
+    /// <summary>Where she is looking. The turn behind her is a held
+    /// half-turn, so the view eases round and settles again instead
+    /// of snapping the way a tap would.</summary>
+    private float ViewYaw => NormalizeAngle(_yaw + _lookBackAmount * Mathf.Pi);
 
     private float BeamFlicker() => Settings.ReduceMotionOrDefault()
         ? 1f
@@ -933,7 +1044,7 @@ public partial class HedgeMaze : Node2D
         float viewYaw = ViewYaw;
 
         DrawRect(new Rect2(0, 0, ScreenWidth, Horizon), SkyColorAt(Horizon * 0.5f), true);
-        DrawGroundBase();
+        DrawGroundBase(viewYaw);
         DrawWalls(viewYaw);
         DrawGroundTufts(viewYaw);
 
@@ -960,13 +1071,75 @@ public partial class HedgeMaze : Node2D
             Mathf.Lerp(0.036f, 0.105f, t));
     }
 
-    private void DrawGroundBase()
+    /// <summary>The grass she walks on, painted in the same tiles as
+    /// the garden outside and projected with the walls' own eye
+    /// height, so it flows past at exactly their speed. Each band of
+    /// the floor is one flat quad, so the whole floor costs a couple
+    /// of dozen draws rather than a column of them.</summary>
+    private void DrawGroundBase(float viewYaw)
+    {
+        if (_grassTexture == null)
+        {
+            DrawFlatGround();
+            return;
+        }
+
+        Vector2 dir = new(Mathf.Cos(viewYaw), Mathf.Sin(viewYaw));
+        Vector2 right = new(-dir.Y, dir.X);
+        float focal = ScreenWidth * 0.5f / Mathf.Tan(FieldOfView * 0.5f);
+        float halfWidth = ScreenWidth * 0.5f / focal;
+        float eyePixels = ProjectionScale * _eyeHeight;
+
+        const int bands = 20;
+        float bandHeight = (ScreenHeight - Horizon) / bands;
+        for (int band = 0; band < bands; band++)
+        {
+            float y0 = Horizon + band * bandHeight;
+            float y1 = Mathf.Min(y0 + bandHeight, ScreenHeight);
+            float depthFar = Mathf.Clamp(eyePixels / Mathf.Max(y0 - Horizon, 1f), 0.25f, 30f);
+            float depthNear = Mathf.Clamp(eyePixels / Mathf.Max(y1 - Horizon, 1f), 0.25f, 30f);
+
+            Vector2 farLeft = _playerPosition + dir * depthFar - right * (halfWidth * depthFar);
+            Vector2 farRight = _playerPosition + dir * depthFar + right * (halfWidth * depthFar);
+            Vector2 nearRight = _playerPosition + dir * depthNear + right * (halfWidth * depthNear);
+            Vector2 nearLeft = _playerPosition + dir * depthNear - right * (halfWidth * depthNear);
+
+            var points = new Vector2[]
+            {
+                new Vector2(0f, y0),
+                new Vector2(ScreenWidth, y0),
+                new Vector2(ScreenWidth, y1),
+                new Vector2(0f, y1),
+            };
+            var uvs = new Vector2[]
+            {
+                new Vector2(farLeft.X * GrassTexScale, farLeft.Y * GrassTexScale),
+                new Vector2(farRight.X * GrassTexScale, farRight.Y * GrassTexScale),
+                new Vector2(nearRight.X * GrassTexScale, nearRight.Y * GrassTexScale),
+                new Vector2(nearLeft.X * GrassTexScale, nearLeft.Y * GrassTexScale),
+            };
+            float lightFar = SurfaceLight(depthFar);
+            float lightNear = SurfaceLight(depthNear);
+            var colors = new Color[]
+            {
+                ScaleColor(Colors.White, lightFar),
+                ScaleColor(Colors.White, lightFar),
+                ScaleColor(Colors.White, lightNear),
+                ScaleColor(Colors.White, lightNear),
+            };
+            DrawPolygon(points, colors, uvs, _grassTexture);
+        }
+    }
+
+    /// <summary>The flat green the floor used to be, kept for the
+    /// moment before the painted grass is available.</summary>
+    private void DrawFlatGround()
     {
         for (float y = Horizon; y < ScreenHeight; y += 12f)
         {
             float height = Mathf.Min(12f, ScreenHeight - y);
             float centre = y + height * 0.5f;
-            float depth = EyeHeightPixels / Mathf.Max(centre - Horizon, 1f);
+            float depth = ProjectionScale * _eyeHeight / Mathf.Max(centre - Horizon, 1f);
             float light = SurfaceLight(depth);
             DrawRect(new Rect2(0, y, ScreenWidth, height),
                 ScaleColor(new Color(0.055f, 0.15f, 0.06f), light), true);
@@ -976,6 +1149,7 @@ public partial class HedgeMaze : Node2D
     private void DrawWalls(float viewYaw)
     {
         float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
+        _drawViewYaw = viewYaw;
 
         for (int column = 0; column < ColumnCount; column++)
         {
@@ -983,6 +1157,7 @@ public partial class HedgeMaze : Node2D
             float centerX = screenX + ColumnWidth * 0.5f;
             float cameraX = 2f * centerX / ScreenWidth - 1f;
             float rayAngle = viewYaw + Mathf.Atan(cameraX * tanHalfFov);
+            _rayAngleByColumn[column] = rayAngle;
             float fisheye = Mathf.Cos(rayAngle - viewYaw);
             RayHit hit = CastRay(rayAngle, out RayHit shortHit);
 
@@ -1008,23 +1183,131 @@ public partial class HedgeMaze : Node2D
         }
     }
 
+    /// <summary>How tall a wall of this kind stands, in world units
+    /// measured from the path she walks on.</summary>
+    private static float WallTopUnits(char tile) => tile switch
+    {
+        'F' => FountainHeight,
+        'P' => PillarHeight,
+        'T' => TopiaryHeight,
+        _ => HedgeWallHeight,
+    };
+
+    private Texture2D WallTextureFor(char tile) => tile switch
+    {
+        'P' => _stoneTexture,
+        'F' => _stoneTexture,
+        _ => _hedgeTexture,
+    };
+
     /// <summary>Draw one projected slice; returns its top edge.</summary>
     private float DrawWallSlice(float screenX, float depth, RayHit hit, out float crown)
     {
         crown = 0f;
-        float heightFactor = hit.Tile switch
-        {
-            'F' => 0.48f,
-            'P' => 1.08f,
-            'T' => 1.42f,
-            _ => 1.28f,
-        };
+        float wallTop = WallTopUnits(hit.Tile);
         float groundLineHeight = ProjectionScale / depth;
-        float lineHeight = groundLineHeight * heightFactor;
-        float bottom = Horizon + groundLineHeight * 0.37f;
-        float top = bottom - lineHeight * 1.06f;
+        float bottom = Horizon + groundLineHeight * _eyeHeight;
+        float top = bottom - groundLineHeight * (wallTop - _eyeHeight) * 1.06f;
 
         float light = SurfaceLight(depth) * (hit.Side == 0 ? 1f : 0.84f);
+        Texture2D texture = WallTextureFor(hit.Tile);
+        if (texture == null)
+        {
+            DrawFlatWallSlice(screenX, top, bottom, hit, light);
+            return top;
+        }
+
+        float texScale = hit.Tile is 'P' or 'F' ? StoneTexScale : HedgeTexScale;
+
+        // u runs along the face of the wall: the world coordinate
+        // that runs along it (Y for a wall that faces along X, X for
+        // a wall that faces along Y). It is worked out separately for
+        // each end of the column by asking where the ray at that end
+        // of the column would meet the face, so neighbouring columns
+        // show one unbroken stretch of hedge instead of eight little
+        // pictures of one.
+        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
+        float phiLeft = Mathf.Atan((2f * screenX / ScreenWidth - 1f) * tanHalfFov);
+        float phiRight = Mathf.Atan((2f * (screenX + ColumnWidth) / ScreenWidth - 1f) * tanHalfFov);
+        float phiCentre = Mathf.Atan((2f * (screenX + ColumnWidth * 0.5f) / ScreenWidth - 1f) * tanHalfFov);
+        Vector2 dirLeft = new(Mathf.Cos(_drawViewYaw + phiLeft), Mathf.Sin(_drawViewYaw + phiLeft));
+        Vector2 dirRight = new(Mathf.Cos(_drawViewYaw + phiRight), Mathf.Sin(_drawViewYaw + phiRight));
+        Vector2 dirCentre = new(Mathf.Cos(_drawViewYaw + phiCentre), Mathf.Sin(_drawViewYaw + phiCentre));
+
+        float uLeft;
+        float uRight;
+        if (hit.Side == 0)
+        {
+            float faceX = dirCentre.X > 0f ? hit.Cell.X : hit.Cell.X + 1f;
+            float across = faceX - _playerPosition.X;
+            float yLeft = _playerPosition.Y + across * (dirLeft.Y / dirLeft.X);
+            float yRight = _playerPosition.Y + across * (dirRight.Y / dirRight.X);
+            uLeft = yLeft * texScale;
+            uRight = yRight * texScale;
+        }
+        else
+        {
+            float faceY = dirCentre.Y > 0f ? hit.Cell.Y : hit.Cell.Y + 1f;
+            float across = faceY - _playerPosition.Y;
+            float xLeft = _playerPosition.X + across * (dirLeft.X / dirLeft.Y);
+            float xRight = _playerPosition.X + across * (dirRight.X / dirRight.Y);
+            uLeft = xLeft * texScale;
+            uRight = xRight * texScale;
+        }
+
+        // A wall seen almost edge-on would otherwise smear the whole
+        // tile into one column; it is held to a sane stretch instead.
+        float uSpread = Mathf.Abs(uRight - uLeft);
+        float maxSpread = ColumnWidth / FocalLength * depth * texScale * 4f;
+        if (uSpread > maxSpread && uSpread > 0.001f)
+        {
+            float centre = (uLeft + uRight) * 0.5f;
+            uLeft = centre - maxSpread * 0.5f;
+            uRight = centre + maxSpread * 0.5f;
+        }
+
+        Color shade = ScaleColor(Colors.White, Mathf.Clamp(light, 0f, 1.05f));
+        if (hit.Tile == 'F')
+            shade = new Color(shade.R * 0.72f, shade.G * 0.86f, shade.B, shade.A);
+
+        float vTop = 0f;
+        float vBottom = wallTop * texScale;
+        var points = new Vector2[]
+        {
+            new Vector2(screenX, top),
+            new Vector2(screenX + ColumnWidth + 1f, top),
+            new Vector2(screenX + ColumnWidth + 1f, bottom),
+            new Vector2(screenX, bottom),
+        };
+        var uvs = new Vector2[]
+        {
+            new Vector2(uLeft, vTop),
+            new Vector2(uRight, vTop),
+            new Vector2(uRight, vBottom),
+            new Vector2(uLeft, vBottom),
+        };
+        DrawPolygon(points, new Color[] { shade, shade, shade, shade }, uvs, texture);
+
+        if (hit.Tile is '#' or 'T')
+        {
+            crown = DrawHedgeCrown(screenX, top, bottom, hit, uLeft, uRight, groundLineHeight, shade);
+            DrawHedgeBase(screenX, bottom, groundLineHeight, uLeft, uRight, shade);
+        }
+        else if (hit.Tile == 'F')
+        {
+            float rimY = top + Mathf.Min(18f, (bottom - top) * 0.14f);
+            DrawRect(new Rect2(screenX, top, ColumnWidth + 1f, Mathf.Max(2f, (bottom - top) * 0.05f)),
+                ScaleColor(new Color(0.5f, 0.54f, 0.55f), light), true);
+            DrawRect(new Rect2(screenX, rimY, ColumnWidth + 1f, 4f),
+                ScaleColor(new Color(0.35f, 0.55f, 0.68f), light), true);
+        }
+        return top;
+    }
+
+    /// <summary>The flat colours the walls were before they were
+    /// painted, kept for the moment before the tiles are available.</summary>
+    private void DrawFlatWallSlice(float screenX, float top, float bottom, RayHit hit, float light)
+    {
         Color baseColor = hit.Tile switch
         {
             'P' => new Color(0.34f, 0.35f, 0.34f),
@@ -1034,72 +1317,74 @@ public partial class HedgeMaze : Node2D
         };
         DrawRect(new Rect2(screenX, top, ColumnWidth + 1f, bottom - top),
             ScaleColor(baseColor, light), true);
-
-        if (hit.Tile is '#' or 'T')
-        {
-            crown = DrawLeafDetail(screenX, top, bottom, hit.Cell, hit.WallX, light, hit.Tile);
-        }
-        else if (hit.Tile == 'P')
-        {
-            DrawStoneDetail(screenX, top, bottom, hit.Cell, light);
-        }
-        else if (hit.Tile == 'F')
-        {
-            float rimY = top + Mathf.Min(18f, lineHeight * 0.14f);
-            DrawRect(new Rect2(screenX, top, ColumnWidth + 1f, Mathf.Max(2f, lineHeight * 0.05f)),
-                ScaleColor(new Color(0.5f, 0.54f, 0.55f), light), true);
-            DrawRect(new Rect2(screenX, rimY, ColumnWidth + 1f, 4f),
-                ScaleColor(new Color(0.35f, 0.55f, 0.68f), light), true);
-        }
-        return top;
     }
 
-    private float DrawLeafDetail(float screenX, float top, float bottom, Vector2I cell,
-        float wallX, float light, char tile)
+    /// <summary>A hand's width of leaves over the top of the hedge,
+    /// so the skyline is cut and not shaved.</summary>
+    private float DrawHedgeCrown(float screenX, float top, float bottom, RayHit hit,
+        float uLeft, float uRight, float groundLineHeight, Color shade)
     {
         float height = bottom - top;
-        if (height <= 8f)
+        // Only the near hedges are tall enough on screen for a fringe
+        // of leaves over the top to be worth the draw.
+        if (height <= 46f || _hedgeTexture == null)
             return 0f;
 
-        int textureColumn = Mathf.FloorToInt(wallX * 8f);
-        float crown = Hash01(cell.X * 9 + textureColumn, cell.Y * 5, 31) *
-            Mathf.Min(11f, height * 0.07f);
-        DrawRect(new Rect2(screenX, top - crown, ColumnWidth + 1f, crown + 5f),
-            ScaleColor(tile == 'T'
-                ? new Color(0.05f, 0.3f, 0.09f)
-                : new Color(0.07f, 0.35f, 0.1f), light), true);
+        float crown = Hash01(hit.Cell.X * 9, hit.Cell.Y * 5, 31) * Mathf.Min(12f, height * 0.08f);
+        if (crown < 1.5f)
+            return 0f;
 
-        const int bands = 9;
-        for (int band = 0; band < bands; band++)
+        float v = crown / groundLineHeight * HedgeTexScale;
+        var points = new Vector2[]
         {
-            float hash = Hash01(cell.X * 13 + textureColumn * 3, cell.Y * 17 + band, 47);
-            if (hash < 0.42f)
-                continue;
-            float y = top + (band + 0.18f + hash * 0.45f) * height / bands;
-            float size = Mathf.Clamp(height / bands * 0.42f, 3f, 13f);
-            float x = screenX + Hash01(cell.X + band, cell.Y - textureColumn, 83) *
-                Mathf.Max(1f, ColumnWidth - size * 0.55f);
-            Color leaf = hash > 0.78f
-                ? ScaleColor(new Color(0.13f, 0.48f, 0.16f), light)
-                : ScaleColor(new Color(0.012f, 0.09f, 0.025f), Mathf.Clamp(light + 0.15f, 0f, 1f));
-            DrawRect(new Rect2(x, y, size * 0.72f, size), leaf, true);
-        }
+            new Vector2(screenX, top - crown),
+            new Vector2(screenX + ColumnWidth + 1f, top - crown),
+            new Vector2(screenX + ColumnWidth + 1f, top + 1f),
+            new Vector2(screenX, top + 1f),
+        };
+        var uvs = new Vector2[]
+        {
+            new Vector2(uLeft, 0f),
+            new Vector2(uRight, 0f),
+            new Vector2(uRight, v),
+            new Vector2(uLeft, v),
+        };
+        Color crownShade = shade;
+        if (hit.Tile == 'T')
+            crownShade = new Color(shade.R * 0.72f, shade.G * 0.92f, shade.B, shade.A);
+        DrawPolygon(points, new Color[] { crownShade, crownShade, crownShade, crownShade }, uvs,
+            _hedgeTexture);
         return crown;
     }
 
-    private void DrawStoneDetail(float screenX, float top, float bottom, Vector2I cell, float light)
+    /// <summary>The roots and rough grass at the foot of the hedge,
+    /// so it is planted in the ground instead of standing on it.</summary>
+    private void DrawHedgeBase(float screenX, float bottom, float groundLineHeight,
+        float uLeft, float uRight, Color shade)
     {
-        float height = bottom - top;
-        if (height <= 10f)
+        if (_hedgeBaseTexture == null)
             return;
-        Color seam = ScaleColor(new Color(0.08f, 0.085f, 0.08f), Mathf.Clamp(light + 0.2f, 0f, 1f));
-        for (int i = 1; i < 5; i++)
+
+        float bandHeight = HedgeBaseHeight * groundLineHeight;
+        if (bandHeight < 2f)
+            return;
+
+        float baseScale = _hedgeBaseTexture.GetWidth() / 1.78f;
+        var points = new Vector2[]
         {
-            float y = top + height * i / 5f + Hash01(cell.X, cell.Y + i, 59) * 3f;
-            DrawRect(new Rect2(screenX, y, ColumnWidth + 1f, 2f), seam, true);
-        }
-        DrawRect(new Rect2(screenX, top, ColumnWidth + 1f, Mathf.Min(10f, height * 0.08f)),
-            ScaleColor(new Color(0.5f, 0.51f, 0.47f), light), true);
+            new Vector2(screenX, bottom - bandHeight),
+            new Vector2(screenX + ColumnWidth + 1f, bottom - bandHeight),
+            new Vector2(screenX + ColumnWidth + 1f, bottom + 1f),
+            new Vector2(screenX, bottom + 1f),
+        };
+        var uvs = new Vector2[]
+        {
+            new Vector2(uLeft / HedgeTexScale * baseScale, 0f),
+            new Vector2(uRight / HedgeTexScale * baseScale, 0f),
+            new Vector2(uRight / HedgeTexScale * baseScale, _hedgeBaseTexture.GetHeight()),
+            new Vector2(uLeft / HedgeTexScale * baseScale, _hedgeBaseTexture.GetHeight()),
+        };
+        DrawPolygon(points, new Color[] { shade, shade, shade, shade }, uvs, _hedgeBaseTexture);
     }
 
     /// <summary>Grass tufts and pebbles fixed in the world and
@@ -1137,7 +1422,7 @@ public partial class HedgeMaze : Node2D
                     if (depth > _depthByColumn[column] || depth > _shortDepthByColumn[column])
                         continue;
 
-                    float screenY = Horizon + EyeHeightPixels / depth;
+                    float screenY = Horizon + ProjectionScale * _eyeHeight / depth;
                     if (screenY > ScreenHeight + 4f)
                         continue;
 
@@ -1214,6 +1499,69 @@ public partial class HedgeMaze : Node2D
     /// above the hedge tops, so the walls keep a moonlit outline.</summary>
     private void DrawSkyAboveWalls(float viewYaw)
     {
+        if (_skyTexture != null)
+            DrawPaintedSky(viewYaw);
+        else
+            DrawFlatSky();
+
+        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
+        float moonRelative = NormalizeAngle(2.45f - viewYaw);
+        if (Mathf.Abs(moonRelative) < FieldOfView * 0.55f)
+        {
+            float moonX = ScreenWidth * 0.5f +
+                Mathf.Tan(moonRelative) / tanHalfFov * ScreenWidth * 0.5f;
+            var moon = new Vector2(moonX, 88f);
+            DrawSkyDisc(moon, 31f, new Color(0.72f, 0.8f, 0.92f, 0.13f));
+            DrawSkyDisc(moon, 19f, new Color(0.78f, 0.84f, 0.92f, 0.72f));
+            DrawSkyDisc(moon + new Vector2(7, -3), 15f, new Color(0.018f, 0.03f, 0.055f, 0.82f));
+        }
+    }
+
+    /// <summary>The painted night sky, put back in above the hedge
+    /// tops once the torch's dark has been laid down, so the walls
+    /// keep a moonlit outline and the clouds drift as she turns.</summary>
+    private void DrawPaintedSky(float viewYaw)
+    {
+        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
+        float vScale = _skyTexture.GetHeight() / Horizon;
+        Color tint = new Color(0.92f, 0.96f, 1f, 1f);
+
+        for (int column = 0; column < ColumnCount; column++)
+        {
+            float limit = _skyLimitByColumn[column];
+            if (limit <= 0.5f)
+                continue;
+
+            float x0 = column * ColumnWidth;
+            float x1 = x0 + ColumnWidth;
+            float u0 = (viewYaw + Mathf.Atan((2f * x0 / ScreenWidth - 1f) * tanHalfFov)) * SkyPixelsPerRadian;
+            float u1 = (viewYaw + Mathf.Atan((2f * x1 / ScreenWidth - 1f) * tanHalfFov)) * SkyPixelsPerRadian;
+            // The sky is anchored to the screen, not to the wall tops,
+            // so crouching clips more of it instead of sliding it.
+            float vTop = 0f;
+            float vBottom = limit * vScale;
+
+            var points = new Vector2[]
+            {
+                new Vector2(x0, 0f),
+                new Vector2(x1, 0f),
+                new Vector2(x1, limit),
+                new Vector2(x0, limit),
+            };
+            var uvs = new Vector2[]
+            {
+                new Vector2(u0, vTop),
+                new Vector2(u1, vTop),
+                new Vector2(u1, vBottom),
+                new Vector2(u0, vBottom),
+            };
+            DrawPolygon(points, new Color[] { tint, tint, tint, tint }, uvs, _skyTexture);
+        }
+    }
+
+    /// <summary>The flat night the sky was before it was painted.</summary>
+    private void DrawFlatSky()
+    {
         for (float y = 0f; y < Horizon; y += SkyBand)
         {
             float bandBottom = Mathf.Min(y + SkyBand, Horizon);
@@ -1241,34 +1589,6 @@ public partial class HedgeMaze : Node2D
                         ColumnWidth, _skyLimitByColumn[column] - y), color, true);
                 }
             }
-        }
-
-        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
-        for (int i = 0; i < 105; i++)
-        {
-            float relative = NormalizeAngle(i * 2.399963f - viewYaw);
-            if (Mathf.Abs(relative) > FieldOfView * 0.56f)
-                continue;
-            float x = ScreenWidth * 0.5f + Mathf.Tan(relative) / tanHalfFov * ScreenWidth * 0.5f;
-            if (x < 0f || x >= ScreenWidth - 2f)
-                continue;
-            float y = 18f + Hash01(i, 17, 91) * (Horizon - 70f);
-            int column = Mathf.Clamp(Mathf.FloorToInt(x / ColumnWidth), 0, ColumnCount - 1);
-            if (y + 2f > _skyLimitByColumn[column])
-                continue;
-            float alpha = 0.25f + 0.55f * Hash01(i, 43, 7);
-            DrawRect(new Rect2(x, y, 2f, 2f), new Color(0.85f, 0.9f, 1f, alpha), true);
-        }
-
-        float moonRelative = NormalizeAngle(2.45f - viewYaw);
-        if (Mathf.Abs(moonRelative) < FieldOfView * 0.55f)
-        {
-            float moonX = ScreenWidth * 0.5f +
-                Mathf.Tan(moonRelative) / tanHalfFov * ScreenWidth * 0.5f;
-            var moon = new Vector2(moonX, 88f);
-            DrawSkyDisc(moon, 31f, new Color(0.72f, 0.8f, 0.92f, 0.13f));
-            DrawSkyDisc(moon, 19f, new Color(0.78f, 0.84f, 0.92f, 0.72f));
-            DrawSkyDisc(moon + new Vector2(7, -3), 15f, new Color(0.018f, 0.03f, 0.055f, 0.82f));
         }
     }
 
@@ -1315,42 +1635,42 @@ public partial class HedgeMaze : Node2D
 
     // ------------------------------------------------------------ Mara's hand
 
-    /// <summary>Where her left hand is this frame. Steps sway it,
-    /// a jump lifts it and the landing dips it, a crouch lowers and
-    /// tilts it, and it rises into frame when the torch comes on —
-    /// the world itself never moves for any of these.</summary>
-    private void GetHandPose(out Vector2 wrist, out float handAngle, out Vector2 palm)
+    /// <summary>Where her hands hold the torch this frame. The steps
+    /// sway it and the landing dips it, and it rises into frame when
+    /// the torch comes on. The camera carries the crouch and the jump
+    /// now, so the hands in front of her eyes do not have to.</summary>
+    private void GetHandPose(out Vector2 grip, out float torchAngle, out Vector2 lens)
     {
-        float handHeight = HandWidth * HeldHandAspect;
         Vector2 offset = Vector2.Zero;
         if (!Settings.ReduceMotionOrDefault())
         {
             offset.Y += Mathf.Cos(_stepPhase * Mathf.Tau) * _bobAmpY * _bobAmount;
             offset.X += Mathf.Sin(_stepPhase * Mathf.Pi) * _bobAmpX * _bobAmount;
         }
-        offset.Y -= _jumpHeight * HandJumpLift;
-        offset.Y += _landDip * _landDip * 22f;
-        offset += new Vector2(16f, 62f) * _crouchAmount;
-        offset.Y += _handRise * 320f;
+        offset.Y += _landDip * _landDip * 16f;
+        offset.Y += _handRise * TorchRiseDistance;
 
-        wrist = new Vector2(HandRestCentreX,
-            ScreenHeight + handHeight * (1f - HandVisibleFraction)) + offset;
-        handAngle = _torchRotation * 0.12f + 0.08f * _crouchAmount;
-        var palmLocal = new Vector2(HandWidth * (HeldPalmX - 0.5f), -handHeight * (1f - HeldPalmY));
-        palm = wrist + palmLocal.Rotated(handAngle);
+        grip = new Vector2(TorchRestX, TorchRestY) + offset;
+        torchAngle = _torchRotation;
+        lens = grip + TorchLensOffset.Rotated(torchAngle);
     }
 
-    private Vector2 TorchLensPosition(Vector2 palm) =>
-        palm + (TorchLensLocal * TorchIconSize).Rotated(_torchRotation);
+    /// <summary>Where the ember of the torch sits, measured from the
+    /// place her hands hold it.</summary>
+    private Vector2 TorchLensOffset => new(
+        (TorchSpriteLens.X - TorchSpriteGrip.X) * TorchSpriteWidth,
+        (TorchSpriteLens.Y - TorchSpriteGrip.Y) * _torchSpriteHeight);
+
+    private float TorchLensBaseAngle => Mathf.Atan2(TorchLensOffset.Y, TorchLensOffset.X);
 
     /// <summary>GameUI's held-item light rule: the hand is only as
     /// bright as the torch light actually landing near it, with a
     /// little back-spill because this time the torch is in it.</summary>
-    private float HandLightLevel(Vector2 palm)
+    private float HandLightLevel(Vector2 grip)
     {
         if (!_flashlightOn)
             return 0.2f;
-        float distance = _beamPosition.DistanceTo(palm);
+        float distance = _beamPosition.DistanceTo(grip);
         float falloff = 1f - Mathf.Clamp((distance - 110f) / 330f, 0f, 1f);
         return Mathf.Clamp((0.46f + 0.54f * falloff) * BeamFlicker(), 0f, 1f);
     }
@@ -1365,8 +1685,7 @@ public partial class HedgeMaze : Node2D
         if (!_hasFlashlight || !_flashlightOn || _handRise >= 0.995f)
             return;
 
-        GetHandPose(out _, out _, out Vector2 palm);
-        Vector2 lens = TorchLensPosition(palm);
+        GetHandPose(out _, out _, out Vector2 lens);
         float strength = BeamFlicker() * (1f - _handRise);
         var warm = new Color(1f, 0.88f, 0.6f);
         const int discs = 18;
@@ -1380,34 +1699,31 @@ public partial class HedgeMaze : Node2D
         }
     }
 
-    /// <summary>Her left hand and Father's flashlight: the same palm
-    /// art and palm anchor as every held item, with the flashlight's
-    /// own item art resting in it and turned toward the circle.</summary>
+    /// <summary>Her hands round Father's torch: one sprite of its own,
+    /// held low in the bottom-left corner and swung about her grip so
+    /// the ember always points at the circle of light the mouse has
+    /// put on the dark.</summary>
     private void DrawHeldFlashlight()
     {
-        if (!_hasFlashlight || _handTexture == null || _torchTexture == null || _handRise >= 0.995f)
+        if (!_hasFlashlight || _torchHandsTexture == null || _handRise >= 0.995f)
             return;
 
-        GetHandPose(out Vector2 wrist, out float handAngle, out Vector2 palm);
-        float handHeight = HandWidth * HeldHandAspect;
-        float level = HandLightLevel(palm);
+        GetHandPose(out Vector2 grip, out float torchAngle, out Vector2 lens);
+        float level = HandLightLevel(grip);
 
-        DrawSetTransform(wrist, handAngle, Vector2.One);
-        DrawTextureRect(_handTexture,
-            new Rect2(-HandWidth * 0.5f, -handHeight, HandWidth, handHeight),
+        DrawSetTransform(grip, torchAngle, Vector2.One);
+        DrawTextureRect(_torchHandsTexture,
+            new Rect2(-TorchSpriteGrip.X * TorchSpriteWidth,
+                -TorchSpriteGrip.Y * _torchSpriteHeight,
+                TorchSpriteWidth, _torchSpriteHeight),
             false, TorchTint(level));
-        DrawSetTransform(palm, _torchRotation, Vector2.One);
-        DrawTextureRect(_torchTexture,
-            new Rect2(-TorchIconSize * 0.5f, -TorchIconSize * 0.5f, TorchIconSize, TorchIconSize),
-            false, TorchTint(Mathf.Min(1f, level + 0.12f)));
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
         if (_flashlightOn)
         {
             float flicker = BeamFlicker();
-            Vector2 lens = TorchLensPosition(palm);
-            DrawCircle(lens, 14f, new Color(1f, 0.94f, 0.74f, 0.42f * flicker));
-            DrawCircle(lens, 7f, new Color(1f, 0.98f, 0.86f, 0.7f * flicker));
+            DrawCircle(lens, 13f, new Color(1f, 0.94f, 0.74f, 0.42f * flicker));
+            DrawCircle(lens, 6f, new Color(1f, 0.98f, 0.86f, 0.7f * flicker));
         }
     }
 
