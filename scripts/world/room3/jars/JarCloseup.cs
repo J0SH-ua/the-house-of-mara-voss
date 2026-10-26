@@ -195,6 +195,12 @@ public partial class JarCloseup : Node2D
             if (_hasHairpin)
             {
                 await Say("The last jar. Its seal has had twelve years to become one with the glass. But I watched Mum do this a hundred times — hairpin under the rubber, worked round and round, tapped true every time it crossed where the rubber gives. Seven of those, usually. She counted under her breath.");
+                if (!StillHere())
+                    return;
+                // Physically out of the bag before anything starts:
+                // her line, then the pin travelling up to the seal.
+                AudioManager.Play(Sfx.PhotoPickup, -12f, 0.9f);
+                await Say("Right. Out of the bag, then — quietly does it. Show me again how this goes, Mum.");
             }
             else if (gs?.HasFlag(BareAttemptFlag) == true)
             {
@@ -389,7 +395,7 @@ public partial class JarCloseup : Node2D
             _lidLift = Mathf.MoveToward(_lidLift, 1f, dt / 0.5f);
 
         if (_pinIntro < 1f)
-            _pinIntro = Mathf.MoveToward(_pinIntro, 1f, dt / 0.9f);
+            _pinIntro = Mathf.MoveToward(_pinIntro, 1f, dt / 1.5f);
         if (_state == JarState.Sealed && _hasHairpin && _tapReady && _pinIntro >= 1f && !_busy &&
             !Dialogue.IsShowing && !Dialogue.IsInputBlocked && !GetTree().Paused &&
             !(GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()))
@@ -844,34 +850,45 @@ public partial class JarCloseup : Node2D
 
     private void DrawWorkingLine()
     {
-        // Mum's hairpin itself, under the rubber, travelling the rim
-        // the way her hand travels it — first rising out of the bag
-        // to the seal, then turning with the work. A hairline of
-        // light from the seal's heart keeps the timing readable.
+        // The hairpin IS the working line now: no separate hand, no
+        // guide — Mum's bent pin lies along the seal's radius like a
+        // clock hand, its two tips reaching the rubber, its loop
+        // riding back over the seal's heart, and the whole thing
+        // turns with the work. The pin's art runs bend-to-tips on
+        // the diagonal, so a quarter-turn's correction lays its
+        // long axis exactly along the needle's angle. Before the
+        // counting starts, it travels up out of the bag — bottom
+        // right, where her bag hangs — and settles onto the seal.
         Vector2 dir = Vector2.FromAngle(_needleAngle);
-        Vector2 tip = SealCenter + dir * SealRadius;
+        Vector2 needlePos = SealCenter + dir * (SealRadius * 0.3f);
+        float needleAngle = _needleAngle - Mathf.Pi / 4f;
 
-        Vector2 pinPos = tip;
-        float pinAngle = _needleAngle + Mathf.Pi / 2f;
+        Vector2 pinPos = needlePos;
+        float pinAngle = needleAngle;
+        float pinSize = 152f;
         if (_pinIntro < 1f)
         {
             float eased = _pinIntro * _pinIntro * (3f - 2f * _pinIntro);
-            pinPos = new Vector2(576f, 706f).Lerp(tip, eased);
-            pinAngle = Mathf.Lerp(-0.5f, pinAngle, eased);
+            Vector2 bagPos = new(1024f, 716f);
+            pinPos = bagPos.Lerp(needlePos, eased);
+            pinPos.Y -= Mathf.Sin(eased * Mathf.Pi) * 46f;
+            pinAngle = Mathf.Lerp(0.3f, needleAngle, eased);
+            pinSize = Mathf.Lerp(104f, 152f, eased);
         }
         else
         {
-            DrawLine(SealCenter, tip, new Color(1f, 0.9f, 0.66f, 0.3f), 2f, true);
+            // The pivot her thumb would be, under the pin's loop.
             DrawCircle(SealCenter, 5f, new Color(0.45f, 0.42f, 0.38f, 0.9f));
         }
 
+        float half = pinSize * 0.5f;
         if (_hairpinTexture != null)
         {
             DrawSetTransform(pinPos + new Vector2(2, 3), pinAngle, Vector2.One);
-            DrawTextureRect(_hairpinTexture, new Rect2(-44, -44, 88, 88), false,
+            DrawTextureRect(_hairpinTexture, new Rect2(-half, -half, pinSize, pinSize), false,
                 new Color(0f, 0f, 0f, 0.35f));
             DrawSetTransform(pinPos, pinAngle, Vector2.One);
-            DrawTextureRect(_hairpinTexture, new Rect2(-44, -44, 88, 88), false);
+            DrawTextureRect(_hairpinTexture, new Rect2(-half, -half, pinSize, pinSize), false);
             DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
         }
         else

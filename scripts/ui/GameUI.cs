@@ -299,6 +299,13 @@ public partial class GameUI : CanvasLayer
             new() { Effect = "glow", Cx = 0.148f, Cy = 0.67f, W = 260f, H = 260f, Alpha = 0.17f, Tint = new Color(1f, 0.69f, 0.36f), Pulse = 0.05f, PulseSpeed = 2.3f },
             new() { Effect = "flame", Cx = 0.148f, Cy = 0.71f, W = 58f, H = 140f, Fps = 7f, Alpha = 0.9f },
         ],
+        ["difference_investigation.tscn"] =
+        [
+            // the same fire, relit by the wrong room — moving, like
+            // the one in the real sitting room, until any wind has it
+            new() { Effect = "glow", Cx = 0.148f, Cy = 0.67f, W = 260f, H = 260f, Alpha = 0.17f, Tint = new Color(1f, 0.69f, 0.36f), Pulse = 0.05f, PulseSpeed = 2.3f },
+            new() { Effect = "flame", Cx = 0.148f, Cy = 0.71f, W = 58f, H = 140f, Fps = 7f, Alpha = 0.9f },
+        ],
         ["room_3.tscn"] =
         [
             new() { Effect = "dust", Cx = 0.70f, Cy = 0.42f, W = 420f, Fps = 2f, Alpha = 0.6f },
@@ -5436,7 +5443,14 @@ public partial class GameUI : CanvasLayer
             && _ambientActive.Length > 0
             // While her eyes are still closed, no weather over the black.
             && !(_ambientSceneFile == "bedroom_prologue.tscn"
-                && GameState.Instance?.HasFlag("prologue_awake") != true);
+                && GameState.Instance?.HasFlag("prologue_awake") != true)
+            // And once the wind has taken the sitting-room fire, the
+            // flames are the first thing gone — before any dark has
+            // time to close — in the real room and the remembered
+            // one alike, until something lights them again.
+            && !((_ambientSceneFile == "room_2.tscn"
+                    || _ambientSceneFile == "difference_investigation.tscn")
+                && (GameState.Instance?.HasFlag("difference_fire_out") ?? false));
         if (!show)
         {
             HideAmbientRects();

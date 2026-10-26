@@ -118,11 +118,12 @@ public partial class SceneManager : Node
 		}
 	}
 
-	/// <summary>The first departure from a finished room is a walk, not
-	/// a cut: the first time Mara travels a leg that has a journey
-	/// scene, the journey carries her (and remembers itself, so it is
-	/// never compulsory twice). Centralised here so that *how* she
-	/// leaves — Leave button, an in-world arrow, a door — no longer
+	/// <summary>Neighbouring rooms are walked, not cut: every trip
+	/// along a leg that has a journey scene is made on Mara's own
+	/// feet (hold W; she sets the pace now), forwards and back. The
+	/// seen flags only pick first-vs-repeat lines and a shorter
+	/// road. Centralised here so that *how* she leaves — Leave
+	/// button, Step Back, an in-world arrow, a door — no longer
 	/// decides whether the walk happens. Never during the blackout,
 	/// when the dark house is crossed one room at a time instead.</summary>
 	private static string ApplyFirstDepartureJourney(string scenePath)
@@ -136,30 +137,43 @@ public partial class SceneManager : Node
 		string from = FileNameOf(CurrentScenePath);
 		string to = FileNameOf(scenePath);
 		string journey = null;
-		string seen = null;
 		if (to == "room_2.tscn" && (from == "room_1.tscn" || from == "room_1_puzzle.tscn"))
-		{
 			journey = "journey_to_room_2.tscn";
-			seen = "journey_seen_Room1ToRoom2";
-		}
 		else if (to == "room_3.tscn" && (from == "room_2.tscn" || from == "room_2_puzzle.tscn"))
-		{
 			journey = "journey_to_room_3.tscn";
-			seen = "journey_seen_Room2ToRoom3";
-		}
 		else if (to == "room_4.tscn" && (from == "room_3.tscn" || from == "jar_closeup.tscn"))
-		{
 			journey = "journey_to_room_4.tscn";
-			seen = "journey_seen_Room3ToRoom4";
-		}
 		else if (to == "porch_447.tscn" && from == "room_6.tscn")
-		{
 			journey = "journey_to_porch.tscn";
-			seen = "journey_seen_Room6ToPorch";
-		}
 
-		if (journey != null && !gs.HasFlag(seen))
+		// Walked every time now, at her own pace: the seen flags
+		// only choose first-vs-repeat lines (and a shorter road)
+		// inside the journey itself.
+		if (journey != null)
 			return "res://scenes/world/" + journey;
+
+		// And the way back is walked too. Neighbouring rooms borrow
+		// the forward leg's scene with a pending reverse id, so
+		// going back for a forgotten thing has feet in it again.
+		// Longer returns stay the navigation buttons' mercy.
+		(string Shell, string Id) back = (from, to) switch
+		{
+			("room_2.tscn" or "room_2_puzzle.tscn", "room_1.tscn" or "room_1_puzzle.tscn")
+				=> ("journey_to_room_2.tscn", "Room2ToRoom1"),
+			("room_3.tscn", "room_2.tscn" or "room_2_puzzle.tscn")
+				=> ("journey_to_room_3.tscn", "Room3ToRoom2"),
+			("room_4.tscn", "room_3.tscn")
+				=> ("journey_to_room_4.tscn", "Room4ToRoom3"),
+			("porch_447.tscn", "room_6.tscn")
+				=> ("journey_to_porch.tscn", "PorchToRoom6"),
+			_ => (null, null),
+		};
+		if (back.Shell != null)
+		{
+			RoomJourney.PendingJourneyId = back.Id;
+			RoomJourney.PendingDestination = scenePath;
+			return "res://scenes/world/" + back.Shell;
+		}
 		return scenePath;
 	}
 

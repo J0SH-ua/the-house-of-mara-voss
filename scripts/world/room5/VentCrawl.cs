@@ -61,6 +61,10 @@ public partial class VentCrawl : Node2D
     private Vector2 _beamPosition = ScreenCenter;
     private bool _beamReady;
     private bool _crawlMoving;
+    // True while a mid-crawl beat is speaking: her voice rides along
+    // now — elbows keep working under the words instead of the duct
+    // courteously stopping dead every time she thinks aloud.
+    private bool _beatRiding;
 
     private readonly RandomNumberGenerator _rng = new();
     private int _kicksLanded;
@@ -202,9 +206,22 @@ public partial class VentCrawl : Node2D
             _kickMisses++;
             _grateShake = Mathf.Max(_grateShake, 0.12f);
             AudioManager.Play(Sfx.VentKick, -10f, 0.6f);
-            GameState.Instance?.Toast(_kickMisses == 1
-                ? "A glance off the slats. Kick as the ring closes on the gold."
-                : "Off the slats again. Wait for the gold.");
+            if (_kicksLanded > 0)
+            {
+                // One bad kick and the frame springs back square:
+                // the whole sequence starts again from the first.
+                _kicksLanded = 0;
+                _ringRadius = 168f;
+                _ringDir = -1f;
+                GameState.Instance?.Toast(
+                    "Off the slats — and the frame springs back square in its housing. From the first kick, then. All three or nothing.");
+            }
+            else
+            {
+                GameState.Instance?.Toast(_kickMisses == 1
+                    ? "A glance off the slats. Kick as the ring closes on the gold."
+                    : "Off the slats again. Wait for the gold.");
+            }
         }
         QueueRedraw();
     }
@@ -215,9 +232,24 @@ public partial class VentCrawl : Node2D
         Dialogue.BeginInputBlock();
         try
         {
-            await Say(_repeat
-                ? "The far grille. Still latched from the other side. Still sorry."
-                : "The far grille — and its latch is on the other side, of course it is. He fitted them to be worked from the room, not from inside his own walls.");
+            // A grille that's already been kicked off its frame
+            // once never asks the whole performance again: it hangs
+            // by the thread she left it, and one shove remembers
+            // the way down for both of them.
+            if (_repeat)
+            {
+                await Say("The far grille, hanging by the thread I left it. One shove, old friend. You remember how this goes.");
+                if (!StillHere())
+                    return;
+                AudioManager.Play(Sfx.VentKick, -5f, 0.9f);
+                _grateShake = 0.35f;
+                _kicksLanded = 3;
+                _stage = CrawlStage.Kicking;
+                _ = BreakGrateAsync();
+                return;
+            }
+
+            await Say("The far grille — and its latch is on the other side, of course it is. He fitted them to be worked from the room, not from inside his own walls.");
             if (!StillHere())
                 return;
             await Say("No tools for this end, then. Just boots. Sorry, Dad. You'd have had opinions. You'd also have held the light.");
@@ -259,12 +291,17 @@ public partial class VentCrawl : Node2D
         float dt = (float)delta;
         UpdateBeam(dt);
 
-        bool blocked = GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
+        bool hardBlocked = GetTree().Paused || Dialogue.IsInputBlocked ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
-        _crawlMoving = _stage == CrawlStage.Crawling && !blocked &&
+        bool blocked = hardBlocked || Dialogue.IsShowing;
+        bool crawlingish = _stage == CrawlStage.Crawling ||
+            (_stage == CrawlStage.Speaking && _beatRiding);
+        // Her voice no longer stops her elbows: a beat can be spoken
+        // over a held W, and the duct keeps passing under the words.
+        _crawlMoving = crawlingish && !hardBlocked &&
             Input.IsPhysicalKeyPressed(Key.W);
 
-        if (_stage == CrawlStage.Crawling && !blocked)
+        if (crawlingish && !hardBlocked)
         {
             if (_crawlMoving)
             {
@@ -278,15 +315,14 @@ public partial class VentCrawl : Node2D
                     AudioManager.PlayVaried(Sfx.VentCrawl, -8f, 0.98f, 0.05f);
                 }
 
-                if (ShouldPlayBeat())
+                if (_stage == CrawlStage.Crawling && ShouldPlayBeat())
                 {
                     _stage = CrawlStage.Speaking;
-                    _crawlMoving = false;
+                    _beatRiding = true;
                     _ = PlayBeatAsync();
                 }
-                else if (_progress >= 1f)
+                else if (!_beatRiding && _progress >= 1f)
                 {
-                    _crawlMoving = false;
                     _gratePromptTimer = 0.35f;
                     AudioManager.Play(Sfx.LockpickTick, -9f, 0.7f);
                     _ = PlayGrateBeatAsync();
@@ -380,7 +416,10 @@ public partial class VentCrawl : Node2D
 
     private async Task PlayBeatAsync()
     {
-        Dialogue.BeginInputBlock();
+        // No input block here, on purpose: the words are said over
+        // the crawling, not instead of it. Advancing her line by
+        // click still works; so does holding W through it.
+        _beatRiding = true;
         try
         {
             if (_repeat)
@@ -407,7 +446,7 @@ public partial class VentCrawl : Node2D
         }
         finally
         {
-            Dialogue.EndInputBlock();
+            _beatRiding = false;
         }
     }
 
@@ -432,9 +471,9 @@ public partial class VentCrawl : Node2D
     {
         DrawCrawlView();
         DrawFlashlightDarkness();
-        if (_stage == CrawlStage.AtGrate || _stage == CrawlStage.Kicking ||
-            _stage == CrawlStage.Speaking || _stage == CrawlStage.Leaving)
-            DrawFarGrate();
+        // The far grille is the whole point of the dark: a small lit
+        // square from the very first elbow, growing as she nears it.
+        DrawFarGrate();
         if (_fade > 0f)
             DrawRect(new Rect2(0, 0, 1152, 648), new Color(0, 0, 0, _fade), true);
     }
@@ -506,9 +545,16 @@ public partial class VentCrawl : Node2D
 
     private void DrawFarGrate()
     {
-        var rect = new Rect2(493, 246, 166, 156);
+        // Full size at her boots; a lit thumbnail at the duct's far
+        // end while she's still crawling toward it.
+        bool atGrate = _stage == CrawlStage.AtGrate || _stage == CrawlStage.Kicking ||
+            _stage == CrawlStage.Leaving || _progress >= 1f;
+        float eased = _progress * _progress * (3f - 2f * _progress);
+        float scale = atGrate ? 1f : Mathf.Lerp(0.2f, 1f, eased);
+        Vector2 size = new Vector2(166, 156) * scale;
+        var rect = new Rect2(ScreenCenter - size * 0.5f, size);
         // Every true kick bends it further off its frame.
-        rect.Position += new Vector2(7f * _kicksLanded, 4f * _kicksLanded);
+        rect.Position += new Vector2(7f * _kicksLanded, 4f * _kicksLanded) * scale;
         if (_grateShake > 0.01f && !Settings.ReduceMotionOrDefault())
         {
             float s = 3.4f * (_grateShake / 0.35f);
@@ -517,16 +563,24 @@ public partial class VentCrawl : Node2D
         }
         if (_stage == CrawlStage.Leaving)
             rect.Position += new Vector2(28, 12);
+        // A halo of the cellar's thin light around it, so the far
+        // end is findable even where her own beam isn't pointing.
+        DrawRect(rect.Grow(7f), new Color(1f, 0.84f, 0.5f, 0.1f), true);
         DrawRect(rect, new Color(0.1f, 0.09f, 0.07f, 0.98f), true);
-        DrawRect(rect, new Color(0.78f, 0.66f, 0.42f, 0.95f), false, 4f);
-        var inner = rect.Grow(-13f);
+        DrawRect(rect, new Color(0.78f, 0.66f, 0.42f, 0.95f), false, Mathf.Max(2f, 4f * scale));
+        var inner = rect.Grow(-13f * scale);
         DrawRect(inner, new Color(0.23f, 0.2f, 0.15f, 1f), true);
-        for (int i = 0; i < 6; i++)
+        int slats = scale < 0.45f ? 3 : 6;
+        float step = inner.Size.Y / (slats + 1f);
+        for (int i = 0; i < slats; i++)
         {
-            float y = inner.Position.Y + 11f + i * 21f;
-            DrawRect(new Rect2(inner.Position.X + 8, y, inner.Size.X - 16, 5),
+            float y = inner.Position.Y + step * (i + 0.55f);
+            float barH = Mathf.Max(2f, 5f * scale);
+            DrawRect(new Rect2(inner.Position.X + 8f * scale, y,
+                    inner.Size.X - 16f * scale, barH),
                 new Color(0.86f, 0.72f, 0.42f, 0.95f), true);
-            DrawRect(new Rect2(inner.Position.X + 8, y + 5, inner.Size.X - 16, 4),
+            DrawRect(new Rect2(inner.Position.X + 8f * scale, y + barH,
+                    inner.Size.X - 16f * scale, Mathf.Max(1.5f, 4f * scale)),
                 new Color(0.03f, 0.03f, 0.03f, 1f), true);
         }
 

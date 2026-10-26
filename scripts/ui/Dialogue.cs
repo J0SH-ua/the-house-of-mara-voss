@@ -56,6 +56,25 @@ public partial class Dialogue : Control
             _inputBlockCount--;
     }
 
+    // -------------------------------------------------------- weather
+    // Sometimes the house's weather gets its hands on the words
+    // themselves. A gust sets a deadline; until it passes, the whole
+    // speech plate shivers and drifts, as if the line were being
+    // spoken into a wind. Static, because Dialogue instances are
+    // ephemeral: a line that begins mid-gust shivers too.
+
+    private static ulong _gustUntilMsec;
+    private static float _gustStrength;
+
+    public static void Gust(float seconds, float strength = 1f)
+    {
+        if (Settings.ReduceMotionOrDefault())
+            return;
+        _gustUntilMsec = Time.GetTicksMsec() +
+            (ulong)Mathf.RoundToInt(seconds * 1000f);
+        _gustStrength = Mathf.Max(_gustStrength, strength);
+    }
+
     // ------------------------------------------------------------ input hooks
 
     /// <summary>Called by GameUI's root-level _Input (always reachable, unlike
@@ -102,6 +121,25 @@ public partial class Dialogue : Control
     {
         if (!Input.IsMouseButtonPressed(MouseButton.Left))
             _mouseReleasedSinceLineStart = true;
+
+        // Wind on the words: while a gust deadline stands, the bubble
+        // rides it — a fast shiver over a slower lean — and settles
+        // flat again as the gust dies.
+        ulong nowMsec = Time.GetTicksMsec();
+        if (nowMsec < _gustUntilMsec)
+        {
+            float remain = (float)(_gustUntilMsec - nowMsec) / 1000f;
+            float amp = Mathf.Min(1f, remain / 0.9f) * 8f * _gustStrength;
+            double t = nowMsec / 1000.0;
+            Position = new Vector2(
+                (float)(Math.Sin(t * 23.0) * amp + Math.Sin(t * 6.7) * amp * 1.7f),
+                (float)(Math.Sin(t * 31.0 + 1.3) * amp * 0.45f));
+        }
+        else if (Position != Vector2.Zero)
+        {
+            Position = Vector2.Zero;
+            _gustStrength = 0f;
+        }
 
         if (_advanceIndicator != null)
         {

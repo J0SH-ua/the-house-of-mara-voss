@@ -55,8 +55,10 @@ public partial class GlobeExamine1 : ExamineHandler
         float s = 84f / 512f / Mathf.Max(0.01f, Mathf.Abs(parentScale.X));
         _keySprite.Scale = Vector2.One * s;
         AddChild(_keySprite);
-        // Down off the globe itself, beside its stand.
-        _keySprite.GlobalPosition += new Vector2(-28, 48);
+        // The room set it down on the little table itself, beside
+        // the globe — exactly where the letter lived its ordinary
+        // life in the painting, to be picked up by hand.
+        _keySprite.GlobalPosition = new Vector2(606, 456);
     }
 
     public override void _Process(double delta)

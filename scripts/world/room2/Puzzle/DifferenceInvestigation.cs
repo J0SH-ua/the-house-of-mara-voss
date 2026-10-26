@@ -35,7 +35,7 @@ public partial class DifferenceInvestigation : Node2D
     private const string SolvedFlag = "difference_room2_solved";
     private const string DoorKeyFlag = "item_hall_key_door";
     private const string ArrivalHeardFlag = "difference_arrival_heard";
-    private const float CrumbleSeconds = 45f;
+    private const float CrumbleSeconds = 35f;
     private const float WrongClickTimeCost = 4f;
 
     // The painted fireplace's mouth, in 1152×648 design space — where
@@ -92,6 +92,17 @@ public partial class DifferenceInvestigation : Node2D
         "No — that much stayed innocent.",
     ];
 
+    // Cracks that walk the glass itself as the shaking worsens —
+    // not the walls: the screen she's being seen through, giving up
+    // a segment at a time while the crumble runs.
+    private static readonly Vector2[][] ScreenCrackChains =
+    [
+        [new Vector2(576, -8), new Vector2(552, 84), new Vector2(588, 168), new Vector2(556, 262), new Vector2(590, 352), new Vector2(570, 452)],
+        [new Vector2(-8, 210), new Vector2(96, 238), new Vector2(188, 216), new Vector2(284, 252), new Vector2(372, 232)],
+        [new Vector2(1160, 430), new Vector2(1052, 406), new Vector2(962, 438), new Vector2(868, 412), new Vector2(786, 440)],
+        [new Vector2(300, 656), new Vector2(342, 560), new Vector2(316, 468), new Vector2(356, 384)],
+    ];
+
     // Cracks that walk the walls as the room gives up, point by point.
     private static readonly Vector2[][] CrackChains =
     [
@@ -121,6 +132,8 @@ public partial class DifferenceInvestigation : Node2D
     private bool _left;
     private float _glitchTimer = 3f;
     private float _glitchLeft;
+    // While she breathes a migraine down, the room breathes with her.
+    private float _breathLeft;
     private bool _cursorOwned;
     private int _wrongClicks;
     private Vector2 _lastWrongPosition;
@@ -218,7 +231,10 @@ public partial class DifferenceInvestigation : Node2D
                 return;
 
             // It catches the way memories do: all at once, and certain.
+            // The wrong room has relit the fire — moving flame and
+            // all — exactly as the real one burned a minute ago.
             _phase = Phase.Relight;
+            gs?.ClearFlag("difference_fire_out", save: false);
             AudioManager.Play(Sfx.FireWhoomph, -7f);
             _lightTarget = 1f;
             await WaitSeconds(1.5f);
@@ -235,16 +251,29 @@ public partial class DifferenceInvestigation : Node2D
                 if (!StillHere())
                     return;
 
-                // Remembering this hard has a price, and it bills
-                // just behind the eye.
-                AudioManager.Play(Sfx.ScreenCrack2, -11f, 0.75f);
-                _lightTarget = 0.3f;
-                _glitchLeft = 0.55f;
-                await WaitSeconds(0.55f);
+                // Remembering this hard has a price — and it is not
+                // reported. It lands, the way it lands on the journeys:
+                // a cry first, the light strobing, then the slow work
+                // of breathing it down while the room breathes too.
+                AudioManager.Play(Sfx.ScreenCrack2, -8f, 0.75f);
+                _lightTarget = 0.12f;
+                _glitchLeft = 0.6f;
+                await Say("Ah—! Ah. There. THERE it is—");
                 if (!StillHere())
                     return;
+                for (int i = 0; i < 5; i++)
+                {
+                    _lightTarget = i % 2 == 0 ? 0.85f : 0.18f;
+                    _glitchLeft = 0.16f;
+                    AudioManager.Play(Sfx.ScreenCrack3, -14f, 0.8f + i * 0.06f);
+                    await WaitSeconds(0.28f);
+                    if (!StillHere())
+                        return;
+                }
                 _lightTarget = 1f;
-                await Say("—and there it is. Right behind the eye. The migraine that lives in this house with me. Breathe through it. It passes. It has manners like that. The room, on the other hand—");
+                _breathLeft = 9f;
+                AudioManager.Play(Sfx.BreathSlow, -12f, 0.9f);
+                await Say("—right behind the eye. The migraine that lives in this house with me. …Breathe. Just breathe, Mara. It passes. It has manners like that. The room, on the other hand—");
                 if (!StillHere())
                     return;
                 gs?.SetFlag(ArrivalHeardFlag, save: false);
@@ -322,12 +351,12 @@ public partial class DifferenceInvestigation : Node2D
                     UpdatePhaseLabel();
                 }
 
-                if (!_warned30 && _crumbleRemaining <= 30f)
+                if (!_warned30 && _crumbleRemaining <= 20f)
                 {
                     _warned30 = true;
                     GameState.Instance?.Toast("\"It's going— the walls— think, Mara. The photograph. The photograph knows.\"");
                 }
-                if (!_warned15 && _crumbleRemaining <= 15f)
+                if (!_warned15 && _crumbleRemaining <= 10f)
                 {
                     _warned15 = true;
                     GameState.Instance?.Toast("\"Hold on. HOLD ON—\"");
@@ -354,6 +383,17 @@ public partial class DifferenceInvestigation : Node2D
                 if (_crumbleRemaining <= 0f)
                     _ = BreakDownAsync();
             }
+        }
+        else if (_breathLeft > 0f && !Settings.ReduceMotionOrDefault())
+        {
+            // Not the crumble's shaking — her own slow tide. The
+            // whole room rises and settles on the breath she's
+            // using to talk the migraine down.
+            _breathLeft = Mathf.Max(0f, _breathLeft - dt);
+            double t = Time.GetTicksMsec() / 1000.0;
+            float tide = (float)Math.Sin(t * (Mathf.Tau / 4.4));
+            Position = new Vector2(tide * 2.0f,
+                (float)Math.Sin(t * (Mathf.Tau / 4.4) + 0.6) * 3.2f);
         }
         else
         {
@@ -564,20 +604,25 @@ public partial class DifferenceInvestigation : Node2D
             if (!StillHere())
                 return;
 
-            // The fire goes out the way it came in: all at once.
-            _lightTarget = 0.04f;
+            // The fire goes out the way it came in: all at once —
+            // and the moving flames are gone before the light has
+            // even begun to fall, exactly as the first wind took it.
+            GameState.Instance?.SetFlag("difference_fire_out", save: false);
             AudioManager.Play(Sfx.WindGust, -16f, 0.7f);
+            Dialogue.Gust(1.1f, 0.45f);
+            _lightTarget = 0.04f;
             await WaitSeconds(1.0f);
             if (!StillHere())
                 return;
 
+            GameState.Instance?.ClearFlag("difference_fire_out", save: false);
             AudioManager.Play(Sfx.FireWhoomph, -9f, 0.9f);
             _lightTarget = 1f;
             await WaitSeconds(1.2f);
             if (!StillHere())
                 return;
 
-            await Say("And beside the globe, where the letter used to live its ordinary life and no key was a minute ago — a key. The room set it down like a held breath let out. He was right to trust the condition. Annoyingly, lovingly right.");
+            await Say("And on the little table — beside the globe, exactly where the letter used to live its ordinary life and no key was a minute ago — a key. The room set it down like a held breath let out. He was right to trust the condition. Annoyingly, lovingly right.");
             if (!StillHere())
                 return;
         }
@@ -592,7 +637,7 @@ public partial class DifferenceInvestigation : Node2D
             gs.NotifyPuzzleSolved();
             gs.SetFlag(SolvedFlag, save: false);
             gs.UnlockClue("difference_room");
-            gs.Toast("The memory held. A little door key is waiting beside the globe in the sitting room.");
+            gs.Toast("The memory held. A little door key is waiting on the little table in the sitting room, beside the globe — click it to pick it up.");
             gs.SaveGame("difference investigation solved");
         }
 
@@ -709,6 +754,34 @@ public partial class DifferenceInvestigation : Node2D
 
         if (_phase == Phase.Breaking)
             DrawRect(screen, new Color(0.02f, 0.01f, 0.01f, 0.45f), true);
+
+        // Last of all, over everything: the glass itself.
+        if (_phase == Phase.Search || _phase == Phase.Resolve || _phase == Phase.Breaking)
+            DrawScreenCracks();
+    }
+
+    /// <summary>The screen cracking in step with the shaking: bright
+    /// hairlines that creep segment by segment as the crumble runs
+    /// down, each with a fainter offset twin, like light catching
+    /// both edges of a split in glass.</summary>
+    private void DrawScreenCracks()
+    {
+        float gone = 1f - Mathf.Clamp(_crumbleRemaining / CrumbleSeconds, 0f, 1f);
+        if (_phase == Phase.Breaking)
+            gone = 1f;
+        var bright = new Color(0.93f, 0.96f, 1f, 0.12f + 0.55f * gone);
+        var faint = new Color(0.93f, 0.96f, 1f, 0.05f + 0.22f * gone);
+        var twin = new Vector2(1.5f, 1.5f);
+        foreach (var chain in ScreenCrackChains)
+        {
+            int segments = Mathf.Clamp(
+                Mathf.FloorToInt(gone * (chain.Length - 1) + 0.001f), 0, chain.Length - 1);
+            for (int i = 0; i < segments; i++)
+            {
+                DrawLine(chain[i] + twin, chain[i + 1] + twin, faint, 2.2f, true);
+                DrawLine(chain[i], chain[i + 1], bright, 1.1f, true);
+            }
+        }
     }
 
     /// <summary>While the fire is out (or catching), the painted flames

@@ -53,6 +53,13 @@ public partial class RoomJourney : Node2D
     [Export]
     public string JourneyId { get; set; } = "Room1ToRoom2";
 
+    /// <summary>A walk SceneManager has asked this scene to perform
+    /// instead of its exported one — how the same journey scenes are
+    /// walked backwards. Set immediately before the scene change,
+    /// consumed (and cleared) in _Ready.</summary>
+    public static string PendingJourneyId;
+    public static string PendingDestination;
+
     private sealed class JourneySpec
     {
         public string TexturePath { get; init; }
@@ -259,6 +266,83 @@ public partial class RoomJourney : Node2D
             OpenSfx = Sfx.DoorCreak,
             OpenPitch = 0.82f,
         },
+        // ------------------------------------------------------
+        // The same legs, walked backwards. No fragment rides these
+        // — going back is ordinary walking, done at her own pace,
+        // under her own held-down feet, the way it should always
+        // have been instead of the house blinking her room to room.
+        ["Room2ToRoom1"] = new JourneySpec
+        {
+            TexturePath = "res://assets/images/bgs/Journey_Hallway_Door.png",
+            Lines =
+            [
+                "Back the way I came. The hall doesn't mind. It never did keep count of my comings and goings.",
+            ],
+            RepeatLines = ["Back again. One foot, then the other — it works in both directions."],
+            Focus = new Vector2(580f, 318f),
+            FinalScale = 1.7f,
+            TargetRect = new Rect2(372f, 12f, 410f, 620f),
+            Prompt = "Click the door to open it",
+            CameraSeconds = 6.2f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.84f,
+        },
+        ["Room3ToRoom2"] = new JourneySpec
+        {
+            TexturePath = "res://assets/images/bgs/Journey_Hallway_Left.png",
+            Lines =
+            [
+                "Right at the runner, this time. The sitting room keeps its smell of ash and paper even from out here.",
+            ],
+            RepeatLines = ["Right at the runner. Back to the two chairs."],
+            StartFocus = new Vector2(690f, 330f),
+            Focus = new Vector2(398f, 240f),
+            FinalScale = 1.75f,
+            TargetRect = new Rect2(450f, 80f, 250f, 490f),
+            Prompt = "Click the door to open it",
+            CameraSeconds = 6.2f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.84f,
+        },
+        ["Room4ToRoom3"] = new JourneySpec
+        {
+            TexturePath = "res://assets/images/bgs/Journey_Hallway_Right.png",
+            Lines =
+            [
+                "Left at the photographs. Back to the room of jars and brave little names.",
+            ],
+            RepeatLines = ["Left at the photographs. They know my steps by now."],
+            StartFocus = new Vector2(460f, 330f),
+            Focus = new Vector2(773f, 255f),
+            FinalScale = 1.75f,
+            TargetRect = new Rect2(430f, 80f, 290f, 490f),
+            Prompt = "Click the door to open it",
+            CameraSeconds = 6.2f,
+            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
+            FootstepVolumeDb = -13f,
+            FootstepIntervalSeconds = 0.84f,
+        },
+        ["PorchToRoom6"] = new JourneySpec
+        {
+            TexturePath = "res://assets/images/bgs/Journey_Empty_Road.png",
+            Lines =
+            [
+                "Back up the road. Shorter every time I let myself know it.",
+            ],
+            RepeatLines = ["The road back. Same gravel in the same shoe."],
+            Focus = new Vector2(635f, 292f),
+            FinalScale = 2.45f,
+            TargetRect = new Rect2(490f, 215f, 220f, 155f),
+            Prompt = "Click the house to go back in",
+            CameraSeconds = 7.5f,
+            FootstepSfx = [Sfx.FootstepDirtA, Sfx.FootstepDirtB],
+            FootstepVolumeDb = -11f,
+            FootstepIntervalSeconds = 0.92f,
+            OpenSfx = Sfx.DoorCreak,
+            OpenPitch = 0.82f,
+        },
     };
 
     private JourneySpec _spec;
@@ -347,6 +431,17 @@ public partial class RoomJourney : Node2D
         SetProcess(true);
         SetProcessInput(true);
 
+        // A backwards walk arrives wearing a forward journey's
+        // scene; the pending request is what makes it backwards.
+        if (!string.IsNullOrWhiteSpace(PendingJourneyId))
+        {
+            JourneyId = PendingJourneyId;
+            if (!string.IsNullOrWhiteSpace(PendingDestination))
+                DestinationScenePath = PendingDestination;
+            PendingJourneyId = null;
+            PendingDestination = null;
+        }
+
         if (!Specs.TryGetValue(JourneyId ?? string.Empty, out _spec))
         {
             Logger.Warning($"[RoomJourney] Unknown journey id '{JourneyId}'; using Room1ToRoom2 staging.");
@@ -404,12 +499,35 @@ public partial class RoomJourney : Node2D
             }
         }
 
+        bool walking = false;
         if (!_reduceMotion && !GetTree().Paused && _progress < 1f)
         {
-            _elapsed += (float)delta;
-            _progress = Mathf.Clamp(_elapsed / Math.Max(_cameraSeconds, 0.01f), 0f, 1f);
-            UpdateFootsteps();
+            // Her feet are hers now: the walk only moves while W is
+            // held — camera, footsteps, all of it. Let go and she
+            // stops where she stands, mid-hall, mid-thought, her
+            // lines still said over the quiet.
+            walking = Input.IsPhysicalKeyPressed(Key.W) &&
+                !Dialogue.IsInputBlocked &&
+                !(GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
+            if (walking)
+            {
+                _elapsed += (float)delta;
+                _progress = Mathf.Clamp(_elapsed / Math.Max(_cameraSeconds, 0.01f), 0f, 1f);
+                UpdateFootsteps();
+            }
             QueueRedraw();
+        }
+
+        if (_promptLabel != null && !_readyToOpen && !_opening)
+        {
+            const string walkText = "Hold W to walk";
+            if (_promptLabel.Text != walkText)
+                _promptLabel.Text = walkText;
+            _promptLabel.Visible = _progress < 1f && !_reduceMotion;
+            float target = walking ? 0.4f : 0.95f;
+            var m = _promptLabel.Modulate;
+            m.A = Mathf.MoveToward(m.A, target, (float)delta * 2.2f);
+            _promptLabel.Modulate = m;
         }
 
         if (!_readyToOpen || _opening)
@@ -556,6 +674,7 @@ public partial class RoomJourney : Node2D
             if (_promptLabel != null)
             {
                 _promptLabel.Text = _spec.Prompt;
+                _promptLabel.Modulate = new Color(1, 1, 1, 1);
                 _promptLabel.Visible = true;
             }
             QueueRedraw();
