@@ -86,8 +86,12 @@ public partial class Room4 : Node2D
 	private bool _drawerBusy;
 
 	private const string FlashbackScenePath = "res://scenes/world/flashback_landing.tscn";
+	private const string Room5ScenePath = "res://scenes/world/room_5.tscn";
+	private const string DoorOpenedFlag = "room4_door_opened";
+	private const string DoorwayLinesSeenFlag = "room4_doorway_lines_seen";
 	private bool _doorAnimationStarted = false;
 	private bool _doorUnlocked = false;
+	private bool _doorBusy;
 	private Label _sentenceLabel;
 	private CanvasLayer _sentenceLayer;
 	private bool _echoHintShown;
@@ -441,6 +445,87 @@ public partial class Room4 : Node2D
 		return true;
 	}
 
+	/// <summary>The brass door is an exit, not one of the hallway's
+	/// examinables, so Room 4 going sealed must never swallow it —
+	/// the flashlight trek comes back through here in the dark long
+	/// after the room itself has gone quiet. While the three-key
+	/// work is unfinished, the door leads to its close-up. Once all
+	/// three keys have turned, the door is simply open: clicking it
+	/// in the hall takes Mara straight through.</summary>
+	private bool TryHandleDoorCollision(InputEventMouseButton mouseButton)
+	{
+		if (Dialogue.IsInputBlocked || Dialogue.IsShowing || _doorBusy ||
+			_doorClickArea == null)
+			return false;
+
+		var gs = GameState.Instance;
+		bool opened = gs?.HasFlag(DoorOpenedFlag) == true;
+		bool sentenceReady = _doorUnlocked ||
+			gs?.HasFlag("room4_sentence_complete") == true ||
+			gs?.IsShardRecovered(3) == true;
+		if (!opened && !sentenceReady)
+			return false;
+
+		if (!IsInsideArea2D(_doorClickArea, GetGlobalMousePosition(), 0f))
+			return false;
+
+		GetTree().Root.SetInputAsHandled();
+		_ = UseDoorAsync(opened);
+		return true;
+	}
+
+	private async Task UseDoorAsync(bool opened)
+	{
+		if (_doorBusy)
+			return;
+		_doorBusy = true;
+		try
+		{
+			// An opened three-key door stays an ordinary open door:
+			// no close-up to re-solve, no walk, no blackout exception.
+			if (opened)
+			{
+				AudioManager.Play(Sfx.DoorCreak, -7f);
+				SceneManager.ChangeScene(Room5ScenePath);
+				return;
+			}
+
+			if (string.IsNullOrWhiteSpace(DoorTargetScenePath))
+				return;
+
+			var gs = GameState.Instance;
+			// The threshold keeps its lines for the first approach
+			// only; coming back to finish the key work is wordless.
+			// Older saves prove a previous approach by the door
+			// close-up's own once-only lesson.
+			if (gs == null || (!gs.HasFlag(DoorwayLinesSeenFlag) &&
+				!gs.HasFlag("story_lesson_room4_door_keys")))
+			{
+				gs?.SetFlag(DoorwayLinesSeenFlag, save: false);
+				await Dialogue.ShowText(this, "\"She used to run this hallway. Slide on the wooden floor in her socks — she'd get a running start from the kitchen doorway and coast all the way to the mirror at the end.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 20);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "\"She could make it from one end to the other in eleven seconds. She counted. She made everyone count.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "\"She made me count. I counted. Eleven seconds. I still know the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "Beyond the door is not the end of the house. It is the room Mara has been keeping between then and now.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 28);
+				if (!GodotObject.IsInstanceValid(this)) return;
+			}
+
+			if (gs != null && !gs.IsShardRecovered(3))
+				gs.CollectShard(3);
+			gs?.MarkRoomCompleted("Room4");
+			gs?.SaveGame("room 4 complete");
+			AudioManager.Play(Sfx.DoorCreak, -7f);
+			SceneManager.ChangeScene(DoorTargetScenePath);
+		}
+		finally
+		{
+			if (GodotObject.IsInstanceValid(this))
+				_doorBusy = false;
+		}
+	}
+
 	private void EnsureRuntimeHoverLabel()
 	{
 		var layer = GetNodeOrNull<CanvasLayer>("HoverLabelLayer");
@@ -524,7 +609,7 @@ public partial class Room4 : Node2D
 			ShowRuntimeLabel(_currentHoveredIndex);
 	}
 
-	public override async void _Input(InputEvent @event)
+	public override void _Input(InputEvent @event)
 	{
 		if (SceneManager.IsChanging)
 			return;
@@ -534,6 +619,11 @@ public partial class Room4 : Node2D
 			if (@event is InputEventMouseButton sealedClick && sealedClick.Pressed
 				&& sealedClick.ButtonIndex == MouseButton.Left)
 			{
+				// Exits never seal. The brass door in particular is
+				// the only way onward from the blackout's trek home,
+				// so it is heard before the quiet-room refusal.
+				if (TryHandleDoorCollision(sealedClick))
+					return;
 				// One practical retrieval survives sealing: a save that
 				// faced this drawer before Father's roll lived under
 				// its keys may still come back and look underneath.
@@ -561,34 +651,7 @@ public partial class Room4 : Node2D
 		if (TryHandleTurnedFramesCollision(mouseButton))
 			return;
 
-		if (!_doorUnlocked)
-			return;
-
-		if (_doorAnimation == null || !_doorAnimation.Visible)
-			return;
-
-		if (_doorClickArea == null)
-			return;
-
-		Vector2 globalMouse = GetGlobalMousePosition();
-		if (!IsInsideArea2D(_doorClickArea, globalMouse, 0f))
-			return;
-
-		if (string.IsNullOrWhiteSpace(DoorTargetScenePath))
-			return;
-
-		await Dialogue.ShowText(this, "\"She used to run this hallway. Slide on the wooden floor in her socks — she'd get a running start from the kitchen doorway and coast all the way to the mirror at the end.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 20);
-		await Dialogue.ShowText(this, "\"She could make it from one end to the other in eleven seconds. She counted. She made everyone count.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		await Dialogue.ShowText(this, "\"She made me count. I counted. Eleven seconds. I still know the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		await Dialogue.ShowText(this, "Beyond the door is not the end of the house. It is the room Mara has been keeping between then and now.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 28);
-
-		if (GameState.Instance != null && !GameState.Instance.IsShardRecovered(3))
-			GameState.Instance.CollectShard(3);
-		GameState.Instance?.MarkRoomCompleted("Room4");
-		GameState.Instance?.SaveGame("room 4 complete");
-		AudioManager.Play(Sfx.DoorCreak, -7f);
-		SceneManager.ChangeScene(DoorTargetScenePath);
-		GetTree().Root.SetInputAsHandled();
+		TryHandleDoorCollision(mouseButton);
 	}
 
 	private int GetHoveredIndex(Vector2 mousePosition)

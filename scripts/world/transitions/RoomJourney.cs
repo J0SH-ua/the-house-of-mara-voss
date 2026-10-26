@@ -35,7 +35,6 @@ public partial class RoomJourney : Node2D
     private const float RecoverShakeSeconds = 0.55f;
     private const float MigraineChance = 0.65f;
     private const float FirstWalkingMonologueChance = 0.7f;
-    private const float RepeatWalkingMonologueChance = 0.35f;
 
     private static readonly string[] FragmentIconPaths =
     [
@@ -64,7 +63,6 @@ public partial class RoomJourney : Node2D
     {
         public string TexturePath { get; init; }
         public string[] Lines { get; init; }
-        public string[] RepeatLines { get; init; }
         public string[] RandomWalkingLines { get; init; } = [];
         public Vector2 StartFocus { get; init; } = new(576f, 324f);
         public Vector2 Focus { get; init; }
@@ -96,7 +94,6 @@ public partial class RoomJourney : Node2D
                 "Next room smells of ash and paper already. The sitting room. Two chairs. I remember hating how quiet it could get in there.",
                 "Right. One foot, then the other. That's the whole plan. It's worked so far.",
             ],
-            RepeatLines = ["Straight on, then. The house puts the same door in front of me again."],
             RandomWalkingLines =
             [
                 "My hand still smells faintly of toast. Ridiculous detail for a mind to keep.",
@@ -139,7 +136,6 @@ public partial class RoomJourney : Node2D
                 "It's her room next, isn't it. The one at the end. Nobody's said so — the corridor just got that feeling, like the air's holding its breath politely.",
                 "Don't run. Running is how this corner used to win.",
             ],
-            RepeatLines = ["Left at the runner. The house puts the same door in front of me again."],
             RandomWalkingLines =
             [
                 "Paper. Ash. Someone breathing in another room. Then none of it.",
@@ -183,7 +179,6 @@ public partial class RoomJourney : Node2D
                 "There's a door at the end of this with plates on it. I remember the plates. I don't remember being allowed anywhere near them with my hands full of jam.",
                 "Okay. Right at the photographs. Even facing away, they know my steps.",
             ],
-            RepeatLines = ["Right at the photographs. The house puts the same door in front of me again."],
             RandomWalkingLines =
             [
                 "I should stop apologising to furniture.",
@@ -226,11 +221,6 @@ public partial class RoomJourney : Node2D
                 "It is shorter than I made it in my head. Twelve years I made this road longer and longer and it's... just a road. That almost makes me angry.",
                 "The porch light's on. Who leaves a light on in a memory? Mum. Mum does. Of course she does.",
                 "Okay. Come on, feet. Nearly kept a promise's worth of road.",
-            ],
-            RepeatLines =
-            [
-                "The road again. Shorter, now that I let myself know it.",
-                "There. The porch light.",
             ],
             RandomWalkingLines =
             [
@@ -278,7 +268,6 @@ public partial class RoomJourney : Node2D
             [
                 "Back the way I came. The hall doesn't mind. It never did keep count of my comings and goings.",
             ],
-            RepeatLines = ["Back again. One foot, then the other — it works in both directions."],
             Focus = new Vector2(580f, 318f),
             FinalScale = 1.7f,
             TargetRect = new Rect2(372f, 12f, 410f, 620f),
@@ -295,7 +284,6 @@ public partial class RoomJourney : Node2D
             [
                 "Right at the runner, this time. The sitting room keeps its smell of ash and paper even from out here.",
             ],
-            RepeatLines = ["Right at the runner. Back to the two chairs."],
             StartFocus = new Vector2(690f, 330f),
             Focus = new Vector2(398f, 240f),
             FinalScale = 1.75f,
@@ -313,56 +301,10 @@ public partial class RoomJourney : Node2D
             [
                 "Left at the photographs. Back to the room of jars and brave little names.",
             ],
-            RepeatLines = ["Left at the photographs. They know my steps by now."],
             StartFocus = new Vector2(460f, 330f),
             Focus = new Vector2(773f, 255f),
             FinalScale = 1.75f,
             TargetRect = new Rect2(430f, 80f, 290f, 490f),
-            Prompt = "Click the door to open it",
-            CameraSeconds = 6.2f,
-            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
-            FootstepVolumeDb = -13f,
-            FootstepIntervalSeconds = 0.84f,
-        },
-        // The stretch of hallway past the brass door — walked both
-        // ways like every other leg now (hosted by the Room 4
-        // journey scene under pending ids). Half the blackout
-        // trek's road runs through here, so the lines keep their
-        // footing in the dark: no lamps, no weather, just carpet.
-        ["Room4ToRoom5"] = new JourneySpec
-        {
-            TexturePath = "res://assets/images/bgs/Journey_Hallway_Door.png",
-            Lines =
-            [
-                "Beyond my father's door, the hall stops pretending it ends. Carpet. Photographs with their faces to the wall. And at the end of it, a door I have been not-opening for twelve years.",
-                "One foot, then the other. The plan has held this long. It can hold a hallway.",
-            ],
-            RepeatLines = ["Past the brass door again. The hall measures me and lets me pass."],
-            RandomWalkingLines =
-            [
-                "The photographs keep facing the wall. I've stopped taking it personally.",
-                "Dad's keys sit quiet in their holes behind me. Good. Stay.",
-            ],
-            Focus = new Vector2(580f, 318f),
-            FinalScale = 1.7f,
-            TargetRect = new Rect2(372f, 12f, 410f, 620f),
-            Prompt = "Click the door to open it",
-            CameraSeconds = 6.8f,
-            FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
-            FootstepVolumeDb = -13f,
-            FootstepIntervalSeconds = 0.84f,
-        },
-        ["Room5ToRoom4"] = new JourneySpec
-        {
-            TexturePath = "res://assets/images/bgs/Journey_Hallway_Door.png",
-            Lines =
-            [
-                "Back down the hall. The door with three locks keeps its side of the bargain. I keep mine: I walk.",
-            ],
-            RepeatLines = ["Down the hall again. It isn't getting longer. It's only honest about the distance."],
-            Focus = new Vector2(580f, 318f),
-            FinalScale = 1.7f,
-            TargetRect = new Rect2(372f, 12f, 410f, 620f),
             Prompt = "Click the door to open it",
             CameraSeconds = 6.2f,
             FootstepSfx = [Sfx.FootstepCarpetA, Sfx.FootstepCarpetB],
@@ -376,7 +318,6 @@ public partial class RoomJourney : Node2D
             [
                 "Back up the road. Shorter every time I let myself know it.",
             ],
-            RepeatLines = ["The road back. Same gravel in the same shoe."],
             Focus = new Vector2(635f, 292f),
             FinalScale = 2.45f,
             TargetRect = new Rect2(490f, 215f, 220f, 155f),
@@ -423,6 +364,11 @@ public partial class RoomJourney : Node2D
 
     private string SeenFlag => $"journey_seen_{JourneyId}";
 
+    /// <summary>Legs travelled toward rooms Mara has already left
+    /// behind. Walking back is always wordless.</summary>
+    private bool IsReturnJourney => JourneyId is
+        "Room2ToRoom1" or "Room3ToRoom2" or "Room4ToRoom3" or "PorchToRoom6";
+
     /// <summary>Roll a first-journey beat once and keep the result in the
     /// save, so quitting and resuming midway cannot reroll whether this
     /// threshold gets a walking thought or a migraine.</summary>
@@ -444,22 +390,20 @@ public partial class RoomJourney : Node2D
         return gs.HasFlag(yesFlag);
     }
 
-    /// <summary>Some walks get a full little monologue — the authored
-    /// route lines plus one thought chosen from this stretch's pool —
-    /// and some do not. On a quiet first walk Mara keeps only her first
-    /// threshold sentence; on a quiet repeat she simply walks.</summary>
+    /// <summary>Some first crossings get a full little monologue —
+    /// the authored route lines plus one thought chosen from this
+    /// stretch's pool — and some keep only their first threshold
+    /// sentence. Every later crossing is silent, and every walk
+    /// back toward an older room is silent from its first step:
+    /// spoken journey lines belong only to going somewhere new.</summary>
     private List<string> BuildWalkingLines()
     {
-        string[] authored = _seenBefore && _spec.RepeatLines is { Length: > 0 }
-            ? _spec.RepeatLines
-            : _spec.Lines;
-        var lines = new List<string>(authored ?? []);
+        if (_seenBefore || IsReturnJourney)
+            return new List<string>();
+
+        var lines = new List<string>(_spec.Lines ?? []);
         if (!_walkingMonologuePlanned)
-        {
-            if (_seenBefore)
-                return new List<string>();
             return lines.Count > 0 ? [lines[0]] : lines;
-        }
 
         if (_spec.RandomWalkingLines is { Length: > 0 })
         {
@@ -509,10 +453,10 @@ public partial class RoomJourney : Node2D
         _reduceMotion = Settings.ReduceMotionOrDefault();
         _cameraSeconds = _seenBefore ? Math.Min(4.2f, _spec.CameraSeconds) : _spec.CameraSeconds;
         _progress = _reduceMotion ? 1f : 0f;
-        _migrainePlanned = !_seenBefore && SavedRandomDecision("migraine", MigraineChance);
-        _walkingMonologuePlanned = _seenBefore
-            ? _rng.Randf() < RepeatWalkingMonologueChance
-            : SavedRandomDecision("walk_monologue", FirstWalkingMonologueChance);
+        _migrainePlanned = !_seenBefore && !IsReturnJourney &&
+            SavedRandomDecision("migraine", MigraineChance);
+        _walkingMonologuePlanned = !_seenBefore && !IsReturnJourney &&
+            SavedRandomDecision("walk_monologue", FirstWalkingMonologueChance);
 
         BuildHeldFragment();
         BuildPrompt();
@@ -807,7 +751,7 @@ public partial class RoomJourney : Node2D
     /// only; shortened repeat journeys stay shortened.</summary>
     private async Task PlayFragmentPauseAsync()
     {
-        if (_seenBefore || _spec.FragmentIndex < 0 ||
+        if (_seenBefore || IsReturnJourney || _spec.FragmentIndex < 0 ||
             _spec.FragmentIndex >= FragmentIconPaths.Length ||
             _spec.FragmentLines == null || _spec.FragmentLines.Length == 0)
         {

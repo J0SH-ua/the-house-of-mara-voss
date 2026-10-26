@@ -121,8 +121,8 @@ public partial class SceneManager : Node
 	/// <summary>Neighbouring rooms are walked, not cut: every trip
 	/// along a leg that has a journey scene is made on Mara's own
 	/// feet (hold W; she sets the pace now), forwards and back. The
-	/// seen flags only pick first-vs-repeat lines and a shorter
-	/// road. Centralised here so that *how* she leaves — Leave
+	/// seen flags reserve spoken lines for first forward crossings
+	/// and shorten the road. Centralised here so that *how* she leaves — Leave
 	/// button, Step Back, an in-world arrow, a door — no longer
 	/// decides whether the walk happens. The blackout is no
 	/// exception: the flashlight trek is walked too, both ways,
@@ -147,25 +147,16 @@ public partial class SceneManager : Node
 			journey = "journey_to_porch.tscn";
 
 		// Walked every time now, at her own pace: the seen flags
-		// only choose first-vs-repeat lines (and a shorter road)
-		// inside the journey itself.
+		// reserve spoken lines for first forward crossings (and a
+		// shorter road) inside the journey itself.
 		if (journey != null)
 			return "res://scenes/world/" + journey;
 
-		// The stretch of hallway past the brass door never got a
-		// walk of its own because the Return button used to carry
-		// it. It has one now, in both directions — the Room 4
-		// journey scene hosts it by pending id, the same trick
-		// the reverse legs use below. The way opened by
-		// Room4Puzzle's ProceedThroughDoor walks like any other
-		// leaving (through the blackout too: this is half the
-		// flashlight trek's road home).
-		if (to == "room_5.tscn" && (from == "room_4.tscn" || from == "Room_4_puzzle.tscn"))
-		{
-			RoomJourney.PendingJourneyId = "Room4ToRoom5";
-			RoomJourney.PendingDestination = scenePath;
-			return "res://scenes/world/journey_to_room_4.tscn";
-		}
+		// The neighbouring exception is the three-key brass door.
+		// It is itself the threshold between Rooms 4 and 5, with no
+		// further hallway folded inside it: opening it takes Mara
+		// through at once, in either direction, blackout included.
+		// An already-unlocked door therefore never replays a walk.
 
 		// And the way back is walked too. Neighbouring rooms borrow
 		// the forward leg's scene with a pending reverse id, so
@@ -181,8 +172,6 @@ public partial class SceneManager : Node
 				=> ("journey_to_room_3.tscn", "Room3ToRoom2"),
 			("room_4.tscn", "room_3.tscn")
 				=> ("journey_to_room_4.tscn", "Room4ToRoom3"),
-			("room_5.tscn", "room_4.tscn")
-				=> ("journey_to_room_4.tscn", "Room5ToRoom4"),
 			("porch_447.tscn", "room_6.tscn")
 				=> ("journey_to_porch.tscn", "PorchToRoom6"),
 			_ => (null, null),
