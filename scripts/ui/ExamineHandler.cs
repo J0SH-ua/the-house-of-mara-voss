@@ -169,6 +169,13 @@ public partial class ExamineHandler : TileMapLayer
         if (@event is not InputEventMouseButton mouseEvent || !mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
             return;
 
+        // One painted-over pickup outranks every examine tile under
+        // it: the sitting room's little door key, while it waits on
+        // the table. Let its click pass untouched — claiming it here
+        // (and marking it handled) is what made the key unclickable.
+        if (this is not Room2 && Room2.ShouldYieldToDoorKey(GetGlobalMousePosition()))
+            return;
+
         if (!MouseOnTile(out _))
             return;
 
@@ -320,7 +327,11 @@ public partial class ExamineHandler : TileMapLayer
         // While input is blocked (dialogue playing), forcibly end any hover so
         // the cursor doesn't stay stuck as a magnifying glass during dialogue.
         // Sealed rooms offer no hover either: nothing here answers anymore.
-        if (Dialogue.IsInputBlocked || !HoverEnabled
+        // The waiting little door key owns its own pointer hover, so the
+        // examine tiles underneath it keep their magnifier sheathed too.
+        bool yieldHoverToDoorKey = this is not Room2 &&
+            Room2.ShouldYieldToDoorKey(GetGlobalMousePosition());
+        if (Dialogue.IsInputBlocked || !HoverEnabled || yieldHoverToDoorKey
             || GameState.Instance?.IsRoomSealed(_roomNameCache ??= RoomExamineTracker.ResolveRoomName(this)) == true)
         {
             if (_isHovering)

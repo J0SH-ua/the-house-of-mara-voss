@@ -21,23 +21,46 @@ public partial class Room2 : ExamineHandler
     private const string FireOutFlag = "difference_fire_out";
     private const string DifferenceScenePath = "res://scenes/world/difference_investigation.tscn";
 
-    // The little door key, set down on the table where the letter
-    // lived once the other room has been remembered right. It lives
-    // HERE, on the room root, on purpose: its first home was a child
-    // sprite of the globe's Examine1 layer, and the examine
-    // machinery hides that layer (children inherit the alpha) and
-    // frees it on restore — the key was being unmade by the very
-    // system that let Mara look at the globe. The room root is
-    // never layered, hidden or freed, so the key simply stays.
+    // The little door key, set down on the table once the other room
+    // has been remembered right. It lives HERE, as the room root's
+    // last child, on purpose: its first home was a child sprite of the
+    // globe's Examine1 layer, and the examine machinery hides that
+    // layer (children inherit the alpha) and frees it on restore — the
+    // key was being unmade by the very system that let Mara look at
+    // the globe. Its second home, a bare sprite heard only by this
+    // root, kept it visible but left its clicks to be claimed by the
+    // table layer underneath (_Input runs leaves-first, root last).
+    // LittleDoorKeyPickup owns the click itself now; see its summary.
     private const string SolvedFlag = "difference_room2_solved";
     private const string DoorKeyFlag = "item_hall_key_door";
     private const string DoorKeyIconPath = "res://assets/images/core/items/door_key.png";
-    private Sprite2D _doorKeySprite;
+
+    // Four 16 px grid steps right and two up from the letter's old
+    // spot (606, 456), as placed in playtesting: squarely on the
+    // little table between the chairs, beside the globe.
+    public static readonly Vector2 DoorKeyTablePosition = new Vector2(670, 424);
+    public const float DoorKeyClickHalfExtent = 76f;
+    public static Rect2 DoorKeyClickRect => new Rect2(
+        DoorKeyTablePosition - Vector2.One * DoorKeyClickHalfExtent,
+        Vector2.One * DoorKeyClickHalfExtent * 2f);
+
+    private LittleDoorKeyPickup _doorKeyPickup;
     private bool _takingDoorKey;
 
-    private bool DoorKeyWaiting =>
+    private static bool DoorKeyWaitingNow =>
         (GameState.Instance?.HasFlag(SolvedFlag) ?? false) &&
         !(GameState.Instance?.HasFlag(DoorKeyFlag) ?? false);
+
+    private bool DoorKeyWaiting => DoorKeyWaitingNow;
+
+    /// <summary>True while the waiting key owns this point of the
+    /// sitting room. The examine layers under it check this and let
+    /// the click pass untouched, so neither an examine nor the
+    /// table's drawer shortcut can swallow the pickup.</summary>
+    public static bool ShouldYieldToDoorKey(Vector2 globalPoint) =>
+        SceneManager.Instance?.CurrentScene is Room2 &&
+        DoorKeyWaitingNow &&
+        DoorKeyClickRect.HasPoint(globalPoint);
 
     private bool _windPlaying;
 
@@ -256,11 +279,9 @@ public partial class Room2 : ExamineHandler
         if (texture == null)
             return;
 
-        _doorKeySprite = new Sprite2D
+        _doorKeyPickup = new LittleDoorKeyPickup
         {
-            Name = "LittleDoorKeyProp",
-            Texture = texture,
-            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            Name = "LittleDoorKeyPickup",
             // Over every painted layer in the room, under the HUD.
             ZIndex = 12,
         };
@@ -268,41 +289,50 @@ public partial class Room2 : ExamineHandler
         // nesting says (the icon sheet is 512 px).
         Vector2 parentScale = GlobalTransform.Scale;
         float s = 84f / 512f / Mathf.Max(0.01f, Mathf.Abs(parentScale.X));
-        _doorKeySprite.Scale = Vector2.One * s;
-        AddChild(_doorKeySprite);
-        // On the little table itself, where the letter lived its
-        // ordinary life — the same spot the crumbling room keeps
-        // losing (DifferenceInvestigation's VanishedLetter).
-        _doorKeySprite.GlobalPosition = new Vector2(606, 456);
+        _doorKeyPickup.Configure(texture, Vector2.One * s);
+        // Added last, on purpose — see LittleDoorKeyPickup: as this
+        // room's final branch it hears _Input before the examine
+        // layers painted underneath the key.
+        AddChild(_doorKeyPickup);
+        _doorKeyPickup.GlobalPosition = DoorKeyTablePosition;
     }
 
     private void UpdateDoorKeyProp()
     {
-        if (_doorKeySprite == null)
+        if (_doorKeyPickup == null)
             return;
-        if (!DoorKeyWaiting)
+        if (!DoorKeyWaiting && !_takingDoorKey)
         {
-            _doorKeySprite.QueueFree();
-            _doorKeySprite = null;
-            return;
+            _doorKeyPickup.QueueFree();
+            _doorKeyPickup = null;
         }
-        float pulse = Settings.ReduceMotionOrDefault()
-            ? 1f
-            : 0.86f + 0.14f * (float)System.Math.Sin(Time.GetTicksMsec() / 240.0);
-        _doorKeySprite.Modulate = new Color(pulse, pulse, pulse);
+    }
+
+    /// <summary>The one taking-gate, shared by the pickup's own
+    /// leaves-first _Input and this root's fallback below.</summary>
+    public bool TryBeginDoorKeyPickup()
+    {
+        if (_takingDoorKey || !DoorKeyWaiting ||
+            Dialogue.IsInputBlocked || Dialogue.IsShowing)
+            return false;
+
+        _ = TakeDoorKeyAsync();
+        return true;
     }
 
     public override void _Input(InputEvent @event)
     {
+        // Fallback path: the pickup node normally claims this click
+        // long before the root is reached. If it ever doesn't, the
+        // examine layers have yielded the key's rectangle (see
+        // ShouldYieldToDoorKey), so the click still lands here.
         if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
             mouseEvent.ButtonIndex == MouseButton.Left &&
-            !Dialogue.IsInputBlocked && !Dialogue.IsShowing && !_takingDoorKey &&
-            _doorKeySprite != null && DoorKeyWaiting &&
-            new Rect2(_doorKeySprite.GlobalPosition - new Vector2(48, 48),
-                new Vector2(96, 96)).HasPoint(GetGlobalMousePosition()))
+            _doorKeyPickup != null &&
+            _doorKeyPickup.ContainsGlobalPoint(GetGlobalMousePosition()) &&
+            TryBeginDoorKeyPickup())
         {
             GetTree().Root.SetInputAsHandled();
-            _ = TakeDoorKeyAsync();
             return;
         }
 
@@ -317,7 +347,7 @@ public partial class Room2 : ExamineHandler
         _takingDoorKey = true;
         try
         {
-            Vector2 anchor = _doorKeySprite?.GlobalPosition ?? new Vector2(606, 456);
+            Vector2 anchor = _doorKeyPickup?.GlobalPosition ?? DoorKeyTablePosition;
             AudioManager.Play(Sfx.KeyType, -8f, 0.95f);
             await Dialogue.ShowText(this,
                 "Wait a minute. This was not here earlier.",
@@ -339,10 +369,11 @@ public partial class Room2 : ExamineHandler
             gs.UnlockClue("hall_key_door");
             gs.Toast("Little door key — kept in Mara's bag (B). Somewhere ahead is a door with a little door stamped above its middle keyhole.");
             gs.SaveGame("little door key taken");
-            if (_doorKeySprite != null)
+            if (_doorKeyPickup != null)
             {
-                _doorKeySprite.QueueFree();
-                _doorKeySprite = null;
+                _doorKeyPickup.MarkTaken();
+                _doorKeyPickup.QueueFree();
+                _doorKeyPickup = null;
             }
         }
         finally

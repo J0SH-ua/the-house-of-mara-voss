@@ -16,6 +16,13 @@ public partial class TableExamine1 : ExamineHandler
             return;
 
         Vector2 globalMouse = GetGlobalMousePosition();
+
+        // The waiting little door key lies on this table. Its click
+        // is the pickup's, never the drawer shortcut's: let it pass
+        // untouched instead of claiming the table tile beneath it.
+        if (Room2.ShouldYieldToDoorKey(globalMouse))
+            return;
+
         Vector2 localMouse = ToLocal(globalMouse);
         Vector2I cell = LocalToMap(localMouse);
 

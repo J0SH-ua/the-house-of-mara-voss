@@ -32,6 +32,15 @@ public partial class Photo1Reward : Area2D
 	private bool _isHovering = false;
 	private bool _collecting;
 
+	/// <summary>Every durable spelling of "the photograph is Mara's
+	/// now". The shard record is canonical; the two legacy Globals
+	/// mirrors are accepted too, so an older save can never leave a
+	/// second print lying in the drawer behind the one in her bag.</summary>
+	public static bool PhotographInBag =>
+		(GameState.Instance?.IsShardRecovered(1) ?? false) ||
+		(Globals.Instance != null &&
+			(Globals.Instance.PHOTO1_COLLECTED || Globals.SHARDS_COLLECTED[1]));
+
 	public override void _Ready()
 	{
 		// Taken is taken: once the photograph rides in Mara's bag,
@@ -39,19 +48,69 @@ public partial class Photo1Reward : Area2D
 		// print is faced from the bag itself (B — "Look at the
 		// photograph"), in the sitting room it remembers — the
 		// drawer is never the way back to it.
-		bool inBag = (GameState.Instance?.IsShardRecovered(1) ?? false) ||
-			(Globals.Instance != null &&
-				(Globals.Instance.PHOTO1_COLLECTED || Globals.SHARDS_COLLECTED[1]));
-		if (inBag)
+		if (PhotographInBag)
 		{
-			Visible = false;
-			InputPickable = false;
-			SetProcess(false);
+			HideTakenPhotograph();
 			return;
 		}
 
 		InputPickable = true;
 		SetProcess(true);
+		SetProcessInput(true);
+	}
+
+	/// <summary>The only door through which the drawer may show this
+	/// photograph. Room2Puzzle used to set Visible directly whenever
+	/// its lock replayed SolveAsync, resurrecting the print after
+	/// _Ready had correctly hidden it. Reveal and taken-state now
+	/// live in the same place, so reopening the drawer can reveal
+	/// the photograph only while Mara does not already carry it.</summary>
+	public bool RevealFromDrawer()
+	{
+		if (PhotographInBag)
+		{
+			HideTakenPhotograph();
+			return false;
+		}
+
+		foreach (var child in GetChildren())
+		{
+			if (child is CanvasItem canvasItem)
+				canvasItem.Visible = true;
+			if (child is CollisionShape2D collisionShape)
+				collisionShape.SetDeferred("disabled", false);
+		}
+		Visible = true;
+		InputPickable = true;
+		SetProcess(true);
+		SetProcessInput(true);
+		return true;
+	}
+
+	/// <summary>Remove every trace of the print from the drawer:
+	/// hide the area and its sprite, stop its input and hover, and
+	/// retire its collision shape. Hiding the sprite separately is
+	/// deliberate defence in depth — a stray Visible=true from any
+	/// future caller still cannot paint a photograph Mara owns.</summary>
+	public void HideTakenPhotograph()
+	{
+		if (_isHovering)
+		{
+			CursorHelper.EndHover(this);
+			_isHovering = false;
+		}
+
+		Visible = false;
+		InputPickable = false;
+		foreach (var child in GetChildren())
+		{
+			if (child is CanvasItem canvasItem)
+				canvasItem.Visible = false;
+			if (child is CollisionShape2D collisionShape)
+				collisionShape.SetDeferred("disabled", true);
+		}
+		SetProcess(false);
+		SetProcessInput(false);
 	}
 
 	public override void _ExitTree()
@@ -221,6 +280,11 @@ public partial class Photo1Reward : Area2D
 			firstTime = !Globals.SHARDS_COLLECTED[1];
 			Globals.SHARDS_COLLECTED[1] = true;
 		}
+
+		// The drawer empties at the moment of taking, not after the
+		// lines and the held-up study of the print are over. Those
+		// beats play over a keeping-place that is already bare.
+		HideTakenPhotograph();
 
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 

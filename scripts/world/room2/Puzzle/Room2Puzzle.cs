@@ -106,7 +106,9 @@ public partial class Room2Puzzle : Area2D
 
 		if (IsUnlocked)
 		{
-			// Unlocked on an earlier visit — drawer open, photo waiting.
+			// Unlocked on an earlier visit — drawer open. Whether
+			// the photograph is still inside is Photo1Reward's call:
+			// if it is in Mara's bag, the drawer must stay empty.
 			_isSolved = true;
 			SolveAsync();
 		}
@@ -367,17 +369,35 @@ public partial class Room2Puzzle : Area2D
 	{
 		AudioManager.Play(Sfx.LockOpen, -4f);
 		await PlayDrawerAnimation();
-		RevealPhotoReward();
+		bool photoWaiting = RevealPhotoReward();
 		_padlock?.SetDeferred("visible", false);
 		AudioManager.Play(Sfx.PuzzleSolve, -6f);
-		GameState.Instance?.Toast("Inside: a photograph, face-down all these years.");
+		GameState.Instance?.Toast(photoWaiting
+			? "Inside: a photograph, face-down all these years."
+			: "The drawer is empty where the photograph lay — it's in Mara's bag now.");
 	}
 
-	private void RevealPhotoReward()
+	private bool RevealPhotoReward()
 	{
-		var photoReward = GetNodeOrNull<Area2D>("Photo1");
+		// Never set Photo1.Visible from here. That was the bug: this
+		// solve replay runs on every return to an unlocked drawer,
+		// and the direct write undid Photo1Reward's taken-state.
+		// The photograph owns its reveal and refuses it once bagged.
+		var photoReward = GetNodeOrNull<Photo1Reward>("Photo1");
 		if (photoReward != null)
-			photoReward.Visible = true;
+			return photoReward.RevealFromDrawer();
+
+		// Scene-shape fallback, held to the same rule.
+		var photoArea = GetNodeOrNull<Area2D>("Photo1");
+		if (photoArea == null || Photo1Reward.PhotographInBag)
+		{
+			if (photoArea != null)
+				photoArea.Visible = false;
+			return false;
+		}
+
+		photoArea.Visible = true;
+		return true;
 	}
 
 	private async System.Threading.Tasks.Task PlayDrawerAnimation()
