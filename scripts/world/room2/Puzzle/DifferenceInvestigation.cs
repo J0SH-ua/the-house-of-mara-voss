@@ -220,7 +220,7 @@ public partial class DifferenceInvestigation : Node2D
             if (gs != null && gs.HasFlag(DoorKeyFlag))
             {
                 _phase = Phase.Leaving;
-                SceneManager.ChangeScene(Room2PuzzleScenePath);
+                SceneManager.ChangeScene(Room2ScenePath);
                 return;
             }
 
@@ -416,10 +416,12 @@ public partial class DifferenceInvestigation : Node2D
                 _sawShatter = true;
             else if (_sawShatter)
             {
-                // Gathered back together, she wakes at the drawer.
+                // Gathered back together, she wakes in the sitting
+                // room itself — the photograph is in her bag, and
+                // the retry starts from there now, never the drawer.
                 _left = true;
                 _phase = Phase.Leaving;
-                SceneManager.ChangeScene(Room2PuzzleScenePath);
+                SceneManager.ChangeScene(Room2ScenePath);
             }
         }
 

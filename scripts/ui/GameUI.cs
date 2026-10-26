@@ -384,6 +384,8 @@ public partial class GameUI : CanvasLayer
     ];
 
     private Control _heldRoot;
+    private ColorRect _heldDim;
+    private HeldBeam _heldBeam;
     private TextureRect _heldGlow;
     private TextureRect _heldIcon;
     private Label _heldName;
@@ -2248,6 +2250,42 @@ public partial class GameUI : CanvasLayer
 
     public bool IsPhotoOpen => _photoPanel?.Visible ?? false;
 
+    /// <summary>Putting the bag's photograph away while standing in
+    /// the very room it remembers: if that room still hasn't been
+    /// remembered right, Mara raises the wind herself — from here.
+    /// Once the print is hers, the drawer is never the way back to
+    /// the difference investigation; the sitting room is.</summary>
+    private async void OnBagPhotographClosed()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || !gs.IsShardRecovered(1) ||
+            gs.HasFlag("difference_room2_solved"))
+            return;
+
+        string path = SceneManager.CurrentScenePath ?? string.Empty;
+        int slash = path.LastIndexOf('/');
+        string file = slash >= 0 ? path.Substring(slash + 1) : path;
+        if (file is not ("room_2.tscn" or "room_2_puzzle.tscn"))
+            return;
+
+        Dialogue.BeginInputBlock();
+        try
+        {
+            await Dialogue.ShowText(this,
+                "The room as it was is in my bag. The room as it isn't is waiting. All right, house. Blow.",
+                5.0f, 576f, 324f, fontSize: 24);
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+
+        gs.SetFlag("difference_wind_pending", save: false);
+        SceneManager.ChangeScene("res://scenes/world/room_2.tscn");
+    }
+
     // --------------------------------------------------------- negatives
 
     private static string NegativesHeldHereFlag()
@@ -2629,7 +2667,7 @@ public partial class GameUI : CanvasLayer
         _bagPhotoButton = MakeButton("Look at the photograph");
         _bagPhotoButton.Visible = false;
         _bagPhotoButton.FocusMode = Control.FocusModeEnum.None;
-        _bagPhotoButton.Pressed += () => ShowPhotograph();
+        _bagPhotoButton.Pressed += () => ShowPhotograph(OnBagPhotographClosed);
         detail.AddChild(_bagPhotoButton);
 
         // Everything she carries can be taken back into her hand
@@ -4969,7 +5007,10 @@ public partial class GameUI : CanvasLayer
                 }),
             _ => (
                 "res://assets/images/bgs/Ending_Waking.png",
-                "res://assets/images/bgs/Ending_Mara_Smile.png",
+                // No final still for waking: the ending stays on
+                // the dawn itself — the porch, chin-on-hand portrait
+                // that used to close it is gone.
+                string.Empty,
                 AudioManager.MusicEndingRelease,
                 "THE WAKING ENDING",
                 "She does not stop grieving. She stops living inside the grief.",
@@ -5380,10 +5421,11 @@ public partial class GameUI : CanvasLayer
                 await ToSignal(fadeOut, Tween.SignalName.Finished);
             }
 
-            // The very last thing seen is Mara herself: smiling into the
-            // distance she finally gets to have — or still curled in the
-            // corner of her room, keeping everything.
-            if (withIdaConversation)
+            // For the kept house, the very last thing seen is Mara
+            // herself, still curled in the corner of her room,
+            // keeping everything. Waking has no such still — it
+            // ends on the dawn it walked into.
+            if (withIdaConversation && !string.IsNullOrEmpty(finalStillPath))
             {
                 if (!_endingSkipRequested)
                 {
@@ -5685,13 +5727,13 @@ public partial class GameUI : CanvasLayer
         _heldRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         _heldRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
-        var dim = new ColorRect
+        _heldDim = new ColorRect
         {
             Color = new Color(0.02f, 0.015f, 0.01f, 0.62f),
             MouseFilter = Control.MouseFilterEnum.Stop,
         };
-        dim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _heldRoot.AddChild(dim);
+        _heldDim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _heldRoot.AddChild(_heldDim);
 
         _heldGlow = new TextureRect
         {
@@ -5722,6 +5764,13 @@ public partial class GameUI : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         _heldRoot.AddChild(_heldIcon);
+
+        // The torch in her other hand, drawn over hand and item
+        // but under the words: dark only, and only when the
+        // flashlight is actually hers to shine.
+        _heldBeam = new HeldBeam { Visible = false };
+        _heldBeam.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _heldRoot.AddChild(_heldBeam);
 
         _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
         _heldName.HorizontalAlignment = HorizontalAlignment.Center;
@@ -5817,6 +5866,27 @@ public partial class GameUI : CanvasLayer
         _heldGlow.Position = palm - new Vector2(165f, 165f) + new Vector2(0f, 180f);
         _heldGlow.Modulate = new Color(1f, 0.82f, 0.5f, 0.4f);
 
+        // In the blackout dark, the only reason any of this is
+        // visible at all is the torch in her other hand — so let
+        // it be seen being the reason: the dim goes near-black
+        // and the beam plays over her hand and the thing in it.
+        var gsBeam = GameState.Instance;
+        bool torchLit = gsBeam != null && gsBeam.HasFlag("blackout_active") &&
+            !gsBeam.HasFlag("backup_power_on") && gsBeam.HasFlag("item_flashlight");
+        if (_heldDim != null)
+            _heldDim.Color = torchLit
+                ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
+                : new Color(0.02f, 0.015f, 0.01f, 0.62f);
+        _heldHand.Modulate = torchLit ? new Color(1.12f, 1.08f, 0.95f) : Colors.White;
+        if (_heldBeam != null)
+        {
+            _heldBeam.Source = new Vector2(84f, view.Y + 16f);
+            _heldBeam.Target = palm;
+            _heldBeam.SnapToTarget();
+            _heldBeam.TargetStrength = torchLit ? 1f : 0f;
+            _heldBeam.Visible = torchLit;
+        }
+
         _heldRoot.Modulate = new Color(1, 1, 1, 0);
         _heldRoot.Visible = true;
         AudioManager.Play(Sfx.PhotoPickup, -12f);
@@ -5849,6 +5919,10 @@ public partial class GameUI : CanvasLayer
         float cx = view.X / 2f;
         _heldHint.Text = "click — put it in the bag";
 
+        // The beam follows the lift, wrist trailing the hand.
+        if (_heldBeam != null)
+            _heldBeam.Target = new Vector2(cx, view.Y * 0.42f);
+
         _heldTween?.Kill();
         _heldTween = CreateTween();
         _heldTween.SetParallel(true);
@@ -5873,6 +5947,8 @@ public partial class GameUI : CanvasLayer
         if (!_heldShowing || _heldRoot == null)
             return;
         _heldShowing = false;
+        if (_heldBeam != null)
+            _heldBeam.TargetStrength = 0f;
         AudioManager.Play(_heldShowingItem ? Sfx.DrawerClose : Sfx.ShardPlace, -9f,
             _heldShowingItem ? 1.12f : 1f);
 

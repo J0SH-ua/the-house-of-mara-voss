@@ -131,11 +131,13 @@ public partial class LockpickPuzzle : Node2D
     private float _snapFlashLeft;
     // The rewind, played backwards for her eyes: grey strobing,
     // cracks un-walking, picks mending, her own words reversing.
-    private const float RewindSeconds = 2.6f;
+    private const float RewindSeconds = 3.4f;
     private float _rewindT;
     private int _rewindSnippet = -1;
     private float _rewindSnippetTimer;
+    private int _rewindFromLayer;
     private Label _rewindTextLabel;
+    private Label _rewindBigLabel;
     private Label _rewindLabel;
     private Label _letGoLabel;
     private readonly RandomNumberGenerator _rng = new();
@@ -258,6 +260,12 @@ public partial class LockpickPuzzle : Node2D
             new Color(0.94f, 0.94f, 0.94f, 0.98f));
         _rewindTextLabel.ZIndex = 300;
         _rewindTextLabel.Visible = false;
+        // No mistaking what the world is doing while it does it.
+        _rewindBigLabel = MakeLabel("<<  R E W I N D",
+            new Vector2(276, 236), new Vector2(600, 70), 44,
+            new Color(0.96f, 0.96f, 0.96f, 0.95f));
+        _rewindBigLabel.ZIndex = 310;
+        _rewindBigLabel.Visible = false;
     }
 
     private Label MakeLabel(string text, Vector2 position, Vector2 size, int fontSize, Color color)
@@ -351,6 +359,34 @@ public partial class LockpickPuzzle : Node2D
         {
             GetViewport().SetInputAsHandled();
         }
+
+        // The ten-second choice is heard at viewport level too:
+        // in a panic, whether a click lands must never depend on
+        // which HUD control happened to be lying over the lock.
+        if (_state == PickState.Panic)
+            HandlePanicClick(@event);
+    }
+
+    private void HandlePanicClick(InputEvent @event)
+    {
+        if (_state != PickState.Panic || GetTree().Paused ||
+            Dialogue.IsShowing || _panicDecided)
+            return;
+        if (@event is not InputEventMouseButton panicClick ||
+            panicClick.ButtonIndex != MouseButton.Left || !panicClick.Pressed)
+            return;
+
+        if (RewindRect.HasPoint(panicClick.Position))
+        {
+            GetViewport().SetInputAsHandled();
+            _ = ChooseRewindAsync();
+        }
+        else if (LetGoRect.HasPoint(panicClick.Position))
+        {
+            GetViewport().SetInputAsHandled();
+            _panicDecided = true;
+            _ = FallToShatterAsync();
+        }
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -362,23 +398,7 @@ public partial class LockpickPuzzle : Node2D
         // and navigation ordinary buttons over the lock close-up.
         if (_state == PickState.Panic)
         {
-            if (GetTree().Paused || Dialogue.IsShowing || _panicDecided)
-                return;
-            if (@event is InputEventMouseButton panicClick &&
-                panicClick.ButtonIndex == MouseButton.Left && panicClick.Pressed)
-            {
-                if (RewindRect.HasPoint(panicClick.Position))
-                {
-                    GetViewport().SetInputAsHandled();
-                    _ = ChooseRewindAsync();
-                }
-                else if (LetGoRect.HasPoint(panicClick.Position))
-                {
-                    GetViewport().SetInputAsHandled();
-                    _panicDecided = true;
-                    _ = FallToShatterAsync();
-                }
-            }
+            HandlePanicClick(@event);
             return;
         }
 
@@ -403,15 +423,24 @@ public partial class LockpickPuzzle : Node2D
             _snapFlashLeft = Mathf.Max(0f, _snapFlashLeft - dt);
 
         // Time running backwards has its own weather and ignores
-        // every other rule in the room for its 2.6 seconds.
+        // every other rule in the room while it runs.
         if (_state == PickState.Rewinding)
         {
             _rewindT = Mathf.Clamp(_rewindT + dt / RewindSeconds, 0f, 1f);
             _plugDegrees = Mathf.MoveToward(_plugDegrees, 0f, 150f * dt);
+            // Set layers unset themselves as the moment unspools.
+            _layerIndex = Mathf.RoundToInt((1f - _rewindT) * _rewindFromLayer);
+            if (_rewindBigLabel != null)
+            {
+                bool strobeOn = Settings.ReduceMotionOrDefault() ||
+                    (Time.GetTicksMsec() / 110) % 2 == 0;
+                _rewindBigLabel.Modulate = new Color(1, 1, 1,
+                    (strobeOn ? 0.95f : 0.45f) * (1f - _rewindT * 0.55f));
+            }
             _rewindSnippetTimer -= dt;
             if (_rewindSnippetTimer <= 0f && _rewindT < 1f)
             {
-                _rewindSnippetTimer = Settings.ReduceMotionOrDefault() ? 0.5f : 0.3f;
+                _rewindSnippetTimer = Settings.ReduceMotionOrDefault() ? 0.5f : 0.24f;
                 _rewindSnippet++;
                 if (_rewindTextLabel != null)
                 {
@@ -495,9 +524,13 @@ public partial class LockpickPuzzle : Node2D
                 // farther past tolerance it is being forced, the
                 // faster the steel gives up its future. Nothing on
                 // screen counts this. Her hands are the instrument.
+                // Tuned so forcing is never free: a hard bind kills
+                // a pick in well under a second of greed, a barely-
+                // wrong one in a little over a second — the tremble
+                // and the thinning sound are the only warnings.
                 _stress = Mathf.MoveToward(_stress, 1f, 2.2f * CurrentStressScale * dt);
                 float extraError = Mathf.Max(0f, error - tolerance);
-                _pickDamage += dt * CurrentStressScale * (0.42f + 0.018f * extraError);
+                _pickDamage += dt * CurrentStressScale * (0.78f + 0.03f * extraError);
                 ulong nowBind = Time.GetTicksMsec();
                 if (nowBind - _lastBindSoundMsec > 120)
                 {
@@ -633,8 +666,13 @@ public partial class LockpickPuzzle : Node2D
         int broken = gs?.BrokenPickCount ?? 1;
         AudioManager.Play(Sfx.ScreenCrack1, -4f, 1.1f);
         AudioManager.Play(Sfx.LockpickTick, -6f, 0.45f);
-        // Every snap is a small panic, and the house keeps count.
-        gs?.AddCorruption(2);
+        // Every snap is a small panic, and the house keeps count —
+        // except the seventh. That one IS the emergency: the
+        // ten-second choice must get to happen, not be pre-empted
+        // by a corruption shatter landing on the same frame.
+        // Letting the seconds run out still falls, in FallToShatter.
+        if ((gs?.PicksLeft ?? 1) > 0)
+            gs?.AddCorruption(2);
         UpdateStatus();
         QueueRedraw();
         _ = SnapBeatAsync(broken);
@@ -750,12 +788,17 @@ public partial class LockpickPuzzle : Node2D
             _rewindT = 0f;
             _rewindSnippet = -1;
             _rewindSnippetTimer = 0f;
+            _rewindFromLayer = _layerIndex;
+            if (_rewindBigLabel != null)
+                _rewindBigLabel.Visible = true;
             AudioManager.Play(Sfx.WindGust, -9f, 1.3f);
             await WaitSeconds(RewindSeconds);
             if (!StillHere())
                 return;
             if (_rewindTextLabel != null)
                 _rewindTextLabel.Visible = false;
+            if (_rewindBigLabel != null)
+                _rewindBigLabel.Visible = false;
             AudioManager.Play(Sfx.BreathSlow, -9f, 0.9f);
 
             gs.SpendAllClarityForRewind();

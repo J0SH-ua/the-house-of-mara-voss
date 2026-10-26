@@ -7,8 +7,9 @@ using Godot;
 /// A first-person crawl through the Room 5 vent: holding W moves
 /// Mara forward at elbow height, releasing it stops her where she
 /// is, and the flashlight follows the mouse directly with no click or
-/// hold. Three short beats stop the crawl for her voice; the faraway
-/// lit grille eventually fills the dark. It is latched from the other
+/// hold. Nothing is said in the duct — she crawls in silence and only
+/// speaks at the far end; the faraway grille eventually fills the
+/// dark. It is latched from the other
 /// side, the way her father fitted them — so it does not open. It is
 /// kicked: three true kicks, timed as a ring closes on the gold,
 /// each one bending the grille further off its frame. A first crawl
@@ -37,13 +38,6 @@ public partial class VentCrawl : Node2D
 
     private static readonly Vector2 ScreenCenter = new(576, 324);
     private static readonly Rect2 GrateClickRect = new(446, 214, 260, 220);
-    private static readonly float[] FirstBeatThresholds = [0.2f, 0.5f, 0.8f];
-    private static readonly string[] FirstBeatLines =
-    [
-        "Dust. Cobwebs. One of my old hair ribbons, somehow. The house keeps its small lost things in the walls.",
-        "That dripping — pipes, probably. Probably is doing a lot of work in this house.",
-        "Cold air, and under it— apples. Stored apples and stone. There's a room down here nobody ever took me to on purpose.",
-    ];
 
     private Texture2D _background;
     private FontFile _font;
@@ -56,15 +50,10 @@ public partial class VentCrawl : Node2D
     private float _crawlSoundTimer;
     private float _gratePromptTimer;
     private float _fade;
-    private int _beatIndex;
     private bool _left;
     private Vector2 _beamPosition = ScreenCenter;
     private bool _beamReady;
     private bool _crawlMoving;
-    // True while a mid-crawl beat is speaking: her voice rides along
-    // now — elbows keep working under the words instead of the duct
-    // courteously stopping dead every time she thinks aloud.
-    private bool _beatRiding;
 
     private readonly RandomNumberGenerator _rng = new();
     private int _kicksLanded;
@@ -126,20 +115,10 @@ public partial class VentCrawl : Node2D
                 return;
             }
 
+            // No talking in the duct. The torch clicks on, and
+            // then it's elbows, knees and dripping water the whole
+            // way down — Mara saves her voice for the far grille.
             AudioManager.Play(Sfx.FlashlightClick, -5f);
-            if (_repeat)
-            {
-                await Say("Elbows. Knees. Dignity left at the entrance, as before.");
-            }
-            else
-            {
-                await SaySequence(
-                    "Okay. Elbows. Knees. The glamorous way to travel in one's own childhood home.",
-                    "Dad said houses have service ways the way people have veins. You're not meant to travel in either. He'd have opinions about this.");
-            }
-            if (!StillHere())
-                return;
-
             _stage = CrawlStage.Crawling;
             _crawlSoundTimer = 0.1f;
         }
@@ -294,10 +273,7 @@ public partial class VentCrawl : Node2D
         bool hardBlocked = GetTree().Paused || Dialogue.IsInputBlocked ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
         bool blocked = hardBlocked || Dialogue.IsShowing;
-        bool crawlingish = _stage == CrawlStage.Crawling ||
-            (_stage == CrawlStage.Speaking && _beatRiding);
-        // Her voice no longer stops her elbows: a beat can be spoken
-        // over a held W, and the duct keeps passing under the words.
+        bool crawlingish = _stage == CrawlStage.Crawling;
         _crawlMoving = crawlingish && !hardBlocked &&
             Input.IsPhysicalKeyPressed(Key.W);
 
@@ -315,13 +291,9 @@ public partial class VentCrawl : Node2D
                     AudioManager.PlayVaried(Sfx.VentCrawl, -8f, 0.98f, 0.05f);
                 }
 
-                if (_stage == CrawlStage.Crawling && ShouldPlayBeat())
-                {
-                    _stage = CrawlStage.Speaking;
-                    _beatRiding = true;
-                    _ = PlayBeatAsync();
-                }
-                else if (!_beatRiding && _progress >= 1f)
+                // Silence the whole way down: nothing is said in
+                // the duct at all. She speaks when she arrives.
+                if (_progress >= 1f)
                 {
                     _gratePromptTimer = 0.35f;
                     AudioManager.Play(Sfx.LockpickTick, -9f, 0.7f);
@@ -406,63 +378,9 @@ public partial class VentCrawl : Node2D
         _promptLabel.Modulate = new Color(1, 1, 1, alpha);
     }
 
-    private bool ShouldPlayBeat()
-    {
-        if (_repeat)
-            return _beatIndex == 0 && _progress >= 0.5f;
-        return _beatIndex < FirstBeatThresholds.Length &&
-            _progress >= FirstBeatThresholds[_beatIndex];
-    }
-
-    private async Task PlayBeatAsync()
-    {
-        // No input block here, on purpose: the words are said over
-        // the crawling, not instead of it. Advancing her line by
-        // click still works; so does holding W through it.
-        _beatRiding = true;
-        try
-        {
-            if (_repeat)
-            {
-                _beatIndex++;
-                await Say("Shorter in memory. It is not shorter in knees.");
-            }
-            else
-            {
-                string line = FirstBeatLines[Mathf.Min(_beatIndex, FirstBeatLines.Length - 1)];
-                _beatIndex++;
-                await Say(line);
-            }
-
-            if (!StillHere())
-                return;
-            _stage = CrawlStage.Crawling;
-            _crawlSoundTimer = Mathf.Min(_crawlSoundTimer, 0.25f);
-            if (_progress >= 1f)
-            {
-                _gratePromptTimer = 0.35f;
-                _ = PlayGrateBeatAsync();
-            }
-        }
-        finally
-        {
-            _beatRiding = false;
-        }
-    }
-
     private async Task Say(string line)
     {
         await Dialogue.ShowText(this, line, 5.5f, 576f, 324f, fontSize: 24);
-    }
-
-    private async Task SaySequence(params string[] lines)
-    {
-        foreach (string line in lines)
-        {
-            if (!StillHere())
-                return;
-            await Say(line);
-        }
     }
 
     private bool StillHere() => GodotObject.IsInstanceValid(this) && IsInsideTree();

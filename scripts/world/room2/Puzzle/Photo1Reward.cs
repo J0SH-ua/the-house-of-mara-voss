@@ -34,6 +34,22 @@ public partial class Photo1Reward : Area2D
 
 	public override void _Ready()
 	{
+		// Taken is taken: once the photograph rides in Mara's bag,
+		// the drawer keeps nothing where it lay. From then on the
+		// print is faced from the bag itself (B — "Look at the
+		// photograph"), in the sitting room it remembers — the
+		// drawer is never the way back to it.
+		bool inBag = (GameState.Instance?.IsShardRecovered(1) ?? false) ||
+			(Globals.Instance != null &&
+				(Globals.Instance.PHOTO1_COLLECTED || Globals.SHARDS_COLLECTED[1]));
+		if (inBag)
+		{
+			Visible = false;
+			InputPickable = false;
+			SetProcess(false);
+			return;
+		}
+
 		InputPickable = true;
 		SetProcess(true);
 	}

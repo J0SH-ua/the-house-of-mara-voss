@@ -320,6 +320,11 @@ public partial class Room2 : ExamineHandler
             Vector2 anchor = _doorKeySprite?.GlobalPosition ?? new Vector2(606, 456);
             AudioManager.Play(Sfx.KeyType, -8f, 0.95f);
             await Dialogue.ShowText(this,
+                "Wait a minute. This was not here earlier.",
+                3.8f, anchor.X, anchor.Y, fontSize: 26);
+            if (!StillHere())
+                return;
+            await Dialogue.ShowText(this,
                 "A key. Not a metaphor wearing key-coloured paint. Iron — and its bow is a little door, down to a knob too small for any hand but memory's.",
                 5.5f, anchor.X, anchor.Y, fontSize: 24);
             if (!StillHere())

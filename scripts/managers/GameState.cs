@@ -1184,7 +1184,9 @@ public partial class GameState : Node
         }
 
         if (file == "room_2.tscn" && HasFlag("difference_room2_solved") && !HasFlag("item_hall_key_door"))
-            return "Something small and metal is waiting where the evening set it down — beside the globe, where the letter used to live.";
+            return "Something small and metal is waiting where the evening set it down — on the little table beside the globe, where the letter used to live. Click it and take it up.";
+        if (file == "room_2.tscn" && IsShardRecovered(1) && !HasFlag("difference_room2_solved"))
+            return "The photograph in her bag (B) remembers this room right. Look at it here — something small is taped behind what the house edited.";
         if (file == "bridge_repair.tscn")
             return HasFlag("item_hammer_nails")
                 ? "Nail the bridge true again. Strike each nail as its glint crosses — a glanced blow can put her within the water's reach."
@@ -1393,9 +1395,9 @@ public partial class GameState : Node
         if (file == "room_2_puzzle.tscn")
         {
             if (IsShardRecovered(1) && !HasFlag("difference_room2_solved"))
-                return ("The photograph is Mara's — but look at it again. On its backing, in her father's pencil: FOR WHEN YOU REMEMBER IT RIGHT. He taped a key behind the sitting room in that picture, and the house has been editing the room it shows. Click the photograph and remember the room honestly — five seconds, then find what changed.", null);
+                return ("The drawer is empty — the photograph is Mara's now, and the way forward is with it, not back here. Step Back (Q) into the sitting room and look at the photograph from her bag (B). On its backing, in her father's pencil: FOR WHEN YOU REMEMBER IT RIGHT. He taped a key behind the sitting room in that picture, and the house has been editing the room it shows. Remember it honestly — find what changed before the room comes apart.", null);
             if (HasFlag("difference_room2_solved") && !IsShardRecovered(1))
-                return ("The room has been remembered honestly and the little door key is in Mara's bag (B). Click the photograph itself now.", null);
+                return ("The room has been remembered honestly. The photograph itself is the fragment — click it; the little door key it was hiding waits beside the globe in the sitting room, to be picked up by hand.", null);
             return NextHintLevel("Room2") switch
             {
                 1 => ("What did she call this place, before it was only a house?", null),
@@ -1999,10 +2001,20 @@ public partial class GameState : Node
             }
         }
 
-        // The little door key is the difference investigation's reward;
-        // either fact proves the other.
-        if (HasFlag("difference_room2_solved"))
-            AddItem("item_hall_key_door", "hall_key_door");
+        // Remembering the room right does NOT put the little door
+        // key in Mara's bag — that inference used to live here,
+        // and it meant the key simply arrived with the solved flag,
+        // never seen, never touched. Solving only sets the key down
+        // on the table beside the globe; her hand still has to close
+        // on it. What solving proves is the clue, nothing more. The
+        // key in her bag, on the other hand, could only have got
+        // there through an honest memory — that direction is proof.
+        if (HasFlag("difference_room2_solved") &&
+            ClueDefinitions.ContainsKey("hall_key_door") && !_unlockedClues.Contains("hall_key_door"))
+        {
+            _unlockedClues.Add("hall_key_door");
+            CluesChanged?.Invoke();
+        }
         if (HasFlag("item_hall_key_door"))
             AddItem("difference_room2_solved", "difference_room");
 
