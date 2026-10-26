@@ -4,7 +4,7 @@ using Godot;
 
 /// <summary>
 /// The bridge on the empty road — the last broken thing between the
-/// garden and the porch light.
+/// garden and whatever the memory has put beyond the water.
 ///
 /// The road out of Room 6 crosses water, and in this memory the
 /// crossing is broken the way it broke her in life: two planks gone
@@ -19,8 +19,10 @@ using Godot;
 /// puts her within the water's reach — every fall strains MEMORY,
 /// and enough of them will break it outright, the ordinary way.
 /// Nailed planks stay nailed, whatever the water says. When the
-/// last one holds, the bridge is only a bridge again, and the porch
-/// light is the rest of the way.
+/// last one holds, the bridge is only a bridge again. Crossing it
+/// for the first time is where the day gives out: the sky is taken
+/// down hand over hand, Mara's exhausted mind follows, and she
+/// wakes somewhere green, walled and night-dark.
 /// </summary>
 public partial class BridgeRepair : Node2D
 {
@@ -28,7 +30,7 @@ public partial class BridgeRepair : Node2D
     private const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
     private const string BackgroundPath = "res://assets/images/bgs/Journey_Empty_Road.png";
     private const string Room6ScenePath = "res://scenes/world/room_6.tscn";
-    private const string PorchScenePath = "res://scenes/world/porch_447.tscn";
+    private const string HedgeMazeScenePath = "res://scenes/world/hedge_maze.tscn";
     private const string ToolsFlag = "item_hammer_nails";
     private const string FixedFlag = "bridge_fixed";
 
@@ -62,6 +64,7 @@ public partial class BridgeRepair : Node2D
 
     private Texture2D _background;
     private FontFile _font;
+    private Label _titleLabel;
     private Label _helpLabel;
     private Label _leaveLabel;
     private readonly RandomNumberGenerator _rng = new();
@@ -74,6 +77,9 @@ public partial class BridgeRepair : Node2D
     private float _lurch;
     private float _plunge;
     private bool _plunging;
+    private float _nightfall;
+    private bool _nightfallActive;
+    private bool _dizzy;
     private bool _cursorOwned;
     private bool _hintedAim;
 
@@ -134,14 +140,14 @@ public partial class BridgeRepair : Node2D
 
     private void BuildLabels()
     {
-        MakeLabel("The bridge, on the empty road",
+        _titleLabel = MakeLabel("The bridge, on the empty road",
             new Vector2(376, 22), new Vector2(400, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(string.Empty,
             new Vector2(276, 566), new Vector2(600, 38), 20,
             new Color(0.9f, 0.86f, 0.76f, 0.94f));
         _leaveLabel = MakeLabel(
-            BridgeFixed ? "Cross to the porch light" : "Back to the garden",
+            BridgeFixed ? "Cross the bridge" : "Back to the garden",
             LeaveRect.Position, LeaveRect.Size, 20,
             new Color(0.95f, 0.88f, 0.72f, 0.97f));
         UpdateHelp();
@@ -429,7 +435,7 @@ public partial class BridgeRepair : Node2D
             gs?.SetFlag(FixedFlag, save: false);
             gs?.SaveGame("bridge mended");
             if (_leaveLabel != null)
-                _leaveLabel.Text = "Cross to the porch light";
+                _leaveLabel.Text = "Cross the bridge";
             QueueRedraw();
 
             await Say("Last nail. …It holds. It just— holds. Like it was only ever a bridge.");
@@ -462,8 +468,36 @@ public partial class BridgeRepair : Node2D
 
         if (BridgeFixed || from == BridgeState.Crossable)
         {
+            var gs = GameState.Instance;
+            bool wakeSeen = (gs?.HasFlag(HedgeMaze.AwakenedFlag) ?? false) ||
+                (gs?.HasFlag(HedgeMaze.IntroPendingFlag) ?? false);
+            if (!wakeSeen)
+            {
+                await PlayExhaustionCrossingAsync();
+                await WaitSeconds(0.6f);
+                if (StillHere() && _state == BridgeState.Leaving && !SceneManager.IsChanging)
+                {
+                    // The change was held back by one of the house's
+                    // ordinary prompts. Give Mara the bridge back;
+                    // the pending wake still waits on the next crossing.
+                    _state = BridgeState.Crossable;
+                    _nightfall = 0f;
+                    _nightfallActive = false;
+                    _dizzy = false;
+                    if (_titleLabel != null)
+                        _titleLabel.Visible = true;
+                    if (_helpLabel != null)
+                        _helpLabel.Visible = true;
+                    if (_leaveLabel != null)
+                        _leaveLabel.Visible = true;
+                    UpdateHelp();
+                    QueueRedraw();
+                }
+                return;
+            }
+
             AudioManager.PlayVaried(Sfx.FootstepDirtA, -11f, 0.95f, 0.03f);
-            SceneManager.ChangeScene(PorchScenePath);
+            SceneManager.ChangeScene(HedgeMazeScenePath);
         }
         else
         {
@@ -476,11 +510,100 @@ public partial class BridgeRepair : Node2D
             _state = from;
     }
 
+    /// <summary>The first crossing is the one her mind cannot finish
+    /// upright. The day does not set so much as get taken away,
+    /// slowly enough for her to watch it go; by the far bank her
+    /// head is swimming, and sitting down for one second becomes
+    /// waking somewhere else entirely.</summary>
+    private async Task PlayExhaustionCrossingAsync()
+    {
+        _busy = true;
+        Dialogue.BeginInputBlock();
+        try
+        {
+            if (_helpLabel != null)
+                _helpLabel.Text = string.Empty;
+
+            AudioManager.PlayVaried(Sfx.FootstepDirtA, -11f, 0.95f, 0.03f);
+            await WaitSeconds(0.35f);
+            if (!StillHere())
+                return;
+            AudioManager.PlayVaried(Sfx.FootstepDirtB, -12f, 0.9f, 0.03f);
+
+            _nightfallActive = true;
+            await WaitSeconds(1.1f);
+            if (!StillHere())
+                return;
+            await Say("Across. It holds under me. It holds—");
+            if (!StillHere())
+                return;
+
+            AudioManager.Play(Sfx.WindGust, -18f, 0.8f);
+            await WaitSeconds(1.4f);
+            if (!StillHere())
+                return;
+            await Say("The sky. Look at the sky. It's going dark too fast — like someone is taking the light down hand over hand.");
+            if (!StillHere())
+                return;
+
+            _dizzy = true;
+            AudioManager.Play(Sfx.BreathSlow, -12f, 0.82f);
+            await WaitSeconds(1.3f);
+            if (!StillHere())
+                return;
+            await Say("My head— okay. Okay. Too many rooms. Too much remembering all at once. Everything is tilting.");
+            if (!StillHere())
+                return;
+
+            await WaitSeconds(1.6f);
+            if (!StillHere())
+                return;
+            await Say("Just— sit down before I fall down. One second. Only until the ground remembers which way is—");
+            if (!StillHere())
+                return;
+
+            await WaitSeconds(1.8f);
+            if (!StillHere())
+                return;
+            _nightfall = 1f;
+            _nightfallActive = false;
+            _dizzy = false;
+            if (_titleLabel != null)
+                _titleLabel.Visible = false;
+            if (_helpLabel != null)
+                _helpLabel.Visible = false;
+            if (_leaveLabel != null)
+                _leaveLabel.Visible = false;
+            QueueRedraw();
+
+            await WaitSeconds(1.25f);
+            if (!StillHere())
+                return;
+
+            var gs = GameState.Instance;
+            if (gs != null)
+            {
+                gs.SetFlag(HedgeMaze.IntroPendingFlag, save: false);
+                gs.SaveGame("Mara lost the light after the bridge");
+            }
+            SceneManager.ChangeScene(HedgeMazeScenePath);
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+            _busy = false;
+            if (StillHere())
+                QueueRedraw();
+        }
+    }
+
     public override void _Process(double delta)
     {
         _lurch = Mathf.Max(0f, _lurch - (float)delta);
         if (_plunging)
             _plunge = Mathf.MoveToward(_plunge, 1f, (float)delta / 0.85f);
+        if (_nightfallActive)
+            _nightfall = Mathf.MoveToward(_nightfall, 1f, (float)delta / 16f);
         UpdateCursor();
         QueueRedraw();
     }
@@ -529,15 +652,24 @@ public partial class BridgeRepair : Node2D
 
     public override void _Draw()
     {
-        bool lurching = (_lurch > 0.01f && !Settings.ReduceMotionOrDefault()) || _plunge > 0.01f;
+        bool dizzy = _dizzy && !Settings.ReduceMotionOrDefault();
+        bool lurching = (_lurch > 0.01f && !Settings.ReduceMotionOrDefault()) || _plunge > 0.01f || dizzy;
         if (lurching)
         {
             float s = _lurch > 0.01f && !Settings.ReduceMotionOrDefault() ? 7f * (_lurch / 0.55f) : 0f;
+            double seconds = Time.GetTicksMsec() / 1000.0;
+            Vector2 dizzyOffset = dizzy
+                ? new Vector2(
+                    (float)Math.Sin(seconds * 1.7) * 10f * _nightfall,
+                    (float)Math.Cos(seconds * 1.3) * 5f * _nightfall)
+                : Vector2.Zero;
             var offset = new Vector2(
                 _rng.RandfRange(-s, s), _rng.RandfRange(-s * 0.5f, s * 0.8f))
-                + new Vector2(0, _plunge * 310f);
+                + new Vector2(0, _plunge * 310f)
+                + dizzyOffset;
             float rot = _rng.RandfRange(-0.006f, 0.006f) * (s > 0f ? _lurch / 0.55f : 0f)
-                + _plunge * 0.13f;
+                + _plunge * 0.13f
+                + (dizzy ? (float)Math.Sin(seconds * 0.9) * 0.012f * _nightfall : 0f);
             DrawSetTransform(offset, rot, Vector2.One);
         }
 
@@ -553,6 +685,9 @@ public partial class BridgeRepair : Node2D
                 new Color(0.004f, 0.01f, 0.016f, _plunge * 0.94f), true);
 
         DrawLeaveControl();
+        if (_nightfall > 0.01f)
+            DrawRect(new Rect2(0, 0, 1152, 648),
+                new Color(0.002f, 0.006f, 0.018f, _nightfall * 0.97f), true);
         DrawRect(new Rect2(0, 0, 1152, 22), new Color(0, 0, 0, 0.28f), true);
         DrawRect(new Rect2(0, 626, 1152, 22), new Color(0, 0, 0, 0.28f), true);
         DrawRect(new Rect2(0, 0, 24, 648), new Color(0, 0, 0, 0.22f), true);

@@ -8,7 +8,7 @@ using Godot;
 ///
 /// The camera visibly travels: straight down one memory hallway, left at
 /// the bent runner, right past the photographs, or along the empty road
-/// until the lit porch is close enough to name. No score or ambience
+/// until its far bank is close enough to name. No score or ambience
 /// follows her between rooms — only carpeted boards indoors or the dirt
 /// road underfoot, and the ordinary sound of her dialogue. The walks are long enough
 /// that Mara sometimes thinks aloud on the way. On every first arrival
@@ -16,13 +16,14 @@ using Godot;
 /// remember what it could be for. Only sometimes does that inspection
 /// pull her briefly into the room it came from as a migraine she has to
 /// shake back before the door can be opened. The destination
-/// is not loaded until the player clicks the door (or the distant porch
-/// light). Each wrapper scene stores its own destination and journey id, so
+/// is not loaded until the player clicks the door (or the road's far
+/// bank). Each wrapper scene stores its own destination and journey id, so
 /// saving/quitting mid-journey resumes in the right place.
 ///
 /// Room 4 keeps its authored brass-door close-up and Room 5 keeps its
 /// wardrobe/garden passage; this script covers the plainer stretches of
-/// house and road between Rooms 1-2, 2-3, 3-4, and 6-Porch.
+/// house and road between Rooms 1-2, 2-3, 3-4, and 6 to the bridge
+/// (and, once Mara has woken there, on into the hedge walls).
 /// </summary>
 public partial class RoomJourney : Node2D
 {
@@ -212,14 +213,14 @@ public partial class RoomJourney : Node2D
             FootstepVolumeDb = -13f,
             FootstepIntervalSeconds = 0.84f,
         },
-        ["Room6ToPorch"] = new JourneySpec
+        ["Room6ToHedgeMaze"] = new JourneySpec
         {
             TexturePath = "res://assets/images/bgs/Journey_Empty_Road.png",
             Lines =
             [
                 "Gate. Road. Nobody counting swings now.",
                 "It is shorter than I made it in my head. Twelve years I made this road longer and longer and it's... just a road. That almost makes me angry.",
-                "The porch light's on. Who leaves a light on in a memory? Mum. Mum does. Of course she does.",
+                "The road ends at water. It always did. The rest is whatever the memory has been keeping on the other side.",
                 "Okay. Come on, feet. Nearly kept a promise's worth of road.",
             ],
             RandomWalkingLines =
@@ -248,13 +249,13 @@ public partial class RoomJourney : Node2D
             Focus = new Vector2(635f, 292f),
             FinalScale = 2.45f,
             TargetRect = new Rect2(490f, 215f, 220f, 155f),
-            Prompt = "Click the porch light to arrive",
+            Prompt = "Click the far bank to arrive",
             CameraSeconds = 12.0f,
             FootstepSfx = [Sfx.FootstepDirtA, Sfx.FootstepDirtB],
             FootstepVolumeDb = -11f,
             FootstepIntervalSeconds = 0.92f,
-            OpenSfx = Sfx.DoorCreak,
-            OpenPitch = 0.82f,
+            OpenSfx = Sfx.BridgeCreak,
+            OpenPitch = 0.92f,
         },
         // ------------------------------------------------------
         // The same legs, walked backwards. No fragment rides these
@@ -311,24 +312,6 @@ public partial class RoomJourney : Node2D
             FootstepVolumeDb = -13f,
             FootstepIntervalSeconds = 0.84f,
         },
-        ["PorchToRoom6"] = new JourneySpec
-        {
-            TexturePath = "res://assets/images/bgs/Journey_Empty_Road.png",
-            Lines =
-            [
-                "Back up the road. Shorter every time I let myself know it.",
-            ],
-            Focus = new Vector2(635f, 292f),
-            FinalScale = 2.45f,
-            TargetRect = new Rect2(490f, 215f, 220f, 155f),
-            Prompt = "Click the house to go back in",
-            CameraSeconds = 7.5f,
-            FootstepSfx = [Sfx.FootstepDirtA, Sfx.FootstepDirtB],
-            FootstepVolumeDb = -11f,
-            FootstepIntervalSeconds = 0.92f,
-            OpenSfx = Sfx.DoorCreak,
-            OpenPitch = 0.82f,
-        },
     };
 
     private JourneySpec _spec;
@@ -367,7 +350,7 @@ public partial class RoomJourney : Node2D
     /// <summary>Legs travelled toward rooms Mara has already left
     /// behind. Walking back is always wordless.</summary>
     private bool IsReturnJourney => JourneyId is
-        "Room2ToRoom1" or "Room3ToRoom2" or "Room4ToRoom3" or "PorchToRoom6";
+        "Room2ToRoom1" or "Room3ToRoom2" or "Room4ToRoom3";
 
     /// <summary>Roll a first-journey beat once and keep the result in the
     /// save, so quitting and resuming midway cannot reroll whether this
@@ -530,7 +513,7 @@ public partial class RoomJourney : Node2D
             && !Dialogue.IsInputBlocked
             && _spec.TargetRect.HasPoint(GetGlobalMousePosition());
         SetHovering(hover);
-        QueueRedraw(); // the ready-door/porch highlight breathes
+        QueueRedraw(); // the ready-door/far-bank highlight breathes
     }
 
     public override void _Input(InputEvent @event)
@@ -841,10 +824,12 @@ public partial class RoomJourney : Node2D
 
         string destination = DestinationScenePath;
         // The empty road crosses water, and the memory left that
-        // crossing broken. Until her father's tools have mended it,
-        // the road to the porch ends at the bridge.
-        if (JourneyId == "Room6ToPorch" &&
-            !(GameState.Instance?.HasFlag("bridge_fixed") ?? false))
+        // crossing broken. Until her father's tools have mended it
+        // — and Mara has survived her first crossing and woken in
+        // the hedge walls — the road ends at the bridge.
+        bool bridgeFixed = GameState.Instance?.HasFlag("bridge_fixed") ?? false;
+        bool hedgeAwakened = GameState.Instance?.HasFlag(HedgeMaze.AwakenedFlag) ?? false;
+        if (JourneyId == "Room6ToHedgeMaze" && (!bridgeFixed || !hedgeAwakened))
             destination = "res://scenes/world/bridge_repair.tscn";
         SceneManager.ChangeScene(destination);
     }

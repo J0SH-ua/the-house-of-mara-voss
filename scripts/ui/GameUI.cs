@@ -241,10 +241,6 @@ public partial class GameUI : CanvasLayer
         [
             "The garden. Right. I can stand here. I can stand here and not count.",
         ]),
-        ["porch_447.tscn"] = ("Porch447",
-        [
-            "The porch. I have come through that gate calling her name so many times. Not this time. Just walk.",
-        ]),
         ["room_7.tscn"] = ("Room7",
         [
             "The last room. No more doors after this one. Whatever I decide here, I have to be the one who decides it.",
@@ -342,17 +338,6 @@ public partial class GameUI : CanvasLayer
             new() { Effect = "leaves", Cx = 0.24f, Cy = 0.42f, W = 110f, Fps = 3f, Alpha = 0.95f, SwayDegrees = 0.7f, SwaySpeed = 0.6f },
             new() { Effect = "leaves", Cx = 0.50f, Cy = 0.36f, W = 90f, Fps = 3f, Alpha = 0.9f, Phase = 1.7f, SwayDegrees = 0.7f, SwaySpeed = 0.5f },
             new() { Effect = "branch", Cx = 0.835f, Cy = 0.155f, W = 400f, Alpha = 1f, SwayDegrees = 1.1f, SwaySpeed = 0.45f, PivotX = 0.85f },
-        ],
-        ["porch_447.tscn"] =
-        [
-            // chimney smoke (the kettle's wisp, greyer); the lit panes;
-            // and Room 5's moths, come down to bother the porch lantern
-            new() { Effect = "steam", Cx = 0.10f, Cy = 0.02f, H = 120f, Fps = 4f, Alpha = 0.5f, Tint = new Color(0.8f, 0.82f, 0.85f) },
-            new() { Effect = "glow", Cx = 0.326f, Cy = 0.42f, W = 170f, H = 170f, Alpha = 0.12f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.035f, PulseSpeed = 0.6f },
-            new() { Effect = "glow", Cx = 0.402f, Cy = 0.39f, W = 150f, H = 150f, Alpha = 0.16f, Tint = new Color(1f, 0.77f, 0.43f), Pulse = 0.05f, PulseSpeed = 0.8f },
-            new() { Effect = "moth", Cx = 0.402f, Cy = 0.39f, H = 15f, Fps = 10f, Alpha = 0.9f, Tint = new Color(1f, 0.95f, 0.84f), OrbitRx = 40f, OrbitRy = 28f },
-            new() { Effect = "moth", Cx = 0.402f, Cy = 0.39f, H = 13f, Fps = 10f, Alpha = 0.8f, Tint = new Color(1f, 0.95f, 0.84f), Phase = 2.4f, OrbitRx = 52f, OrbitRy = 34f },
-            new() { Effect = "moth", Cx = 0.402f, Cy = 0.39f, H = 11f, Fps = 10f, Alpha = 0.7f, Tint = new Color(1f, 0.95f, 0.84f), Phase = 4.4f, OrbitRx = 30f, OrbitRy = 22f },
         ],
         ["room_7.tscn"] =
         [
@@ -965,12 +950,18 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
+        // Inside the hedge walls, A is her left foot and C is
+        // crouching. The movement scene consumes those keys first;
+        // this is the second lock on the same door, so neither can
+        // arm Anchor or Clarity underneath the walking.
+        bool hedgeMazeOwnsMovementKeys = SceneManager.Instance?.CurrentScene is HedgeMaze;
+
         if (@event.IsActionPressed(InputSetup.OpenJournal) && !FocusIsTextEditing())
         {
             OpenJournal();
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.ToggleClarity) && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.ToggleClarity) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 ClaritySystem.Toggle();
@@ -982,7 +973,7 @@ public partial class GameUI : CanvasLayer
                 MemoryVerbSystem.Toggle(MemoryVerb.Echo);
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryAnchor) && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryAnchor) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Anchor);
@@ -1515,7 +1506,7 @@ public partial class GameUI : CanvasLayer
             "journey_to_room_2.tscn" => "the way to the sitting room",
             "journey_to_room_3.tscn" => "the way to the kept room",
             "journey_to_room_4.tscn" => "the way to the hallway",
-            "journey_to_porch.tscn" => "the empty road",
+            "journey_to_hedge_maze.tscn" => "the empty road",
             "room_1.tscn" => "the kitchen",
             "room_1_puzzle.tscn" => "the kitchen drawer",
             "room_2.tscn" => "the sitting room",
@@ -1525,7 +1516,7 @@ public partial class GameUI : CanvasLayer
             "Room_4_puzzle.tscn" => "the brass door",
             "room_5.tscn" => "the sliding room",
             "room_6.tscn" => "the last afternoon",
-            "porch_447.tscn" => "the porch",
+            "hedge_maze.tscn" => "the green walls",
             "room_7.tscn" => "the last room",
             _ => "the new room",
         };
@@ -6229,10 +6220,11 @@ public partial class GameUI : CanvasLayer
         new Color(level, level * 0.96f, level * 0.84f, alpha);
 
     /// <summary>All darkness light for the held moment, in one
-    /// place. The house blackout is one kind of dark; under the
-    /// house is another. The basement, duct and breaker box stay
-    /// flashlight places even after backup power returns to the
-    /// rooms above, just as their own world light does. No
+    /// place. The house blackout is one kind of dark; a place
+    /// whose own light is the torch is another. The basement,
+    /// duct and breaker box stay flashlight places even after
+    /// backup power returns above, and the night hedge walls
+    /// never had any other light to offer her hand. No
     /// bagged flashlight: near-black dim, no decorative glow,
     /// hand and held thing cold silhouettes. Bagged flashlight:
     /// the same dim, but the beam is the player's — the mouse
@@ -6247,9 +6239,9 @@ public partial class GameUI : CanvasLayer
         bool blackoutDark = gs != null && gs.HasFlag("blackout_active") &&
             !gs.HasFlag("backup_power_on");
         string sceneFile = SceneFileName(SceneManager.CurrentScenePath);
-        bool underHouseDark = sceneFile is
-            "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn";
-        bool heldDark = blackoutDark || underHouseDark;
+        bool placeDark = sceneFile is
+            "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn" or "hedge_maze.tscn";
+        bool heldDark = blackoutDark || placeDark;
         bool torchLit = heldDark && FlashlightInBagForHeldBeam(gs);
         _heldTorchLit = torchLit && _heldShowing;
 
@@ -6557,7 +6549,6 @@ public partial class GameUI : CanvasLayer
         "Room2Puzzle" => "Room2",
         "Room4Flashback" => "Room4",
         "ApartmentNow" => "Room5",
-        "Porch447" => "Room6",
         _ => roomKey,
     };
 

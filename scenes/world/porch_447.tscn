@@ -1,6 +1,0 @@
-[gd_scene format=4 uid="uid://cmaraporchsc1"]
-
-[ext_resource type="Script" uid="uid://cmaraporch001" path="res://scripts/world/room6/Porch447.cs" id="1_porch"]
-
-[node name="Porch447" type="Node2D" unique_id=1507000001]
-script = ExtResource("1_porch")

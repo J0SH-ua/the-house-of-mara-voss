@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cmarahedgesc1"]
+
+[ext_resource type="Script" uid="uid://cmarahedge001" path="res://scripts/world/room6/HedgeMaze.cs" id="1"]
+
+[node name="HedgeMaze" type="Node2D"]
+script = ExtResource("1")

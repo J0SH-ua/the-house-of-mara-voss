@@ -53,8 +53,7 @@ public partial class SceneManager : Node
 		["breaker_box.tscn"] = ("res://scenes/world/basement.tscn", "← Step Back"),
 		["room_6.tscn"] = ("res://scenes/world/room_5.tscn", "← Previous Room"),
 		["bridge_repair.tscn"] = ("res://scenes/world/room_6.tscn", "← Back to the Garden"),
-		["porch_447.tscn"] = ("res://scenes/world/room_6.tscn", "← Previous Room"),
-		["room_7.tscn"] = ("res://scenes/world/porch_447.tscn", "← Previous Room"),
+		["room_7.tscn"] = ("res://scenes/world/hedge_maze.tscn", "← Back into the hedge walls"),
 	};
 
 	/// <summary>Where "step back" leads from <paramref name="scenePath"/>, if anywhere.</summary>
@@ -136,6 +135,20 @@ public partial class SceneManager : Node
 
 		string from = FileNameOf(CurrentScenePath);
 		string to = FileNameOf(scenePath);
+
+		// The porch stop is gone. Any older deferred request or save
+		// still naming it belongs on the far side of the bridge now,
+		// inside the hedge walls that replaced it.
+		if (to == "porch_447.tscn")
+		{
+			HedgeMaze.ArmEntry(fromNorth: false);
+			return "res://scenes/world/hedge_maze.tscn";
+		}
+		if (to == "journey_to_porch.tscn")
+			return "res://scenes/world/journey_to_hedge_maze.tscn";
+		if (to == "hedge_maze.tscn")
+			HedgeMaze.ArmEntry(fromNorth: from == "room_7.tscn");
+
 		string journey = null;
 		if (to == "room_2.tscn" && (from == "room_1.tscn" || from == "room_1_puzzle.tscn"))
 			journey = "journey_to_room_2.tscn";
@@ -143,8 +156,8 @@ public partial class SceneManager : Node
 			journey = "journey_to_room_3.tscn";
 		else if (to == "room_4.tscn" && (from == "room_3.tscn" || from == "jar_closeup.tscn"))
 			journey = "journey_to_room_4.tscn";
-		else if (to == "porch_447.tscn" && from == "room_6.tscn")
-			journey = "journey_to_porch.tscn";
+		else if (to == "hedge_maze.tscn" && from == "room_6.tscn")
+			journey = "journey_to_hedge_maze.tscn";
 
 		// Walked every time now, at her own pace: the seen flags
 		// reserve spoken lines for first forward crossings (and a
@@ -172,8 +185,6 @@ public partial class SceneManager : Node
 				=> ("journey_to_room_3.tscn", "Room3ToRoom2"),
 			("room_4.tscn", "room_3.tscn")
 				=> ("journey_to_room_4.tscn", "Room4ToRoom3"),
-			("porch_447.tscn", "room_6.tscn")
-				=> ("journey_to_porch.tscn", "PorchToRoom6"),
 			_ => (null, null),
 		};
 		if (back.Shell != null)

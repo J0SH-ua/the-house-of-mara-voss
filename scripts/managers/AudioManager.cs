@@ -383,7 +383,7 @@ public partial class AudioManager : Node
             PlayMusic(MusicRoom5, -28f);
         else if (scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("lockpick") || scene.Contains("breaker_box"))
             PlayMusic(MusicRoom5, -29f);
-        else if (scene.Contains("porch") || scene.Contains("bridge_repair"))
+        else if (scene.Contains("bridge_repair") || scene.Contains("hedge_maze"))
             PlayMusic(MusicRoom6, -26f);
         else if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
             PlayMusic(MusicFinale, -18f);
@@ -424,7 +424,8 @@ public partial class AudioManager : Node
     /// <summary>Each place sounds like itself, mixed in front of the
     /// background score: rain where the windows are wet (Room 5, the
     /// Apartment), the fire in Room 2, wind and leaves in the garden,
-    /// crickets at dusk on the porch, drips and furnace air below the
+    /// crickets at dusk by the bridge and inside the hedge walls,
+    /// drips and furnace air below the
     /// house, and plain room tone everywhere else. Crossfaded like music.</summary>
     public void PlayAmbienceForScene(string scenePath)
     {
@@ -457,7 +458,7 @@ public partial class AudioManager : Node
             scene.Contains("vent_crawl") ? (AmbienceDripsPath, -11.5f)
             : scene.Contains("basement") || scene.Contains("breaker_box") ? (AmbienceDripsPath, -13f)
             : scene.Contains("lockpick") ? (AmbiencePath, -20f)
-            : scene.Contains("porch") || scene.Contains("bridge_repair") ? (AmbiencePorchPath, -16f)
+            : scene.Contains("bridge_repair") || scene.Contains("hedge_maze") ? (AmbiencePorchPath, -16f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -15f)
             : scene.Contains("room_5") ? (AmbienceRainPath, -15f)
             : scene.Contains("room_2") || scene.Contains("difference_investigation") ? (AmbienceFirePath, puzzle || scene.Contains("difference_investigation") ? -20f : -17f)

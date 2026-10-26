@@ -27,7 +27,6 @@ public partial class RoomExamineTracker : Node
             ["Room5"] = ["RainWindow", "Bed", "Lamp", "Desk", "RotaryPhone", "Wardrobe"],
             ["ApartmentNow"] = ["UnopenedMail", "SilentPhone", "CornerChair"],
             ["Room6"] = ["AppleBasket", "Swing", "BrokenGate", "EmptyRoad"],
-            ["Porch447"] = ["LitWindow", "PorchSteps", "GardenPath"],
             ["Basement"] = ["Furnace", "PreserveShelves", "ToyCrate"],
         };
 

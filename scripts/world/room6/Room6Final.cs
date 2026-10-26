@@ -379,7 +379,7 @@ public partial class Room6Final : MemoryRoomBase
             await WaitSeconds(0.25f);
             if (!GodotObject.IsInstanceValid(this))
                 return;
-            SceneManager.ChangeScene("res://scenes/world/journey_to_porch.tscn");
+            SceneManager.ChangeScene("res://scenes/world/journey_to_hedge_maze.tscn");
         }
         finally
         {

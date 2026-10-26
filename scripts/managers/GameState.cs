@@ -111,7 +111,7 @@ public partial class GameState : Node
         ["journey_to_room_2.tscn"] = "Room1",
         ["journey_to_room_3.tscn"] = "Room2",
         ["journey_to_room_4.tscn"] = "Room3",
-        ["journey_to_porch.tscn"] = "Room6",
+        ["journey_to_hedge_maze.tscn"] = "Room6",
         ["room_1.tscn"] = "Room1",
         ["room_1_puzzle.tscn"] = "Room1",
         ["kitchen_cabinet.tscn"] = "Room1",
@@ -132,7 +132,7 @@ public partial class GameState : Node
         ["breaker_box.tscn"] = "Room5",
         ["room_6.tscn"] = "Room6",
         ["bridge_repair.tscn"] = "Room6",
-        ["porch_447.tscn"] = "Room6",
+        ["hedge_maze.tscn"] = "Room6",
         ["room_7.tscn"] = "Room7",
     };
 
@@ -619,8 +619,6 @@ public partial class GameState : Node
         if (roomName == "ApartmentNow" && RoomExamineTracker.HasRoomBeenFullyExamined("ApartmentNow"))
             UnlockClue("apartment_now");
 
-        if (roomName == "Porch447" && RoomExamineTracker.HasRoomBeenFullyExamined("Porch447"))
-            UnlockClue("porch_447");
     }
 
     public bool HasClue(string clueId) => clueId != null && _unlockedClues.Contains(clueId);
@@ -696,8 +694,6 @@ public partial class GameState : Node
             _unlockedClues.Add("last_afternoon_trace");
         if (RoomExamineTracker.HasRoomBeenFullyExamined("ApartmentNow") && !_unlockedClues.Contains("apartment_now"))
             _unlockedClues.Add("apartment_now");
-        if (RoomExamineTracker.HasRoomBeenFullyExamined("Porch447") && !_unlockedClues.Contains("porch_447"))
-            _unlockedClues.Add("porch_447");
         if (HasFlag("room5_vent_found") && !_unlockedClues.Contains("under_house_vent"))
             _unlockedClues.Add("under_house_vent");
         if (HasFlag("item_hairpin") && !_unlockedClues.Contains("bedroom_hairpin"))
@@ -1011,7 +1007,7 @@ public partial class GameState : Node
         "room_3.tscn", "journey_to_room_4.tscn",
         "room_4.tscn", "Room_4_puzzle.tscn",
         "room_5.tscn",
-        "room_6.tscn", "journey_to_porch.tscn", "bridge_repair.tscn", "porch_447.tscn",
+        "room_6.tscn", "journey_to_hedge_maze.tscn", "bridge_repair.tscn", "hedge_maze.tscn",
         "room_7.tscn",
     ];
 
@@ -1047,7 +1043,7 @@ public partial class GameState : Node
     /// Mara's, the next room is hers to walk to whenever she chooses —
     /// collecting a fragment never carries her anywhere by itself.
     /// Rooms whose exit is a thing in the world keep that exit
-    /// instead: Room 4's brass door, the porch's front door, the
+    /// instead: Room 4's brass door, Room 6's road and bridge, the
     /// bedroom's tutorial door. The first-departure walks and the
     /// once-per-room "am I ready to leave?" ride along inside
     /// SceneManager.ChangeScene.</summary>
@@ -1066,10 +1062,10 @@ public partial class GameState : Node
             // this target back to Room5Final.LeaveForAfternoon,
             // which the blackout still bars until power returns.
             "room_5.tscn" => IsShardRecovered(4) ? "room_6.tscn" : null,
-            // No Leave shortcut from Room 6 to the porch: that road
-            // is authored — front door, walked journey, and the
-            // bridge her father's tools must mend first. A one-click
-            // "Leave for the porch" stepped clean over all of it.
+            // No Leave shortcut from Room 6 into the hedge walls:
+            // that road is authored — walked journey, the bridge
+            // her father's tools must mend, and then her own feet
+            // in the dark. A one-click Leave stepped over all of it.
             _ => null,
         };
         if (next == null)
@@ -1105,13 +1101,16 @@ public partial class GameState : Node
             // The bridge is a repair, not a room of examinables; its
             // mistimed strikes are graded by the crossing itself.
             "bridge_repair.tscn" => null,
-            "porch_447.tscn" => "Porch447",
+            // The hedge walls are walked in first person and own
+            // their keyboard movement; there are no examinables or
+            // loose-click penalties in the dark corridors.
+            "hedge_maze.tscn" => null,
             // Journeys borrow the completed room for Clarity/progress, but
             // they are thresholds, not rooms that can rest/seal.
             "journey_to_room_2.tscn" => null,
             "journey_to_room_3.tscn" => null,
             "journey_to_room_4.tscn" => null,
-            "journey_to_porch.tscn" => null,
+            "journey_to_hedge_maze.tscn" => null,
             _ => SceneToRoom.TryGetValue(file, out var room) ? room : null,
         };
     }
@@ -1128,7 +1127,6 @@ public partial class GameState : Node
         "ApartmentNow" => HasFlag("apartment_seen"),
         "Basement" => HasFlag("basement_seen"),
         "Room6" => IsShardRecovered(5),
-        "Porch447" => HasFlag("porch_passed"),
         _ => false,
     };
 
@@ -1198,6 +1196,10 @@ public partial class GameState : Node
             return HasFlag("item_hammer_nails")
                 ? "Nail the bridge true again. Strike each nail as its glint crosses — a glanced blow can put her within the water's reach."
                 : "The bridge won't hold her. Something of her father's could mend it — he kept his tools in a little cabinet, under the house.";
+        if (file == "hedge_maze.tscn")
+            return HasFlag(HedgeMaze.FarSideReachedFlag)
+                ? "The far break in the hedge is known now. The last room waits beyond it; the bridge opening is back the other way."
+                : "Night inside the box-hedge walls. Keep the flashlight up, learn the turns, and find the opening on the far side.";
 
         switch (file)
         {
@@ -1271,23 +1273,16 @@ public partial class GameState : Node
                 return bLeft.Count > 0
                     ? $"Just woke up somewhere impossible — look around ({bDone}/{bTotal})."
                     : "There's a door. Beyond it, whatever this is.";
-            case "porch_447.tscn":
-                if (HasFlag("porch_passed"))
-                    return "Crossed, and standing. The front door remembers her knock now.";
-                RoomExamineTracker.GetRoomProgress("Porch447", out int pDone, out int pTotal, out var pLeft);
-                return pLeft.Count > 0
-                    ? $"The porch, at 4:47 ({pDone}/{pTotal})."
-                    : "The front door. Announce yourself the way family did — and keep your composure while the house tries to take it. The last room is through it.";
             case "journey_to_room_2.tscn":
                 return "Straight on to the next door. Open it when you're ready.";
             case "journey_to_room_3.tscn":
                 return "Left at the bent runner, to the next door. Open it when you're ready.";
             case "journey_to_room_4.tscn":
                 return "Right at the photographs, to the next door. Open it when you're ready.";
-            case "journey_to_porch.tscn":
-                return HasFlag("bridge_fixed")
-                    ? "Walk the empty road to the lit porch. The bridge holds now."
-                    : "Walk the empty road toward the lit porch — and whatever the memory has left broken across it.";
+            case "journey_to_hedge_maze.tscn":
+                return HasFlag("bridge_fixed") && HasFlag(HedgeMaze.AwakenedFlag)
+                    ? "Walk the empty road, cross the mended bridge, and enter the green walls again."
+                    : "Walk the empty road toward the water — and whatever the memory has left broken across it.";
             case "Room_4_puzzle.tscn":
                 if (HasFlag("room4_door_opened"))
                     return "The way through stands open. Click the door.";
@@ -1493,7 +1488,7 @@ public partial class GameState : Node
                 "journey_to_room_2.tscn" => "Let Mara walk straight to the door, settle herself, then click the door itself to open it.",
                 "journey_to_room_3.tscn" => "Let Mara turn left where the runner bends and settle herself, then click the door itself to open it.",
                 "journey_to_room_4.tscn" => "Let Mara turn right at the photographs and settle herself, then click the door itself to open it.",
-                "journey_to_porch.tscn" => "Let Mara walk until the porch light is close and settle herself, then click the light to arrive.",
+                "journey_to_hedge_maze.tscn" => "Let Mara walk until the far bank is close and settle herself, then click it to arrive.",
                 _ => "Let Mara reach the door, then click the door itself to open it.",
             };
             return (journeyHint, null);
@@ -1549,18 +1544,14 @@ public partial class GameState : Node
             };
         }
 
-        if (file == "porch_447.tscn")
+        if (file == "hedge_maze.tscn")
         {
-            if (RoomExamineTracker.HasRoomBeenFullyExamined("Porch447") && !HasFlag("porch_passed"))
+            return NextHintLevel("HedgeMaze") switch
             {
-                return NextHintLevel("Porch447") switch
-                {
-                    1 => ("The door will not be rushed or verb-ed open. Homes were announced: knock the way family knocked, be seen at the lit window, then hold the handle steady. Her own head will try to interrupt all three — let the interruptions pass through, not over her.", null),
-                    2 => ("The knock their mother listened for: two, a breath, three — each knock close on the last, the breath honestly a breath. At the window, click only while the light is steady. At the handle, keep her hand inside the ring until it fills, however the porch sways.", null),
-                    _ => ("Knock: click the door — knock knock (each within a breath of the last), wait one full second, knock knock knock. Window: click it in the steady light, three times; the flicker is the house blinking, not an invitation. Handle: press and HOLD inside the ring for a slow count of four while it sways; slipping off only costs the count, not the door. Migraines steal a second; let them.", null),
-                };
-            }
-            return ("She stopped here for twelve years without ever stopping. The light, the steps, the path. The front door is the way on.", null);
+                1 => ("There is no trick in the green walls yet — only the place itself. Walk it slowly enough to learn its turns: WASD moves, the mouse or arrow keys turn, Shift runs, C crouches, Space jumps, and Caps Lock lets Mara look behind her.", null),
+                2 => ("Use the unlike things as landmarks: stone pillars, the dry fountain, the two dark topiary shapes. The opening near where she woke leads back to the bridge; the break she wants is on the far side of the walls.", null),
+                _ => ("Work generally north and west from the waking clearing. The far opening is in the north-western wall and leads onward; the southern opening behind her start returns to the bridge. Caps Lock checks the corridor at her back without turning her body around.", null),
+            };
         }
 
         if (room == null || !RoomExamineTracker.RoomHasRequirements(room))
@@ -2155,9 +2146,30 @@ public partial class GameState : Node
         PlaceLegacy("room4_key_circle_inserted", "room4_hole_right_circle",
             "room4_hole_left_circle", "room4_hole_center_circle");
 
-        // A save already standing on the porch crossed the road before
-        // the memory broke its bridge. It holds for them.
-        if (HasFlag("porch_passed") || !string.IsNullOrEmpty(CompletedEnding))
+        // The road journey was renamed when its destination changed.
+        // Carry its seen/random decisions over so a returning Mara
+        // does not replay a first walk she already made.
+        void CopyJourneyFlag(string oldFlag, string newFlag)
+        {
+            if (HasFlag(oldFlag))
+                AddItem(newFlag, null);
+        }
+        CopyJourneyFlag("journey_seen_Room6ToPorch", "journey_seen_Room6ToHedgeMaze");
+        CopyJourneyFlag("journey_random_migraine_rolled_Room6ToPorch", "journey_random_migraine_rolled_Room6ToHedgeMaze");
+        CopyJourneyFlag("journey_random_migraine_Room6ToPorch", "journey_random_migraine_Room6ToHedgeMaze");
+        CopyJourneyFlag("journey_random_walk_monologue_rolled_Room6ToPorch", "journey_random_walk_monologue_rolled_Room6ToHedgeMaze");
+        CopyJourneyFlag("journey_random_walk_monologue_Room6ToPorch", "journey_random_walk_monologue_Room6ToHedgeMaze");
+
+        // A save from before the porch stop was removed may already
+        // have passed it. That proof now means the bridge held and
+        // Mara had reached the far side of the place beyond it.
+        if (HasFlag("porch_passed"))
+        {
+            AddItem(HedgeMaze.AwakenedFlag, null);
+            AddItem(HedgeMaze.FarSideReachedFlag, null);
+        }
+        if (HasFlag("porch_passed") || HasFlag(HedgeMaze.AwakenedFlag) ||
+            HasFlag(HedgeMaze.FarSideReachedFlag) || !string.IsNullOrEmpty(CompletedEnding))
             AddItem("bridge_fixed", null);
     }
 
@@ -2610,6 +2622,44 @@ public partial class GameState : Node
         Logger.Debug($"GameState: saved ({reason}).");
     }
 
+    /// <summary>Older saves can still name the removed porch stop.
+    /// A Mara who had passed it belongs in the last room; one who
+    /// was merely standing there belongs at the hedge-maze waking
+    /// that replaced it. The old road journey gets its new shell.</summary>
+    private string MigrateRemovedPorchScene(string scenePath)
+    {
+        if (string.IsNullOrWhiteSpace(scenePath))
+            return scenePath;
+
+        string file = FileNameOf(scenePath);
+        if (file == "journey_to_porch.tscn")
+            return "res://scenes/world/journey_to_hedge_maze.tscn";
+
+        if (file == "porch_447.tscn")
+        {
+            _storyFlags.Add("bridge_fixed");
+            if (HasFlag("porch_passed"))
+            {
+                _storyFlags.Add(HedgeMaze.AwakenedFlag);
+                _storyFlags.Add(HedgeMaze.FarSideReachedFlag);
+                _storyFlags.Remove(HedgeMaze.IntroPendingFlag);
+                return "res://scenes/world/room_7.tscn";
+            }
+            if (!HasFlag(HedgeMaze.AwakenedFlag))
+                _storyFlags.Add(HedgeMaze.IntroPendingFlag);
+            return "res://scenes/world/hedge_maze.tscn";
+        }
+
+        if (file == "room_7.tscn")
+        {
+            _storyFlags.Add("bridge_fixed");
+            _storyFlags.Add(HedgeMaze.AwakenedFlag);
+            _storyFlags.Add(HedgeMaze.FarSideReachedFlag);
+            _storyFlags.Remove(HedgeMaze.IntroPendingFlag);
+        }
+        return scenePath;
+    }
+
     /// <summary>Loads the save into Globals/tracker; returns the scene to open, or null.</summary>
     public string LoadGame()
     {
@@ -2743,7 +2793,8 @@ public partial class GameState : Node
         ShardsChanged?.Invoke();
         ObjectiveChanged?.Invoke();
 
-        string scene = Get(data, "scene", string.Empty).AsString();
+        string scene = MigrateRemovedPorchScene(Get(data, "scene", string.Empty).AsString());
+        _furthestScenePath = MigrateRemovedPorchScene(_furthestScenePath);
         // Older saves never recorded progress depth: the room a save opens
         // in is, at minimum, as far as its Mara ever got.
         if (string.IsNullOrWhiteSpace(_furthestScenePath) && IsMainPathScene(scene))
