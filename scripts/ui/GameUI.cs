@@ -463,6 +463,16 @@ public partial class GameUI : CanvasLayer
     private bool _heldItemBaselineSynced;
     private bool _heldShowingItem;
 
+    // What is in the hand right now, and whether this is its first
+    // pickup or a later look from the Bag. The distinction is what
+    // "in the Bag" means for the flashlight: its item flag is set
+    // the moment she switches it on, but until this moment has
+    // been clicked away it is still in her hand, not in the Bag —
+    // and a torch not yet bagged does not light her other hand.
+    private string _heldItemId = string.Empty;
+    private bool _heldFirstPickup;
+    private bool _heldTorchLit;
+
     // Where a fragment rests in the palm art, and the art's shape.
     private const float HeldPalmX = 0.51f;
     private const float HeldPalmY = 0.36f;
@@ -2342,7 +2352,8 @@ public partial class GameUI : CanvasLayer
             }
             _heldShowingItem = true;
             _heldCurrentItem = null;
-            ShowHeldPickup(item.Name, item.IconPath, BagInspectLine(item.Id, gs));
+            ShowHeldPickup(item.Name, item.IconPath, BagInspectLine(item.Id, gs),
+                itemId: item.Id, firstPickup: false);
             return;
         }
 
@@ -2441,7 +2452,8 @@ public partial class GameUI : CanvasLayer
         _heldCurrentItem = null;
         AudioManager.Play(Sfx.PageTurn, -10f, 0.9f);
         ShowHeldPickup("Photograph negatives",
-            "res://assets/images/core/items/negatives.png", line);
+            "res://assets/images/core/items/negatives.png", line,
+            itemId: "basement_negatives_taken", firstPickup: false);
     }
 
     /// <summary>One frame among the reversed weather is not about
@@ -2884,7 +2896,7 @@ public partial class GameUI : CanvasLayer
                 "res://assets/images/core/items/flashlight.png",
                 "IN BAG",
                 "Her father's — top shelf of the kitchen cabinet that was never there",
-                "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout. The batteries, in this house, were never once dead.\n\nIn the dark its beam follows the mouse on its own — no click or hold. In the vent, hold W to crawl; release W and Mara stops."));
+                "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout. The batteries, in this house, were never once dead.\n\nOnce it is in the Bag, move the mouse to aim its beam in the dark — in rooms, under the house, and over anything Mara is holding in her hand. Before that click puts it away, her other hand stays dark. In the vent, hold W to crawl; release W and Mara stops."));
         }
 
         if (gs.HasFlag("item_iron_cellar_key"))
@@ -5800,7 +5812,8 @@ public partial class GameUI : CanvasLayer
         _heldPending = -1;
         _heldShowingItem = false;
         _heldCurrentItem = null;
-        ShowHeldPickup(GameState.ShardTitles[index], BagIconPaths[index], HeldFragmentLines[index]);
+        ShowHeldPickup(GameState.ShardTitles[index], BagIconPaths[index], HeldFragmentLines[index],
+            firstPickup: true);
     }
 
     private void ShowPracticalHeld(HeldPracticalDefinition item)
@@ -5812,10 +5825,12 @@ public partial class GameUI : CanvasLayer
         _heldItemQueue.Remove(item);
         _heldShowingItem = true;
         _heldCurrentItem = item;
-        ShowHeldPickup(item.Name, item.IconPath, item.Line);
+        ShowHeldPickup(item.Name, item.IconPath, item.Line,
+            itemId: item.Flag, firstPickup: true);
     }
 
-    private void ShowHeldPickup(string title, string iconPath, string line)
+    private void ShowHeldPickup(string title, string iconPath, string line,
+        string itemId = null, bool firstPickup = false)
     {
         if (_heldRoot == null)
             return;
@@ -5824,6 +5839,9 @@ public partial class GameUI : CanvasLayer
         _heldBusy = true;
         _heldPhase = 0;
         _heldAge = 0f;
+        _heldItemId = itemId ?? string.Empty;
+        _heldFirstPickup = firstPickup;
+        _heldTorchLit = false;
         Dialogue.BeginInputBlock();
 
         Vector2 view = GetViewport().GetVisibleRect().Size;
@@ -5866,26 +5884,17 @@ public partial class GameUI : CanvasLayer
         _heldGlow.Position = palm - new Vector2(165f, 165f) + new Vector2(0f, 180f);
         _heldGlow.Modulate = new Color(1f, 0.82f, 0.5f, 0.4f);
 
-        // In the blackout dark, the only reason any of this is
-        // visible at all is the torch in her other hand — so let
-        // it be seen being the reason: the dim goes near-black
-        // and the beam plays over her hand and the thing in it.
-        var gsBeam = GameState.Instance;
-        bool torchLit = gsBeam != null && gsBeam.HasFlag("blackout_active") &&
-            !gsBeam.HasFlag("backup_power_on") && gsBeam.HasFlag("item_flashlight");
-        if (_heldDim != null)
-            _heldDim.Color = torchLit
-                ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
-                : new Color(0.02f, 0.015f, 0.01f, 0.62f);
-        _heldHand.Modulate = torchLit ? new Color(1.12f, 1.08f, 0.95f) : Colors.White;
-        if (_heldBeam != null)
-        {
-            _heldBeam.Source = new Vector2(84f, view.Y + 16f);
-            _heldBeam.Target = palm;
-            _heldBeam.SnapToTarget();
-            _heldBeam.TargetStrength = torchLit ? 1f : 0f;
-            _heldBeam.Visible = torchLit;
-        }
+        // Blackout light is earned, then aimed by the player.
+        // UpdateHeldTorchLighting owns the whole question: until
+        // Dad's flashlight has actually been clicked into the Bag
+        // (its own first held moment included), there is no beam,
+        // no warm glow and no lit hand here. Once it is bagged,
+        // the mouse becomes Mara's wrist over whatever she holds.
+        _heldIcon.Modulate = Colors.White;
+        UpdateHeldTorchLighting(snapBeamToMouse: true);
+        _heldHint.Text = _heldTorchLit
+            ? "move mouse — aim Dad's torch · click"
+            : "click";
 
         _heldRoot.Modulate = new Color(1, 1, 1, 0);
         _heldRoot.Visible = true;
@@ -5917,11 +5926,12 @@ public partial class GameUI : CanvasLayer
 
         Vector2 view = GetViewport().GetVisibleRect().Size;
         float cx = view.X / 2f;
-        _heldHint.Text = "click — put it in the bag";
+        _heldHint.Text = _heldTorchLit
+            ? "move mouse — aim Dad's torch · click — put it in the bag"
+            : "click — put it in the bag";
 
-        // The beam follows the lift, wrist trailing the hand.
-        if (_heldBeam != null)
-            _heldBeam.Target = new Vector2(cx, view.Y * 0.42f);
+        // The wrist does not chase the lift on its own anymore:
+        // while the torch is lit, the player's mouse is the wrist.
 
         _heldTween?.Kill();
         _heldTween = CreateTween();
@@ -5947,8 +5957,12 @@ public partial class GameUI : CanvasLayer
         if (!_heldShowing || _heldRoot == null)
             return;
         _heldShowing = false;
+        _heldTorchLit = false;
         if (_heldBeam != null)
+        {
+            _heldBeam.PlayerControlled = false;
             _heldBeam.TargetStrength = 0f;
+        }
         AudioManager.Play(_heldShowingItem ? Sfx.DrawerClose : Sfx.ShardPlace, -9f,
             _heldShowingItem ? 1.12f : 1f);
 
@@ -5974,6 +5988,9 @@ public partial class GameUI : CanvasLayer
             _heldBusy = false; // bagged — the house may move on now
             _heldShowingItem = false;
             _heldCurrentItem = null;
+            _heldItemId = string.Empty;
+            _heldFirstPickup = false;
+            _heldTorchLit = false;
             Dialogue.EndInputBlock();
             SceneManager.ResumeDeferredSceneChange();
             // A bag inspect may owe the room something once the
@@ -5984,11 +6001,127 @@ public partial class GameUI : CanvasLayer
         }));
     }
 
+    /// <summary>Has Dad's flashlight actually reached the Bag, in
+    /// the sense the held moment itself uses? Its item flag goes
+    /// up in the cabinet when Mara clicks it on, but while the
+    /// flashlight is still queued for — or sitting in — its own
+    /// first "click, and it flies to the bag" moment, it is in
+    /// her hand, not in the Bag yet.</summary>
+    private bool FlashlightInBagForHeldBeam(GameState gs)
+    {
+        if (gs == null || !gs.HasFlag("item_flashlight"))
+            return false;
+        if (_heldFirstPickup && _heldItemId == "item_flashlight")
+            return false;
+        if (_heldCurrentItem != null && _heldCurrentItem.Flag == "item_flashlight")
+            return false;
+        foreach (var queued in _heldItemQueue)
+        {
+            if (queued.Flag == "item_flashlight")
+                return false;
+        }
+        return true;
+    }
+
+    private Vector2 HeldTorchSource()
+    {
+        // When the flashlight itself is the thing taken back in
+        // hand from the Bag, its own head is the lamp. For every
+        // other held thing, it burns in her other hand, just out
+        // of the frame's bottom corner.
+        if (_heldItemId == "item_flashlight" && _heldIcon != null)
+            return _heldIcon.Position + _heldIcon.PivotOffset;
+
+        Vector2 view = GetViewport().GetVisibleRect().Size;
+        return new Vector2(84f, view.Y + 16f);
+    }
+
+    private float HeldTorchLightLevel(Vector2 centre)
+    {
+        if (_heldBeam == null)
+            return 1f;
+        float distance = _heldBeam.Aim.DistanceTo(centre);
+        float falloff = 1f - Mathf.Clamp((distance - 110f) / 330f, 0f, 1f);
+        float strength = Mathf.Clamp(_heldBeam.CurrentStrength, 0f, 1f);
+        return 0.16f + 0.96f * falloff * strength;
+    }
+
+    private static Color HeldTorchTint(float level, float alpha) =>
+        new Color(level, level * 0.96f, level * 0.84f, alpha);
+
+    /// <summary>All blackout light for the held moment, in one
+    /// place. No bagged flashlight: near-black dim, no decorative
+    /// glow, hand and held thing cold silhouettes. Bagged
+    /// flashlight: the same dim, but the beam is the player's —
+    /// the mouse aims it, and the hand and held thing are only
+    /// as bright as the light actually landing on them.</summary>
+    private void UpdateHeldTorchLighting(bool snapBeamToMouse = false)
+    {
+        if (_heldRoot == null || _heldHand == null || _heldIcon == null)
+            return;
+
+        var gs = GameState.Instance;
+        bool blackoutDark = gs != null && gs.HasFlag("blackout_active") &&
+            !gs.HasFlag("backup_power_on");
+        bool torchLit = blackoutDark && FlashlightInBagForHeldBeam(gs);
+        _heldTorchLit = torchLit && _heldShowing;
+
+        if (_heldDim != null)
+            _heldDim.Color = blackoutDark
+                ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
+                : new Color(0.02f, 0.015f, 0.01f, 0.62f);
+        if (_heldGlow != null)
+            _heldGlow.Visible = !blackoutDark;
+
+        if (_heldBeam != null)
+        {
+            if (_heldTorchLit)
+            {
+                _heldBeam.PlayerControlled = true;
+                _heldBeam.Source = HeldTorchSource();
+                if (snapBeamToMouse)
+                    _heldBeam.SnapToMouse();
+                _heldBeam.TargetStrength = 1f;
+                _heldBeam.Visible = true;
+            }
+            else
+            {
+                _heldBeam.TurnOffImmediately();
+            }
+        }
+
+        float handAlpha = _heldHand.Modulate.A;
+        float iconAlpha = _heldIcon.Modulate.A;
+        if (!blackoutDark)
+        {
+            _heldHand.Modulate = new Color(1f, 1f, 1f, handAlpha);
+            _heldIcon.Modulate = new Color(1f, 1f, 1f, iconAlpha);
+            return;
+        }
+
+        if (!_heldTorchLit)
+        {
+            _heldHand.Modulate = new Color(0.14f, 0.17f, 0.23f, handAlpha);
+            _heldIcon.Modulate = new Color(0.14f, 0.17f, 0.23f, iconAlpha);
+            return;
+        }
+
+        Vector2 palmCentre = _heldHand.Position + new Vector2(
+            _heldHand.Size.X * HeldPalmX, _heldHand.Size.Y * HeldPalmY);
+        Vector2 iconCentre = _heldIcon.Position + _heldIcon.PivotOffset;
+        _heldHand.Modulate = HeldTorchTint(
+            HeldTorchLightLevel(palmCentre), handAlpha);
+        _heldIcon.Modulate = HeldTorchTint(
+            HeldTorchLightLevel(iconCentre), iconAlpha);
+    }
+
     private void UpdateFragmentHeld(double delta)
     {
         if (_heldBusy)
         {
             _heldAge += (float)delta;
+            if (_heldShowing)
+                UpdateHeldTorchLighting();
             return;
         }
 
