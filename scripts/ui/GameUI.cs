@@ -22,6 +22,7 @@ public partial class GameUI : CanvasLayer
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     private const string CorruptionShaderPath = "res://assets/shaders/corruption.gdshader";
     private const string MainMenuScenePath = "res://scenes/ui/main_menu.tscn";
+    private const string GameManagerScenePath = "res://scenes/managers/game_manager.tscn";
 
     private Font _font;
 
@@ -534,6 +535,47 @@ public partial class GameUI : CanvasLayer
     private Control _settingsPanel;
     private Control _journalPanel;
     private Control _menuSettingsButton;
+    private Control _devPanel;
+    private Label _devStatusLabel;
+    private Button _devPauseButton;
+    private Button _pauseSaveButton;
+    private int _settingsPressCount;
+    private ulong _settingsPressSequenceStartedMsec;
+    private bool _openedDevFromPause;
+
+    // Every standalone world scene a developer jump can open
+    // directly. Door.tscn is only a component, so it is not a
+    // location in its own right.
+    private static readonly (string Label, string Path)[] DeveloperLocations =
+    [
+        ("Bedroom — Prologue", "res://scenes/world/bedroom_prologue.tscn"),
+        ("Room 1 — Kitchen", "res://scenes/world/room_1.tscn"),
+        ("Room 1 — Drawer Lock", "res://scenes/world/room_1_puzzle.tscn"),
+        ("Kitchen Cabinet", "res://scenes/world/kitchen_cabinet.tscn"),
+        ("Room 2 — Sitting Room", "res://scenes/world/room_2.tscn"),
+        ("Room 2 — Table Drawer", "res://scenes/world/room_2_puzzle.tscn"),
+        ("Difference Investigation", "res://scenes/world/difference_investigation.tscn"),
+        ("Room 3 — Kept Room", "res://scenes/world/room_3.tscn"),
+        ("Jar Close-up", "res://scenes/world/jar_closeup.tscn"),
+        ("Room 4 — Hallway", "res://scenes/world/room_4.tscn"),
+        ("Room 4 — Brass Door", "res://scenes/world/Room_4_puzzle.tscn"),
+        ("Flashback Landing", "res://scenes/world/flashback_landing.tscn"),
+        ("Room 5 — Sliding Room", "res://scenes/world/room_5.tscn"),
+        ("Apartment, Now", "res://scenes/world/apartment_now.tscn"),
+        ("Lockpick Puzzle", "res://scenes/world/lockpick_puzzle.tscn"),
+        ("Vent Crawl", "res://scenes/world/vent_crawl.tscn"),
+        ("Basement", "res://scenes/world/basement.tscn"),
+        ("Breaker Box", "res://scenes/world/breaker_box.tscn"),
+        ("Room 6 — Garden", "res://scenes/world/room_6.tscn"),
+        ("Bridge Repair", "res://scenes/world/bridge_repair.tscn"),
+        ("Hedge Maze — Movement", "res://scenes/world/hedge_maze.tscn"),
+        ("Room 7 — Last Room", "res://scenes/world/room_7.tscn"),
+        ("Journey → Room 2", "res://scenes/world/journey_to_room_2.tscn"),
+        ("Journey → Room 3", "res://scenes/world/journey_to_room_3.tscn"),
+        ("Journey → Room 4", "res://scenes/world/journey_to_room_4.tscn"),
+        ("Journey → Hedge Maze", "res://scenes/world/journey_to_hedge_maze.tscn"),
+        ("Lockpick Rewind", "res://scenes/world/lockpick_rewind.tscn"),
+    ];
     private Control _confirmPanel;
     private Label _confirmEyebrow;
     private Label _confirmTextLabel;
@@ -602,6 +644,7 @@ public partial class GameUI : CanvasLayer
         BuildFragmentHeld();
         BuildPausePanel();
         BuildSettingsPanel();
+        BuildDeveloperPanel();
         BuildJournalPanel();
         BuildBagPanel();
         BuildPhotoPanel();
@@ -626,6 +669,7 @@ public partial class GameUI : CanvasLayer
             gs.VerbsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.StoryFlagsChanged += RefreshHud;
             gs.StoryFlagsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
+            gs.DeveloperModeChanged += RefreshDeveloperChrome;
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
             gs.CollapseStarted += OnCollapseStarted;
@@ -662,6 +706,7 @@ public partial class GameUI : CanvasLayer
             Settings.Instance.Changed += RefreshCorruptionShader;
 
         RefreshHud();
+        RefreshDeveloperChrome();
         RefreshCorruptionShader();
         UpdateContext(force: true);
         Logger.Info("GameUI ready.");
@@ -1070,6 +1115,11 @@ public partial class GameUI : CanvasLayer
             cancel?.Invoke();
             return;
         }
+        if (_devPanel?.Visible ?? false)
+        {
+            CloseDeveloperPanel(backToPause: _context == UiContext.Game);
+            return;
+        }
         if (_tutorialPanel.Visible)
         {
             CloseTutorial();
@@ -1125,6 +1175,7 @@ public partial class GameUI : CanvasLayer
     private bool AnyPanelOpen()
     {
         return (_pausePanel?.Visible ?? false) || (_settingsPanel?.Visible ?? false)
+               || (_devPanel?.Visible ?? false)
                || (_journalPanel?.Visible ?? false) || (_bagPanel?.Visible ?? false) || (_tutorialPanel?.Visible ?? false)
                || (_cutsceneRoot?.Visible ?? false) || (_endingRoot?.Visible ?? false)
                || (_shatterRoot?.Visible ?? false)
@@ -1645,6 +1696,8 @@ public partial class GameUI : CanvasLayer
             if (GetTree().Paused)
                 ResumeGame();
             _pausePanel.Visible = false;
+            if (_devPanel != null)
+                _devPanel.Visible = false;
             _journalPanel.Visible = false;
             _bagPanel.Visible = false;
             _openedBagFromPause = false;
@@ -1668,6 +1721,7 @@ public partial class GameUI : CanvasLayer
 
         MemoryVerbSystem.Cancel(silent: true);
         GameState.Instance?.SaveGame("pause");
+        RefreshDeveloperChrome();
         GetTree().Paused = true;
         _pausePanel.Visible = true;
         AudioManager.Play(Sfx.UiClick, -6f);
@@ -1679,6 +1733,8 @@ public partial class GameUI : CanvasLayer
     {
         GetTree().Paused = false;
         _pausePanel.Visible = false;
+        if (_devPanel != null)
+            _devPanel.Visible = false;
         _journalPanel.Visible = false;
         _bagPanel.Visible = false;
         _openedBagFromPause = false;
@@ -1697,6 +1753,192 @@ public partial class GameUI : CanvasLayer
     }
 
     // ============================================================== settings UI
+
+    /// <summary>Hidden developer shortcut: five Settings presses
+    /// inside ten seconds. The pause/menu Settings buttons and
+    /// the Settings panel's own title button all feed this same
+    /// counter, so the five presses can be made consecutively
+    /// without having to close and reopen the panel between them.</summary>
+    private void OnSettingsButtonPressed()
+    {
+        if (GameState.Instance?.DeveloperModeActive == true)
+        {
+            OpenDeveloperPanel(fromPause: _context == UiContext.Game);
+            return;
+        }
+
+        ulong now = Time.GetTicksMsec();
+        if (_settingsPressSequenceStartedMsec == 0 ||
+            now - _settingsPressSequenceStartedMsec > 10000)
+        {
+            _settingsPressCount = 0;
+            _settingsPressSequenceStartedMsec = now;
+        }
+        _settingsPressCount++;
+
+        if (_settingsPressCount >= 5)
+        {
+            _settingsPressCount = 0;
+            _settingsPressSequenceStartedMsec = 0;
+            EnterDeveloperMode();
+            return;
+        }
+
+        if (_settingsPanel?.Visible ?? false)
+        {
+            AudioManager.Play(Sfx.UiClick, -8f, 0.95f + _settingsPressCount * 0.04f);
+            return;
+        }
+        OpenSettings();
+    }
+
+    private void EnterDeveloperMode()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || !gs.BeginDeveloperSession())
+            return;
+
+        AudioManager.Play(Sfx.ClarifyReveal, -6f, 1.08f);
+        OpenDeveloperPanel(fromPause: _context == UiContext.Game);
+    }
+
+    private void OpenDeveloperPanel(bool fromPause = false)
+    {
+        if (_devPanel == null || GameState.Instance?.DeveloperModeActive != true)
+            return;
+
+        _openedDevFromPause = fromPause || (_pausePanel?.Visible ?? false);
+        if (_pausePanel != null)
+            _pausePanel.Visible = false;
+        if (_settingsPanel != null)
+            _settingsPanel.Visible = false;
+        if (_context == UiContext.Game)
+            GetTree().Paused = true;
+
+        _devPanel.Visible = true;
+        RefreshDeveloperChrome();
+        AudioManager.Play(Sfx.PageTurn, -8f, 0.9f);
+    }
+
+    private void CloseDeveloperPanel(bool backToPause)
+    {
+        if (_devPanel != null)
+            _devPanel.Visible = false;
+        AudioManager.Play(Sfx.UiBack, -6f);
+        if (backToPause && _context == UiContext.Game)
+        {
+            _pausePanel.Visible = true;
+            GetTree().Paused = true;
+            RefreshDeveloperChrome();
+        }
+        _openedDevFromPause = false;
+    }
+
+    private void RefreshDeveloperChrome()
+    {
+        bool active = GameState.Instance?.DeveloperModeActive == true;
+        if (_devPauseButton != null)
+            _devPauseButton.Visible = active;
+        if (_pauseSaveButton != null)
+        {
+            _pauseSaveButton.Text = active
+                ? "Preserve Memory (off in Dev Mode)"
+                : "Preserve Memory (Save)";
+        }
+        if (_devStatusLabel != null)
+        {
+            string current = _context == UiContext.Menu
+                ? "main menu"
+                : string.IsNullOrWhiteSpace(SceneManager.CurrentScenePath)
+                    ? "no location loaded"
+                    : SceneManager.CurrentScenePath;
+            _devStatusLabel.Text = active
+                ? $"ACTIVE — choose a location. Every jump refills Mara's Bag with all fragments, practical items, negatives, verbs, clues, Clarity and lockpicks. Progress in this session is not saved. Current: {current}"
+                : "Dev Mode is not active.";
+        }
+    }
+
+    private void TeleportToDeveloperLocation(string label, string scenePath)
+    {
+        var gs = GameState.Instance;
+        if (gs == null || string.IsNullOrWhiteSpace(scenePath))
+            return;
+
+        MemoryVerbSystem.Cancel(silent: true);
+        ClaritySystem.Disarm(silent: true);
+        Hotspots.HideAll();
+        RoomJourney.PendingJourneyId = null;
+        RoomJourney.PendingDestination = null;
+
+        bool fromMenu = _context == UiContext.Menu;
+        bool prepared = fromMenu
+            ? gs.PrepareDeveloperStart(scenePath)
+            : gs.PrepareDeveloperLocation(scenePath);
+        if (!prepared)
+        {
+            if (_devStatusLabel != null)
+                _devStatusLabel.Text = "Developer jump could not be prepared. The preserved memory was not touched.";
+            return;
+        }
+
+        if (scenePath.EndsWith("/lockpick_rewind.tscn"))
+            LockpickRewindJourney.Arm(false, false, false, 0);
+
+        if (_devPanel != null)
+            _devPanel.Visible = false;
+        if (_settingsPanel != null)
+            _settingsPanel.Visible = false;
+        _openedDevFromPause = false;
+        GetTree().Paused = false;
+        AudioManager.Instance?.SetPausedDuck(false);
+        RefreshHud();
+        RefreshDeveloperChrome();
+
+        if (fromMenu)
+        {
+            SceneManager.ArmDirectSceneChange(scenePath);
+            AudioManager.Instance?.StopMusic(0.4f);
+            GetTree().ChangeSceneToFile(GameManagerScenePath);
+        }
+        else
+        {
+            ShowToast($"DEV MODE — {label}. Full Bag; this test session is not saved.", 4.5f);
+            SceneManager.ChangeSceneDirect(scenePath);
+        }
+    }
+
+    private void ExitDeveloperMode()
+    {
+        var gs = GameState.Instance;
+        if (gs == null)
+            return;
+
+        string restoredScene = gs.EndDeveloperSession();
+        _settingsPressCount = 0;
+        _settingsPressSequenceStartedMsec = 0;
+        if (_devPanel != null)
+            _devPanel.Visible = false;
+        if (_settingsPanel != null)
+            _settingsPanel.Visible = false;
+        _openedDevFromPause = false;
+        RefreshDeveloperChrome();
+        RefreshHud();
+
+        if (_context == UiContext.Menu)
+            return;
+
+        GetTree().Paused = false;
+        AudioManager.Instance?.SetPausedDuck(false);
+        if (!string.IsNullOrWhiteSpace(restoredScene))
+        {
+            SceneManager.ChangeSceneDirect(restoredScene);
+        }
+        else
+        {
+            AudioManager.Instance?.StopAmbience();
+            GetTree().ChangeSceneToFile(MainMenuScenePath);
+        }
+    }
 
     public void OpenSettings()
     {
@@ -3804,16 +4046,26 @@ public partial class GameUI : CanvasLayer
         vbox.AddChild(howTo);
 
         var settings = MakeButton("Settings");
-        settings.Pressed += OpenSettings;
+        settings.Pressed += OnSettingsButtonPressed;
         vbox.AddChild(settings);
 
-        var save = MakeButton("Preserve Memory (Save)");
-        save.Pressed += () =>
+        _devPauseButton = MakeButton("Dev Locations");
+        _devPauseButton.Visible = false;
+        _devPauseButton.Pressed += () => OpenDeveloperPanel(fromPause: true);
+        vbox.AddChild(_devPauseButton);
+
+        _pauseSaveButton = MakeButton("Preserve Memory (Save)");
+        _pauseSaveButton.Pressed += () =>
         {
+            if (GameState.Instance?.DeveloperModeActive == true)
+            {
+                ShowToast("DEV MODE: this throwaway test session is not saved.");
+                return;
+            }
             GameState.Instance?.SaveGame("manual");
             ShowToast("Memory preserved.");
         };
-        vbox.AddChild(save);
+        vbox.AddChild(_pauseSaveButton);
 
         var quit = MakeButton("Leave to Main Menu");
         quit.Pressed += QuitToMenu;
@@ -3840,8 +4092,13 @@ public partial class GameUI : CanvasLayer
         vbox.AddThemeConstantOverride("separation", 9);
         panel.AddChild(vbox);
 
-        var title = MakeLabel("Settings", 32);
-        title.HorizontalAlignment = HorizontalAlignment.Center;
+        // The title is a real Settings button as well as the
+        // heading: it lets the five-press developer shortcut be
+        // entered consecutively after the panel is already open.
+        var title = MakeButton("Settings", 32);
+        title.FocusMode = Control.FocusModeEnum.None;
+        title.TooltipText = "Settings";
+        title.Pressed += OnSettingsButtonPressed;
         vbox.AddChild(title);
         vbox.AddChild(new HSeparator());
 
@@ -3882,6 +4139,98 @@ public partial class GameUI : CanvasLayer
         vbox.AddChild(close);
 
         AddChild(_settingsPanel);
+    }
+
+    private void BuildDeveloperPanel()
+    {
+        _devPanel = new Control { Visible = false, Name = "DeveloperPanel" };
+        _devPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _devPanel.AddChild(DimBackdrop());
+
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _devPanel.AddChild(center);
+
+        var panel = MakePanel();
+        panel.CustomMinimumSize = new Vector2(1020, 600);
+        center.AddChild(panel);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 9);
+        panel.AddChild(vbox);
+
+        var title = MakeLabel("DEV MODE — LOCATIONS", 32, new Color(1f, 0.84f, 0.5f, 0.98f));
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(title);
+
+        _devStatusLabel = MakeLabel("", 18, new Color(0.9f, 0.85f, 0.7f, 0.95f));
+        _devStatusLabel.AutowrapMode = TextServer.AutowrapMode.Word;
+        _devStatusLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _devStatusLabel.CustomMinimumSize = new Vector2(0, 52);
+        vbox.AddChild(_devStatusLabel);
+        vbox.AddChild(new HSeparator());
+
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            VerticalScrollMode = ScrollContainer.ScrollMode.Auto,
+        };
+        vbox.AddChild(scroll);
+
+        var grid = new GridContainer
+        {
+            Columns = 3,
+            CustomMinimumSize = new Vector2(900, 0),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        grid.AddThemeConstantOverride("h_separation", 8);
+        grid.AddThemeConstantOverride("v_separation", 6);
+        scroll.AddChild(grid);
+
+        foreach (var location in DeveloperLocations)
+        {
+            string label = location.Label;
+            string path = location.Path;
+            var button = MakeButton(label, 19);
+            button.CustomMinimumSize = new Vector2(292, 42);
+            button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            button.FocusMode = Control.FocusModeEnum.None;
+            button.TooltipText = path;
+            button.Pressed += () => TeleportToDeveloperLocation(label, path);
+            grid.AddChild(button);
+        }
+
+        vbox.AddChild(new HSeparator());
+
+        var footer = new HBoxContainer();
+        footer.AddThemeConstantOverride("separation", 8);
+        vbox.AddChild(footer);
+
+        var normalSettings = MakeButton("Normal Settings", 20);
+        normalSettings.FocusMode = Control.FocusModeEnum.None;
+        normalSettings.Pressed += () =>
+        {
+            bool backToPause = _context == UiContext.Game;
+            _devPanel.Visible = false;
+            OpenSettings();
+            _openedSettingsFromPause = backToPause;
+        };
+        footer.AddChild(normalSettings);
+
+        var close = MakeButton("Close", 20);
+        close.FocusMode = Control.FocusModeEnum.None;
+        close.Pressed += () => CloseDeveloperPanel(backToPause: _context == UiContext.Game);
+        footer.AddChild(close);
+
+        var exit = MakeButton("Exit Dev Mode — Restore Save", 20);
+        exit.FocusMode = Control.FocusModeEnum.None;
+        exit.AddThemeColorOverride("font_color", new Color(1f, 0.72f, 0.62f));
+        exit.Pressed += ExitDeveloperMode;
+        footer.AddChild(exit);
+
+        AddChild(_devPanel);
     }
 
     private void AddVolumeSlider(Container parent, string label, Func<float> get, Action<float> set)
@@ -4085,7 +4434,7 @@ public partial class GameUI : CanvasLayer
         b.OffsetRight = -26;
         b.OffsetBottom = -22;
         b.Visible = false;
-        b.Pressed += OpenSettings;
+        b.Pressed += OnSettingsButtonPressed;
         _menuSettingsButton = b;
         AddChild(b);
 
@@ -4824,7 +5173,8 @@ public partial class GameUI : CanvasLayer
         await ToSignal(t3, Tween.SignalName.Finished);
         await ShatterWaitAdvance(2.5f);
 
-        Settings.Instance?.RecordEnding("hollow");
+        if (GameState.Instance?.DeveloperModeActive != true)
+            Settings.Instance?.RecordEnding("hollow");
         _shatterChoices.Visible = true;
     }
 

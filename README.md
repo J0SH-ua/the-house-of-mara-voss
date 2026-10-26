@@ -37,6 +37,7 @@ figured out.
 | Q / Backspace | Step back — leave a puzzle for its room, or return to the previous room (also the on-screen Step Back button, bottom-left). Finished rooms you step back into are **sealed** (their examinables no longer answer — exits always do, and a practical thing she walked past can always still be fetched). A fragment alone is enough to leave any room by: if the room is still keeping something practical, Mara is asked once out loud whether she would rather *look around a little more* — leaving anyway is always allowed, and anything skipped can be gone back for. There is no "return to the new room" button anymore: the bottom-right button is **Leave** only — one room onward, the room your current fragment has opened — and trips between the neighbouring rooms, forward or back, in light or in the blackout dark, are **walked** through the hallway journeys (hold **W**, click the door) — the opened three-key brass door is the one direct threshold, clicked straight through. Going back for something means walking back for it, room by room, in silence: Mara only speaks on a first forward crossing |
 | Click / Space / Enter (introduction after Start) | Advance one still at a time — each post-Start introduction caption stays readable until you continue; after the still and caption have settled, the bare words **Click to continue** (no box or background) slowly fade in beneath them; Esc, End, or Skip skips it (New Game only; Continue skips it) |
 | Esc / P | Pause menu (Esc first releases Clarity or a Memory Verb if armed) |
+| Settings ×5 (within 10 seconds) | **Dev Mode** — press any Settings button, or the Settings panel's title button, five times consecutively. The location picker opens; every jump gives Mara all six fragments, the photograph, every practical Bag item and the negatives, all Memory Verbs/clues, full Clarity and seven lockpicks. Dev progress is throwaway and is not saved; **Exit Dev Mode — Restore Save** puts the preserved memory back exactly as it was |
 
 ## Systems (what lives where)
 
@@ -44,6 +45,7 @@ figured out.
 | --- | --- | --- |
 | Input actions | `scripts/managers/InputSetup.cs` + `project.godot [input]` | Declared in the project file; any missing action is re-created at runtime. |
 | Settings | `scripts/managers/Settings.cs` | `user://settings.cfg` — volumes, text speed, auto-advance, fullscreen, reduce-motion, corruption intensity, hotspot hints. |
+| Developer mode | `scripts/ui/GameUI.cs`, `scripts/managers/GameState.cs`, `scripts/managers/SceneManager.cs` | Press Settings five times within ten seconds (the main-menu/pause button or the open Settings panel's title). Entering snapshots the preserved save in memory and suppresses every later `SaveGame`; finished rooms also stop sealing. The picker can open every standalone world location/close-up, walked journey and the lockpick rewind directly — bypassing neighbouring-room journey substitution — and each jump rebuilds a throwaway full loadout: all fragments, photograph, practical items and negatives, verbs/clues, full Clarity and seven picks, without marking the destination's own puzzle solved. **Exit Dev Mode — Restore Save** rewrites and reloads the snapshot; endings shown while testing are not recorded. |
 | Audio | `scripts/managers/AudioManager.cs` | Autoload. Creates Music/SFX/Ambience buses at runtime if no bus layout exists; crossfading music, polyphonic SFX pool, looping room tone, corruption heartbeat + music detune/muffle. Rooms 1–6 each have a distinct seamless generated loop (`assets/Music/bg/room_1.wav` … `room_6.wav`); Room 7 keeps the finale track. The score is mixed **beneath the place itself**: room/place ambience sits in front, ordinary room music is well under it, and puzzle/under-house music is quieter still. Journeys remain music- and ambience-free, but dialogue blips/advances are audible again alongside the footsteps. |
 | SFX pack | `assets/Music/SFX/*.wav`, `tools/generate_sfx.py` | 49 procedurally synthesised WAV assets (one-shots plus room/place ambience and surface footsteps), tuned to the score: spectral analysis puts the menu track in **F minor** (~359 Hz centroid, ~65 BPM), so the pack is voiced as felt piano / worn music box in F minor, corruption as warped tape. The under-house batch adds close dry lockpick ticks/snaps, a heavy flashlight switch, duct-crawl metal/cloth, and a dripping basement loop. Regenerate with `python3 tools/generate_sfx.py`; drop-in replace any file to art-direct it. |
 | Run state & saves | `scripts/managers/GameState.cs` | `user://mara_voss_save.json` (save v2) — carried/exactly placed fragments, examine progress, corruption (including the fractional remainder from 2.3× loose clicks), clarity, learned verbs and use counts, story flags/practical items, journal echoes/clues/notes, completed rooms and stats. Autosaves on scene change / fragment / room completion. `Globals.cs` remains the raw field store older scenes read directly. Endings already found persist across runs in settings. Older saves silently backfill only contradictions away (a key already turned in its lock implies Mara holds its story), never un-earned items — a skipped key is simply still lying where she left it, and the room it locks will remind her. A save that already walked past Room 5 before the house learned to go dark wakes to find the backup power already on, so the blackout never strands a returning Mara behind her own garden. |
@@ -246,6 +248,17 @@ figured out.
    black, the Kept House ending, and Mara curled in her corner last. The title card records the ending and clears only that run's save.
 9. Esc → pause: save, journal, settings sliders (volumes should respond
    live), quit to menu → **Continue** appears and resumes the room.
+10. Dev Mode: from the main menu or pause menu, press **Settings** five
+    times within ten seconds (the open panel's Settings title counts).
+    The location picker should open. Jump straight to **Hedge Maze —
+    Movement**: Mara should start exploring immediately with the
+    flashlight, all practical items/fragments/verbs, full Clarity and
+    seven picks. Esc → **Dev Locations**, then jump to a few other
+    floors/close-ups; each should load directly rather than being
+    replaced by a neighbouring-room walk. Make some progress, then use
+    **Exit Dev Mode — Restore Save**: the game should return to the
+    exact preserved scene/state from before Dev Mode, with none of
+    the dev jumps or pickups written into Continue.
 
 ## Known limitations
 
@@ -268,5 +281,10 @@ figured out.
   Continue starts her at its southern entrance (stepping back from
   Room 7 still enters at the northern break). Its landmarks are in
   place for the puzzles that will later be planted among them.
+- Dev Mode location jumps deliberately rebuild a fresh throwaway
+  run state each time (with the full Bag), so local examine/puzzle
+  progress from an earlier dev jump is not carried into the next
+  one. That reset is what makes each floor independently testable;
+  the preserved normal save remains untouched underneath it.
 - Procedural SFX are tasteful placeholders with correct loudness staging,
   meant to be replaced file-by-file as real recordings land.

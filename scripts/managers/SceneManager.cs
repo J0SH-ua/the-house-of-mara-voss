@@ -7,6 +7,7 @@ public partial class SceneManager : Node
 	public static SceneManager Instance { get; private set; }
 	public static bool IsChanging { get; private set; }
 	private static string _pendingScenePath;
+	private static string _directScenePath;
 
 	/// <summary>A scene change held back while GameUI plays a just-earned
 	/// fragment's moment (hand, showcase, bag). GameUI resumes it via
@@ -136,6 +137,15 @@ public partial class SceneManager : Node
 		string from = FileNameOf(CurrentScenePath);
 		string to = FileNameOf(scenePath);
 
+		// A developer jump names the exact scene it wants. Do not
+		// turn it into a neighbouring-room walk on the way there.
+		if (!string.IsNullOrWhiteSpace(_directScenePath) && scenePath == _directScenePath)
+		{
+			if (to == "hedge_maze.tscn")
+				HedgeMaze.ArmEntry(fromNorth: false);
+			return scenePath;
+		}
+
 		// The porch stop is gone. Any older deferred request or save
 		// still naming it belongs on the far side of the bridge now,
 		// inside the hedge walls that replaced it.
@@ -202,6 +212,26 @@ public partial class SceneManager : Node
 			return string.Empty;
 		int slash = scenePath.LastIndexOf('/');
 		return slash >= 0 ? scenePath.Substring(slash + 1) : scenePath;
+	}
+
+	/// <summary>Arm a one-shot exact scene load for a developer
+	/// jump. Kept separate from ChangeSceneDirect so the main menu
+	/// can arm it before the GameManager root (and this manager's
+	/// instance) exist.</summary>
+	public static void ArmDirectSceneChange(string scenePath)
+	{
+		if (string.IsNullOrWhiteSpace(scenePath))
+			return;
+		_directScenePath = scenePath;
+		_leavePromptBypass = true;
+	}
+
+	/// <summary>Load exactly the named scene, without the usual
+	/// neighbouring-room journey substitution or leave prompt.</summary>
+	public static void ChangeSceneDirect(string scenePath)
+	{
+		ArmDirectSceneChange(scenePath);
+		ChangeScene(scenePath);
 	}
 
 	public static async void ChangeScene(string scenePath)
@@ -329,6 +359,8 @@ public partial class SceneManager : Node
 		CurrentScene = packedScene.Instantiate<Node>();
 		_sceneRoot.AddChild(CurrentScene);
 		CurrentScenePath = scenePath;
+		if (_directScenePath == scenePath)
+			_directScenePath = null;
 		SceneChanged?.Invoke(scenePath);
 	}
 

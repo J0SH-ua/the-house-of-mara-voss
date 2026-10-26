@@ -25,6 +25,7 @@ public partial class GameState : Node
     public event Action Saved;
     public event Action VerbsChanged;
     public event Action StoryFlagsChanged;
+    public event Action DeveloperModeChanged;
 
     // ---------------------------------------------------------------- constants
     public const string SavePath = "user://mara_voss_save.json";
@@ -271,6 +272,17 @@ public partial class GameState : Node
     public int CorruptionPeak { get; private set; }
 
     private string _pendingStartScene;
+
+    // Developer test sessions are deliberately throwaway: the real
+    // save file is snapshotted in memory when Dev Mode begins, all
+    // SaveGame calls are suppressed while it is active, and leaving
+    // Dev Mode puts that exact preserved memory back.
+    public bool DeveloperModeActive { get; private set; }
+    private bool _developerSnapshotTaken;
+    private bool _developerSnapshotHadSave;
+    private string _developerSnapshotJson = string.Empty;
+    private bool _restoringDeveloperSnapshot;
+
     private readonly System.Collections.Generic.Dictionary<string, int> _hintLevelByRoom = new();
     private string _lastHintKey = string.Empty;
 
@@ -1136,6 +1148,8 @@ public partial class GameState : Node
     /// stepping back mid-puzzle to re-read a clue stays possible.</summary>
     public bool IsRoomSealed(string trackerRoom)
     {
+        if (DeveloperModeActive)
+            return false;
         if (string.IsNullOrEmpty(trackerRoom) || !RoomFullyDone(trackerRoom))
             return false;
         int here = SceneProgressIndex(SceneManager.CurrentScenePath);
@@ -2179,8 +2193,16 @@ public partial class GameState : Node
     /// them from durable progress whenever a room opens or a save loads, so
     /// returning players continue into the finished game instead of a dead end.
     /// </summary>
-    public void EnsureFinalActProgress()
+    public void EnsureFinalActProgress(string roomNameOverride = null)
     {
+        // Restoring a Dev Mode snapshot must load the preserved
+        // state as-is. In particular, do not let the still-loaded
+        // dev location's room order backfill fragments into it;
+        // the restored scene's own SceneChanged pass will run the
+        // ordinary legacy backfill in its proper room.
+        if (_restoringDeveloperSnapshot)
+            return;
+
         // NOTE: room *completion* (the examine set finished) is NOT
         // evidence a fragment was collected — in the current design
         // fragments sit behind puzzles beyond examining (Room 3's
@@ -2189,7 +2211,7 @@ public partial class GameState : Node
         // shards from completion silently granted them and left
         // puzzles standing open. Only standing in a LATER room, or
         // already holding the shard, proves anything now.
-        int order = RoomOrder(CurrentRoomName());
+        int order = RoomOrder(roomNameOverride ?? CurrentRoomName());
 
         if (order >= 4 || IsShardRecovered(2))
         {
@@ -2235,10 +2257,17 @@ public partial class GameState : Node
         CompletedEnding = endingId;
         _storyFlags.Add($"ending:{endingId}");
         SetActiveVerb(MemoryVerb.None);
-        Settings.Instance?.RecordEnding(endingId);
+        if (!DeveloperModeActive)
+        {
+            Settings.Instance?.RecordEnding(endingId);
+            DeleteSave();
+        }
+        else
+        {
+            Logger.Info($"[GameState] Developer ending '{endingId}' shown without recording it or touching the preserved save.");
+        }
         StoryFlagsChanged?.Invoke();
         ObjectiveChanged?.Invoke();
-        DeleteSave();
     }
 
     // ------------------------------------------------------------------- shards
@@ -2462,6 +2491,192 @@ public partial class GameState : Node
                $"Clarity used: {ClarifiesUsed}   ·   Memory verbs used: {VerbUses}   ·   Memory integrity: {TierDisplayName(CurrentTier)}   ·   Clues noted: {_unlockedClues.Count}";
     }
 
+    // --------------------------------------------------------- developer mode
+
+    /// <summary>Begin a throwaway testing session. The current
+    /// preserved-memory file (if any) is copied into memory first;
+    /// while DeveloperModeActive is true, SaveGame is suppressed,
+    /// finished rooms do not seal, and ending bookkeeping does
+    /// not touch the real save/settings progress.</summary>
+    public bool BeginDeveloperSession()
+    {
+        if (DeveloperModeActive)
+            return true;
+        if (Globals.Instance == null)
+            return false;
+
+        _developerSnapshotHadSave = HasSave;
+        _developerSnapshotJson = string.Empty;
+        if (_developerSnapshotHadSave)
+        {
+            using var file = FileAccess.Open(SavePath, FileAccess.ModeFlags.Read);
+            if (file == null)
+            {
+                Logger.Error($"[GameState] Developer mode could not snapshot the preserved save ({FileAccess.GetOpenError()}).");
+                _developerSnapshotHadSave = false;
+                return false;
+            }
+            _developerSnapshotJson = file.GetAsText();
+        }
+
+        _developerSnapshotTaken = true;
+        DeveloperModeActive = true;
+        DeveloperModeChanged?.Invoke();
+        Logger.Info("[GameState] Developer mode began; this session will not be saved.");
+        return true;
+    }
+
+    private void RestoreDeveloperSnapshotFile()
+    {
+        if (!_developerSnapshotTaken)
+            return;
+
+        if (_developerSnapshotHadSave)
+        {
+            using var file = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
+            if (file == null)
+                Logger.Error($"[GameState] Developer mode could not restore the preserved save ({FileAccess.GetOpenError()}).");
+            else
+                file.StoreString(_developerSnapshotJson ?? string.Empty);
+        }
+        else
+        {
+            DeleteSave();
+        }
+
+        _developerSnapshotTaken = false;
+        _developerSnapshotHadSave = false;
+        _developerSnapshotJson = string.Empty;
+    }
+
+    /// <summary>Leave Dev Mode and put the preserved memory back
+    /// exactly as it was. Returns the restored save's scene, or
+    /// null when there was no preserved save to return to.</summary>
+    public string EndDeveloperSession()
+    {
+        if (!DeveloperModeActive)
+            return null;
+
+        bool hadSave = _developerSnapshotHadSave;
+        DeveloperModeActive = false;
+        DeveloperModeChanged?.Invoke();
+        RestoreDeveloperSnapshotFile();
+
+        if (hadSave)
+        {
+            _restoringDeveloperSnapshot = true;
+            try
+            {
+                return LoadGame();
+            }
+            finally
+            {
+                _restoringDeveloperSnapshot = false;
+            }
+        }
+
+        NewGameStateOnly();
+        CutscenePending = false;
+        _pendingStartScene = null;
+        AudioManager.Instance?.SetCorruption01(0f);
+        CorruptionChanged?.Invoke(0, CurrentTier);
+        ClarityChanged?.Invoke(ClarityCount);
+        ShardsChanged?.Invoke();
+        VerbsChanged?.Invoke();
+        StoryFlagsChanged?.Invoke();
+        CluesChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        Logger.Info("[GameState] Developer mode ended; there was no preserved save to restore.");
+        return null;
+    }
+
+    /// <summary>Reset this throwaway session and put every carried
+    /// thing in Mara's Bag for one location: all six fragments,
+    /// the photograph, every practical item and the negatives,
+    /// all four Memory Verbs and clues, full Clarity, no MEMORY
+    /// damage, and seven sound lockpicks. The destination's own
+    /// puzzle-solved flags are not set, so its mechanic remains
+    /// there to be tested.</summary>
+    public bool PrepareDeveloperLocation(string scenePath)
+    {
+        if (string.IsNullOrWhiteSpace(scenePath) || Globals.Instance == null)
+            return false;
+        if (!DeveloperModeActive && !BeginDeveloperSession())
+            return false;
+
+        EndCollapse(rescued: false, silent: true);
+        NewGameStateOnly();
+        CutscenePending = false;
+        _pendingStartScene = null;
+        _fragmentDisplayOrder = ShuffledDisplayOrder();
+        _furthestScenePath = scenePath;
+
+        for (int i = 0; i < MaxShards; i++)
+            CollectShard(i, silent: true);
+        Globals.Instance.PHOTO1_COLLECTED = true;
+
+        string[] carriedFlags =
+        [
+            "item_hairpin",
+            "item_hall_key_bridge",
+            "item_hall_key_door",
+            "item_hall_key_circle",
+            "item_lockpick_set",
+            "item_fine_tension_wrench",
+            "item_flashlight",
+            "item_hammer_nails",
+            "item_iron_cellar_key",
+            "basement_negatives_taken",
+        ];
+        foreach (string flag in carriedFlags)
+            SetFlag(flag, save: false);
+
+        foreach (var verb in new[] { MemoryVerb.Echo, MemoryVerb.Anchor, MemoryVerb.Trace, MemoryVerb.Release })
+            UnlockVerb(verb, announce: false);
+
+        foreach (string clueId in ClueDefinitions.Keys)
+        {
+            if (!_unlockedClues.Contains(clueId))
+                _unlockedClues.Add(clueId);
+        }
+
+        string file = FileNameOf(scenePath);
+        if (file is "hedge_maze.tscn" or "journey_to_hedge_maze.tscn" or "room_7.tscn")
+        {
+            // A dev jump into the walls is for testing the body and
+            // the place immediately, not replaying the pass-out.
+            SetFlag("bridge_fixed", save: false);
+            SetFlag(HedgeMaze.AwakenedFlag, save: false);
+            ClearFlag(HedgeMaze.IntroPendingFlag, save: false);
+            if (file == "room_7.tscn")
+                SetFlag(HedgeMaze.FarSideReachedFlag, save: false);
+        }
+
+        RestoreAllPicks("developer location jump");
+        Globals.Instance.CORRUPTION_COUNT = 0;
+        Globals.Instance.CLARITY_TOGGLE_COUNT = Globals.MaxClarity;
+        AudioManager.Instance?.SetCorruption01(0f);
+        CorruptionChanged?.Invoke(0, CurrentTier);
+        ClarityChanged?.Invoke(ClarityCount);
+        ShardsChanged?.Invoke();
+        VerbsChanged?.Invoke();
+        StoryFlagsChanged?.Invoke();
+        CluesChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
+        Logger.Info($"[GameState] Developer location prepared with a full Bag: {scenePath}");
+        return true;
+    }
+
+    /// <summary>Main-menu Dev Mode entry: prepare the same full
+    /// loadout and remember the chosen place for GameManager.</summary>
+    public bool PrepareDeveloperStart(string scenePath)
+    {
+        if (!PrepareDeveloperLocation(scenePath))
+            return false;
+        _pendingStartScene = scenePath;
+        return true;
+    }
+
     // ------------------------------------------------------------- save / load
 
     public bool HasSave => FileAccess.FileExists(SavePath);
@@ -2480,6 +2695,14 @@ public partial class GameState : Node
 
     public void NewGame()
     {
+        if (DeveloperModeActive)
+        {
+            DeveloperModeActive = false;
+            _developerSnapshotTaken = false;
+            _developerSnapshotHadSave = false;
+            _developerSnapshotJson = string.Empty;
+            DeveloperModeChanged?.Invoke();
+        }
         Globals.Instance?.ResetRunState();
         RoomExamineTracker.ResetProgress();
         Room1Puzzle.ResetSavedState();
@@ -2539,6 +2762,11 @@ public partial class GameState : Node
     {
         if (Globals.Instance == null)
             return;
+        if (DeveloperModeActive)
+        {
+            Logger.Debug($"GameState: save suppressed in developer mode ({reason}).");
+            return;
+        }
 
         var data = new Dictionary
         {
@@ -2663,6 +2891,12 @@ public partial class GameState : Node
     /// <summary>Loads the save into Globals/tracker; returns the scene to open, or null.</summary>
     public string LoadGame()
     {
+        if (DeveloperModeActive)
+        {
+            DeveloperModeActive = false;
+            RestoreDeveloperSnapshotFile();
+            DeveloperModeChanged?.Invoke();
+        }
         if (!HasSave || Globals.Instance == null)
             return null;
 
@@ -2784,21 +3018,25 @@ public partial class GameState : Node
         if (Get(data, "progress").VariantType == Variant.Type.Dictionary)
             RoomExamineTracker.ImportProgress(data["progress"].AsGodotDictionary());
 
-        BackfillCluesFromProgress();
-        EnsureFinalActProgress();
-
-        AudioManager.Instance?.SetCorruption01(Corruption01);
-        CorruptionChanged?.Invoke(Globals.Instance.CORRUPTION_COUNT, CurrentTier);
-        ClarityChanged?.Invoke(ClarityCount);
-        ShardsChanged?.Invoke();
-        ObjectiveChanged?.Invoke();
-
         string scene = MigrateRemovedPorchScene(Get(data, "scene", string.Empty).AsString());
         _furthestScenePath = MigrateRemovedPorchScene(_furthestScenePath);
         // Older saves never recorded progress depth: the room a save opens
         // in is, at minimum, as far as its Mara ever got.
         if (string.IsNullOrWhiteSpace(_furthestScenePath) && IsMainPathScene(scene))
             _furthestScenePath = scene;
+
+        BackfillCluesFromProgress();
+        // Derive legacy final-act progress from the room this save
+        // actually opens in, never from whatever scene happened to
+        // be loaded before LoadGame was called (notably a Dev Mode
+        // test location being restored away from).
+        EnsureFinalActProgress(RoomNameForScene(scene));
+
+        AudioManager.Instance?.SetCorruption01(Corruption01);
+        CorruptionChanged?.Invoke(Globals.Instance.CORRUPTION_COUNT, CurrentTier);
+        ClarityChanged?.Invoke(ClarityCount);
+        ShardsChanged?.Invoke();
+        ObjectiveChanged?.Invoke();
         Logger.Info($"GameState: loaded save (scene: {scene}).");
         return string.IsNullOrWhiteSpace(scene) ? null : scene;
     }
@@ -2858,7 +3096,7 @@ public partial class GameState : Node
     /// <summary>Menu → Continue: load now, remember which room to open in GameManager.</summary>
     public bool PrepareContinue()
     {
-        _pendingStartScene = LoadGame();
+        _pendingStartScene = DeveloperModeActive ? EndDeveloperSession() : LoadGame();
         return _pendingStartScene != null;
     }
 
