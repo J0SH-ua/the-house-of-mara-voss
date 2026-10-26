@@ -452,7 +452,9 @@ public partial class AudioManager : Node
 
         bool puzzle = scene.Contains("puzzle");
         (string path, float volume) ambience =
-            scene.Contains("vent_crawl") ? (AmbienceVentAirPath, -13f)
+            // The vent is damp, not windy: water finding its way
+            // down the shaft, drop by drop, close to her ears.
+            scene.Contains("vent_crawl") ? (AmbienceDripsPath, -11.5f)
             : scene.Contains("basement") || scene.Contains("breaker_box") ? (AmbienceDripsPath, -13f)
             : scene.Contains("lockpick") ? (AmbiencePath, -20f)
             : scene.Contains("porch") || scene.Contains("bridge_repair") ? (AmbiencePorchPath, -16f)

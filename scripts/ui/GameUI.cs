@@ -552,7 +552,7 @@ public partial class GameUI : CanvasLayer
     private int _photoFlipGen;
     private Action _photoClosedCallback;
     private Button _bagPhotoButton;
-    private Button _bagUseButton;
+    private Button _bagInspectButton;
     private bool _memoryWarned;
 
     // Clarity-collapse countdown overlay (house taking the room back)
@@ -1451,7 +1451,8 @@ public partial class GameUI : CanvasLayer
                     : $"Return to {ForwardSceneName(target)} \u2192";
                 _forwardButton.TooltipText = "Return to the furthest room you have reached";
             }
-            else if (gs != null && !darkTrek && gs.TryGetLeaveScene(out string leaveTarget))
+            else if (gs != null && gs.TryGetLeaveScene(out string leaveTarget) &&
+                (!darkTrek || leaveTarget.EndsWith("room_6.tscn")))
             {
                 // At the frontier with the fragment in hand, the same
                 // button becomes hers to leave by: collecting never
@@ -1524,6 +1525,18 @@ public partial class GameUI : CanvasLayer
         if (string.IsNullOrEmpty(_forwardTargetPath) || SceneManager.IsChanging ||
             Dialogue.IsShowing || AnyPanelOpen() || GetTree().Paused)
             return;
+
+        // The last afternoon is only ever reached through the
+        // wardrobe. The button names the wish; Room 5 walks it —
+        // or, in the blackout, refuses it in Mara's own words.
+        if (_forwardTargetPath.EndsWith("room_6.tscn") &&
+            (SceneManager.CurrentScenePath ?? string.Empty).EndsWith("room_5.tscn") &&
+            SceneManager.Instance?.CurrentScene is Room5Final room5)
+        {
+            AudioManager.Play(Sfx.UiClick, -6f);
+            room5.LeaveForAfternoon();
+            return;
+        }
 
         MemoryVerbSystem.Cancel(silent: true);
         if (ClaritySystem.IsArmed)
@@ -2250,46 +2263,170 @@ public partial class GameUI : CanvasLayer
         return "negatives_held_" + file.Replace(".tscn", string.Empty);
     }
 
-    /// <summary>The trunk's negatives, finally good for something:
-    /// held to a light, once in any place, they steady her — a
-    /// little corruption undone, a breath of Clarity back. Memory
-    /// first aid, rationed by geography so it stays a kindness
-    /// rather than a system to farm.</summary>
-    private async Task UseNegativesAsync()
+    // ------------------------------------------------------- in her hand
+    //
+    // Everything in the bag can be taken back into Mara's palm and
+    // looked at again, through the same held moment that greeted
+    // it — her hand rises, she lifts it to the light, she says
+    // something true about it now, and a click puts it away. For
+    // most things that is all: a second look, freely. For the
+    // photograph negatives the in-hand look IS their use — the
+    // light shining through them is the whole trick they know.
+
+    // What a held inspect should do once the thing is back in the
+    // bag (the negatives' effects land then, not on the click).
+    private System.Action _heldInspectOnDismiss;
+
+    private static readonly string[] HeldFragmentInspectLines =
+    [
+        "Her voice, first thing. I can still hear the exact shape of it. Hello to you too.",
+        "Pages turning quietly, so somebody small could sleep. I was careful even then.",
+        "Names for spiders. Jars for safekeeping. We each had our own way of not being afraid.",
+        "\"She would have loved to see how far you've come.\" Mum's voice. It's allowed to help, finally hearing it.",
+        "The letter I never send. Holding it doesn't wound the way it used to. It aches. There's a difference, and the difference is mine.",
+        "The swing. The trees. The rest of it. I know it now — so I can carry it like this. In the open.",
+    ];
+
+    private void InspectSelectedInHand()
     {
         var gs = GameState.Instance;
-        if (gs == null || !gs.HasFlag("basement_negatives_taken"))
+        if (gs == null || _heldBusy || _heldShowing || Dialogue.IsShowing || _heldRoot == null)
             return;
-        string flag = NegativesHeldHereFlag();
-        if (gs.HasFlag(flag))
+
+        var item = FindPracticalItem(BuildPracticalItemViews(gs), _bagSelectedItemId);
+        if (item != null)
         {
-            ShowToast("Already held to this light. The reversed weather has said its piece here.");
+            if (!item.InBag)
+            {
+                ShowToast("It's standing in the hallway door. She'd have to take it out to hold it.");
+                return;
+            }
+            CloseBag(backToPause: false);
+            if (item.Id == "basement_negatives_taken")
+            {
+                NegativesInHand();
+                return;
+            }
+            _heldShowingItem = true;
+            _heldCurrentItem = null;
+            ShowHeldPickup(item.Name, item.IconPath, BagInspectLine(item.Id, gs));
             return;
         }
+
+        if (_bagSelectedIndex >= 0 && _bagSelectedIndex < GameState.MaxShards &&
+            gs.IsShardRecovered(_bagSelectedIndex) && Globals.SHARDS_COLLECTED[_bagSelectedIndex])
+        {
+            int index = _bagSelectedIndex;
+            CloseBag(backToPause: false);
+            _heldShowingItem = false;
+            _heldCurrentItem = null;
+            ShowHeldPickup(GameState.ShardTitles[index], BagIconPaths[index],
+                HeldFragmentInspectLines[index]);
+        }
+    }
+
+    private static string BagInspectLine(string id, GameState gs) => id switch
+    {
+        "item_hairpin" => "Still bent. Still true. Mum did more with this than I do with both hands.",
+        "item_hall_key_bridge" => "Two posts. One arch. Hold it up and it could almost be the bridge itself — small, and possible.",
+        "item_hall_key_door" => "The little door has its own little knob. Somewhere, Dad is still delighted with himself.",
+        "item_hall_key_circle" => "Round and round, and it never ends anywhere. That used to frighten me. Now it feels like a promise being kept.",
+        "item_lockpick_set" => LockpickInspectLine(gs),
+        "item_fine_tension_wrench" => "FOR Mara HANDS. I keep reading it like it might change. It doesn't need to.",
+        "item_flashlight" => "On. Off. On. It's stupid, how much comfort lives in a switch that still works.",
+        "item_iron_cellar_key" => "Plain iron. No games, no pictures cut into it. The only key in this house that never pretended.",
+        "item_hammer_nails" => "The handle fits like an argument settled years ago. Some of the mending is still mine to do.",
+        _ => "Hers, and carried. That's reason enough to look at it twice.",
+    };
+
+    private static string LockpickInspectLine(GameState gs)
+    {
+        int left = gs.PicksLeft;
+        return left >= GameState.LockpickTotal
+            ? "Seven, all sound, counted by touch the way he did it. Steel remembers hands."
+            : $"{left} sound. The broken ones ride in their pockets where my fingers can find them. Steel remembers hands — mine included, now.";
+    }
+
+    /// <summary>The trunk's negatives, used the only way negatives
+    /// can be: taken in hand and held to whatever light the room
+    /// has. Once in any place the reversed weather steadies her —
+    /// a little corruption undone, a breath of Clarity back — and
+    /// the first light that ever goes through them finds the frame
+    /// that makes them a map. After that, in a place whose light
+    /// has spoken, they can still be held and looked at: looking
+    /// was always allowed.</summary>
+    private void NegativesInHand()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || !gs.HasFlag("basement_negatives_taken") || _heldRoot == null)
+            return;
+
+        string flag = NegativesHeldHereFlag();
+        bool usedHere = gs.HasFlag(flag);
         // Older journeys already carrying the hammer have, by
         // definition, seen what the frames know.
         if (gs.HasFlag("item_hammer_nails"))
             gs.SetFlag("negatives_developed", save: false);
-        bool developedNow = !gs.HasFlag("negatives_developed");
-        gs.SetFlag(flag, save: false);
-        CloseBag(backToPause: false);
+        bool developedNow = !usedHere && !gs.HasFlag("negatives_developed");
 
-        string[] lines =
-        [
-            "Held to the light, the negatives burn backwards: dark faces, bright grass, the canal gone white as bone. Two girls at the edge of an ordinary afternoon. Unprinted isn't unloved. Some of it was only too much, that year, to look at straight.",
-            "Reversed weather. Ida mid-laugh, black against a burning garden. She never saw these. Neither did Mum, in the end. I'm the only one left who looks — so I look.",
-            "The light through them turns everything honest-side-out: the dark things bright, the bright things bearable. Breathe. Even this can be held up and looked at.",
-        ];
-        int pick = 0;
-        foreach (char ch in flag)
-            pick += ch;
+        string line;
+        if (usedHere)
+        {
+            line = "Still reversed. Still bearable. This light has already told her everything it knows — but looking was never the part that cost anything.";
+        }
+        else
+        {
+            gs.SetFlag(flag, save: false);
+            string[] lines =
+            [
+                "Held to the light, the negatives burn backwards: dark faces, bright grass, the canal gone white as bone. Two girls at the edge of an ordinary afternoon. Unprinted isn't unloved. Some of it was only too much, that year, to look at straight.",
+                "Reversed weather. Ida mid-laugh, black against a burning garden. She never saw these. Neither did Mum, in the end. I'm the only one left who looks — so I look.",
+                "The light through them turns everything honest-side-out: the dark things bright, the bright things bearable. Breathe. Even this can be held up and looked at.",
+            ];
+            int pick = 0;
+            foreach (char ch in flag)
+                pick += ch;
+            line = lines[Math.Abs(pick) % lines.Length];
 
+            // The steadiness lands when she puts them away — the
+            // looking itself is hers, uninterrupted.
+            _heldInspectOnDismiss = () =>
+            {
+                gs.AddCorruption(-3);
+                bool clarity = gs.RefillClarity(1);
+                AudioManager.Play(Sfx.WordChime, -10f, 0.95f);
+                ShowToast(clarity
+                    ? "Steadier. MEMORY eased, Clarity +1."
+                    : "Steadier. MEMORY eased.");
+                gs.SaveGame("negatives held to the light");
+                if (developedNow)
+                    _ = RevealNegativesFrameAsync();
+            };
+        }
+
+        _heldShowingItem = true;
+        _heldCurrentItem = null;
+        AudioManager.Play(Sfx.PageTurn, -10f, 0.9f);
+        ShowHeldPickup("Photograph negatives",
+            "res://assets/images/core/items/negatives.png", line);
+    }
+
+    /// <summary>One frame among the reversed weather is not about
+    /// Ida at all — and it is the negatives' purpose: they are the
+    /// only pictures of rooms as they were actually kept.</summary>
+    private async Task RevealNegativesFrameAsync()
+    {
+        var gs = GameState.Instance;
+        if (gs == null)
+            return;
+        gs.SetFlag("negatives_developed", save: false);
+        gs.UnlockClue("negatives_cellar_frame");
         Dialogue.BeginInputBlock();
         try
         {
-            AudioManager.Play(Sfx.PageTurn, -10f, 0.9f);
-            await Dialogue.ShowText(this, lines[Math.Abs(pick) % lines.Length],
-                6f, 576f, 486f, fontSize: 24);
+            await Dialogue.ShowText(this,
+                "Wait. This frame. Not the garden — the cellar. Dad, in lamplight, hanging his claw hammer on the inside of the little tool cabinet's door. The inside. She photographed him mid-chore and never printed it. It's been a map this whole time, waiting for a light.",
+                7f, 576f, 486f, fontSize: 24);
         }
         finally
         {
@@ -2297,39 +2434,8 @@ public partial class GameUI : CanvasLayer
         }
         if (!GodotObject.IsInstanceValid(this))
             return;
-
-        gs.AddCorruption(-3);
-        bool clarity = gs.RefillClarity(1);
-        AudioManager.Play(Sfx.WordChime, -10f, 0.95f);
-        ShowToast(clarity
-            ? "Steadier. MEMORY eased, Clarity +1."
-            : "Steadier. MEMORY eased.");
-        gs.SaveGame("negatives held to the light");
-
-        // And one frame — the first time any light goes through
-        // them — is not about Ida at all. It is a map, and it was
-        // the negatives' purpose all along: they are the only
-        // pictures of rooms as they were actually kept.
-        if (developedNow)
-        {
-            gs.SetFlag("negatives_developed", save: false);
-            gs.UnlockClue("negatives_cellar_frame");
-            Dialogue.BeginInputBlock();
-            try
-            {
-                await Dialogue.ShowText(this,
-                    "Wait. This frame. Not the garden — the cellar. Dad, in lamplight, hanging his claw hammer on the inside of the little tool cabinet's door. The inside. She photographed him mid-chore and never printed it. It's been a map this whole time, waiting for a light.",
-                    7f, 576f, 486f, fontSize: 24);
-            }
-            finally
-            {
-                Dialogue.EndInputBlock();
-            }
-            if (!GodotObject.IsInstanceValid(this))
-                return;
-            ShowToast("A map in reverse: the hammer hangs inside the cellar cabinet's door — the mending tools, found the moment she's back down there.");
-            gs.SaveGame("negatives developed");
-        }
+        ShowToast("A map in reverse: the hammer hangs inside the cellar cabinet's door — the mending tools, found the moment she's back down there.");
+        gs.SaveGame("negatives developed");
     }
 
     // ------------------------------------------------------- the warning
@@ -2531,12 +2637,15 @@ public partial class GameUI : CanvasLayer
         _bagPhotoButton.Pressed += () => ShowPhotograph();
         detail.AddChild(_bagPhotoButton);
 
-        // One keepsake can be *used*: the unprinted negatives.
-        _bagUseButton = MakeButton("Hold them to the light");
-        _bagUseButton.Visible = false;
-        _bagUseButton.FocusMode = Control.FocusModeEnum.None;
-        _bagUseButton.Pressed += () => _ = UseNegativesAsync();
-        detail.AddChild(_bagUseButton);
+        // Everything she carries can be taken back into her hand
+        // and looked at again — held up to the light the same way
+        // it first was. For the negatives that IS the using: the
+        // light through them is the whole trick they know.
+        _bagInspectButton = MakeButton("Take it in hand");
+        _bagInspectButton.Visible = false;
+        _bagInspectButton.FocusMode = Control.FocusModeEnum.None;
+        _bagInspectButton.Pressed += InspectSelectedInHand;
+        detail.AddChild(_bagInspectButton);
 
         var scroll = new ScrollContainer
         {
@@ -2645,7 +2754,7 @@ public partial class GameUI : CanvasLayer
                 "Mum's bent hairpin",
                 "res://assets/images/core/items/hairpin.png",
                 "IN BAG",
-                "Taken from behind the bedroom alarm clock",
+                "Taken from the bedroom nightstand drawer",
                 "One of her mother's hairpins, bent from years of being borrowed for jobs it was never made for. It waited in the little drawer of Mara's childhood nightstand, in the very first room.\n\nThin enough to worry the last preserve jar open without breaking Ida's glass — tap true as the working line crosses where the rubber gives. Small practical things travel farther in this house than grand gestures do."));
         }
 
@@ -2720,7 +2829,7 @@ public partial class GameUI : CanvasLayer
                 "res://assets/images/core/items/lockpick_set.png",
                 "IN BAG",
                 "Father's oilcloth roll, carried in Mara's bag",
-                "An oilcloth roll of slender picks and a flat tension wrench, kept clean long after the hands that used them were gone.\n\nThe pick follows the mouse around the top of the lock, locked to it; hold A (or D) to turn. How far it turns before it shakes is the whole secret. Each set layer clicks like a little lock inside the lock. The picks do not break — she never saw him break one."));
+                "An oilcloth roll of slender picks and a flat tension wrench, kept clean long after the hands that used them were gone.\n\nThe pick follows the mouse around the top of the lock, locked to it; hold A (or D) to turn. How far it turns before it shakes is the whole secret. There is no gauge for the steel: force a binding pick and the damage stays in it, told only by the worsening tremble and the thinning sound, until it snaps. The roll holds seven. She never saw him break one. The house is teaching her otherwise."));
         }
 
         if (gs.HasFlag("item_fine_tension_wrench"))
@@ -2818,7 +2927,7 @@ public partial class GameUI : CanvasLayer
         if (gs == null)
         {
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
-            if (_bagUseButton != null) _bagUseButton.Visible = false;
+            if (_bagInspectButton != null) _bagInspectButton.Visible = false;
             _bagSummary.Text = "Nothing can be carried yet.";
             _bagDetailTitle.Text = "An empty bag";
             _bagDetailStatus.Text = "";
@@ -3064,18 +3173,17 @@ public partial class GameUI : CanvasLayer
         if (selectedItem != null)
         {
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
-            if (_bagUseButton != null)
+            if (_bagInspectButton != null)
             {
                 bool negatives = selectedItem.Id == "basement_negatives_taken";
-                _bagUseButton.Visible = negatives;
-                if (negatives)
-                {
-                    bool usedHere = gs.HasFlag(NegativesHeldHereFlag());
-                    _bagUseButton.Disabled = usedHere;
-                    _bagUseButton.Text = usedHere
-                        ? "Already held to this light"
-                        : "Hold them to the light";
-                }
+                // What's standing in a door can't be held; everything
+                // actually in the bag can come back into her hand.
+                _bagInspectButton.Visible = selectedItem.InBag;
+                _bagInspectButton.Text = negatives
+                    ? (gs.HasFlag(NegativesHeldHereFlag())
+                        ? "Take in hand — this light has spoken"
+                        : "Take in hand — hold to the light")
+                    : "Take it in hand";
             }
             _bagDetailTitle.Text = selectedItem.Name;
             _bagDetailStatus.Text = selectedItem.DetailStatus;
@@ -3084,7 +3192,11 @@ public partial class GameUI : CanvasLayer
         else if (_bagSelectedIndex >= 0 && gs.IsShardRecovered(_bagSelectedIndex))
         {
             int index = _bagSelectedIndex;
-            if (_bagUseButton != null) _bagUseButton.Visible = false;
+            if (_bagInspectButton != null)
+            {
+                _bagInspectButton.Visible = Globals.SHARDS_COLLECTED[index];
+                _bagInspectButton.Text = "Take it in hand";
+            }
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = index == 1;
             _bagDetailTitle.Text = GameState.ShardTitles[index];
             _bagDetailStatus.Text = Globals.SHARDS_COLLECTED[index]
@@ -3098,7 +3210,7 @@ public partial class GameUI : CanvasLayer
         else
         {
             if (_bagPhotoButton != null) _bagPhotoButton.Visible = false;
-            if (_bagUseButton != null) _bagUseButton.Visible = false;
+            if (_bagInspectButton != null) _bagInspectButton.Visible = false;
             _bagDetailTitle.Text = "Nothing carried yet";
             _bagDetailStatus.Text = "The bag is light.";
             _bagDetailBody.Text = "[i]Fragments Mara recovers will be kept here until the last room asks for them back. The Memory Journal (J) still keeps everything she has heard.[/i]";
@@ -5777,6 +5889,11 @@ public partial class GameUI : CanvasLayer
             _heldCurrentItem = null;
             Dialogue.EndInputBlock();
             SceneManager.ResumeDeferredSceneChange();
+            // A bag inspect may owe the room something once the
+            // thing is away again (the negatives' steadiness).
+            var afterInspect = _heldInspectOnDismiss;
+            _heldInspectOnDismiss = null;
+            afterInspect?.Invoke();
         }));
     }
 

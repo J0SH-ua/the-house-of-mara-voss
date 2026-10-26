@@ -49,6 +49,7 @@ public partial class LockpickPuzzle : Node2D
         Picking,
         Broken,
         Panic,
+        Rewinding,
         Success,
         Leaving,
     }
@@ -103,7 +104,18 @@ public partial class LockpickPuzzle : Node2D
     private int _layerIndex;
     private float _pickDegrees;
     private float _plugDegrees;
+    // Instantaneous strain — the trembling itself. Rises fast while
+    // a bind is forced, drains the moment she lets go. It drives
+    // the shake and the sound, and nothing else. There is no
+    // gauge for it anywhere on screen.
     private float _stress;
+    // The Dying Light truth of the thing, kept hidden: every
+    // second spent forcing a binding pick does PERMANENT damage to
+    // that pick (worse the farther from the sweet spot it binds),
+    // and letting go only spares it further damage — it never
+    // un-bends steel. At 1.0 the pick snaps. The only instruments
+    // Mara gets are the worsening tremble and the changing sound.
+    private float _pickDamage;
     private bool _binding;
     private int _lastPickTickBand;
     private int _lastPlugTickStep;
@@ -114,6 +126,16 @@ public partial class LockpickPuzzle : Node2D
     private float _panicLeft;
     private float _panicRumbleTimer;
     private bool _panicDecided;
+    // The snap's red weather: a hot flash at the edges of her
+    // vision the moment steel goes, cooling over about a second.
+    private float _snapFlashLeft;
+    // The rewind, played backwards for her eyes: grey strobing,
+    // cracks un-walking, picks mending, her own words reversing.
+    private const float RewindSeconds = 2.6f;
+    private float _rewindT;
+    private int _rewindSnippet = -1;
+    private float _rewindSnippetTimer;
+    private Label _rewindTextLabel;
     private Label _rewindLabel;
     private Label _letGoLabel;
     private readonly RandomNumberGenerator _rng = new();
@@ -213,8 +235,8 @@ public partial class LockpickPuzzle : Node2D
             new Vector2(326, 18), new Vector2(500, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(
-            "Mouse — seat the pick (it follows you)      Hold A — turn the lock\nHow far it turns before it shakes says how close you are. Force a bind and the pick snaps — she has seven.",
-            new Vector2(276, 58), new Vector2(600, 62), 20,
+            "Mouse — seat the pick      Hold A — turn the lock. How far it turns before it shakes tells the truth.\nNo gauge for the steel — only the shake and the sound. Force a bind and the damage stays in the pick until it snaps. She has seven.",
+            new Vector2(256, 58), new Vector2(640, 62), 19,
             new Color(0.9f, 0.86f, 0.76f, 0.94f));
         _statusLabel = MakeLabel(string.Empty,
             new Vector2(326, 560), new Vector2(500, 42), 21,
@@ -230,6 +252,12 @@ public partial class LockpickPuzzle : Node2D
             new Color(0.94f, 0.88f, 0.78f, 0.98f));
         _rewindLabel.Visible = false;
         _letGoLabel.Visible = false;
+        // Her own evening, coming back at her backwards.
+        _rewindTextLabel = MakeLabel(string.Empty,
+            new Vector2(176, 140), new Vector2(800, 90), 26,
+            new Color(0.94f, 0.94f, 0.94f, 0.98f));
+        _rewindTextLabel.ZIndex = 300;
+        _rewindTextLabel.Visible = false;
     }
 
     private Label MakeLabel(string text, Vector2 position, Vector2 size, int fontSize, Color color)
@@ -305,6 +333,7 @@ public partial class LockpickPuzzle : Node2D
                     return;
             }
 
+            _pickDamage = 0f;
             _state = PickState.Picking;
             UpdateStatus();
         }
@@ -370,6 +399,34 @@ public partial class LockpickPuzzle : Node2D
         float dt = (float)delta;
         UpdateCursor();
 
+        if (_snapFlashLeft > 0f)
+            _snapFlashLeft = Mathf.Max(0f, _snapFlashLeft - dt);
+
+        // Time running backwards has its own weather and ignores
+        // every other rule in the room for its 2.6 seconds.
+        if (_state == PickState.Rewinding)
+        {
+            _rewindT = Mathf.Clamp01(_rewindT + dt / RewindSeconds);
+            _plugDegrees = Mathf.MoveToward(_plugDegrees, 0f, 150f * dt);
+            _rewindSnippetTimer -= dt;
+            if (_rewindSnippetTimer <= 0f && _rewindT < 1f)
+            {
+                _rewindSnippetTimer = Settings.ReduceMotionOrDefault() ? 0.5f : 0.3f;
+                _rewindSnippet++;
+                if (_rewindTextLabel != null)
+                {
+                    _rewindTextLabel.Text = RewindSnippetText(_rewindSnippet);
+                    _rewindTextLabel.Visible = true;
+                }
+                // Tape-sounds: ticks racing up as the moment unspools.
+                AudioManager.Play(Sfx.LockpickTick, -13f, 0.55f + 0.09f * _rewindSnippet);
+                if (_rewindSnippet % 3 == 2)
+                    AudioManager.Play(Sfx.WindGust, -18f, 1.15f + 0.06f * _rewindSnippet);
+            }
+            QueueRedraw();
+            return;
+        }
+
         bool blocked = GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
 
@@ -433,12 +490,22 @@ public partial class LockpickPuzzle : Node2D
 
             if (_binding)
             {
-                _stress = Mathf.MoveToward(_stress, 1f, 1.5f * CurrentStressScale * dt);
+                // Strain is the moment; damage is the memory. The
+                // pick trembles now, and keeps every injury: the
+                // farther past tolerance it is being forced, the
+                // faster the steel gives up its future. Nothing on
+                // screen counts this. Her hands are the instrument.
+                _stress = Mathf.MoveToward(_stress, 1f, 2.2f * CurrentStressScale * dt);
+                float extraError = Mathf.Max(0f, error - tolerance);
+                _pickDamage += dt * CurrentStressScale * (0.42f + 0.018f * extraError);
                 ulong nowBind = Time.GetTicksMsec();
                 if (nowBind - _lastBindSoundMsec > 120)
                 {
                     _lastBindSoundMsec = nowBind;
-                    AudioManager.Play(Sfx.LockpickTick, -13f, 0.6f);
+                    // The sound climbs and thins as the pick's hidden
+                    // hurt grows — the only meter she gets.
+                    AudioManager.Play(Sfx.LockpickTick,
+                        -13f + 3f * _pickDamage, 0.6f + 0.25f * _pickDamage);
                 }
             }
             else
@@ -446,9 +513,9 @@ public partial class LockpickPuzzle : Node2D
                 _stress = Mathf.MoveToward(_stress, 0f, 1.8f * dt);
             }
 
-            // Forced past the trembling's top, his steel remembers
-            // what steel does.
-            if (_binding && _stress >= 0.999f)
+            // Bent past what bent steel forgives, his pick
+            // remembers what steel does.
+            if (_binding && _pickDamage >= 1f)
             {
                 SnapPick();
                 return;
@@ -557,6 +624,9 @@ public partial class LockpickPuzzle : Node2D
         _binding = false;
         _stress = 0f;
         _plugDegrees = CurrentLayerStart;
+        // The panic shows on the screen before it reaches her
+        // mouth: red at the edges of the world, then the words.
+        _snapFlashLeft = 0.9f;
 
         var gs = GameState.Instance;
         gs?.RegisterPickBroken();
@@ -589,6 +659,9 @@ public partial class LockpickPuzzle : Node2D
             await Say(SnapLines[Mathf.Min(broken - 1, SnapLines.Length - 1)]);
             if (!StillHere())
                 return;
+            // A fresh pick out of the roll: unbent steel, whatever
+            // her hands have learned about the price.
+            _pickDamage = 0f;
             _state = PickState.Picking;
             UpdateStatus();
             QueueRedraw();
@@ -666,6 +739,24 @@ public partial class LockpickPuzzle : Node2D
             await Say("Back. Take it all — every clear thought I've been saving, take them — just give me back the bit where my hands hadn't—");
             if (!StillHere())
                 return;
+
+            // And it goes back WHERE SHE CAN SEE IT GO: the room
+            // drains to black-and-white and strobes like tape
+            // screaming through a VCR, the cracks un-walk the
+            // glass, the roll mends pick by pick, the cylinder
+            // turns itself un-done — and her own voice runs past
+            // her ears in reverse, word over word, too fast to hold.
+            _state = PickState.Rewinding;
+            _rewindT = 0f;
+            _rewindSnippet = -1;
+            _rewindSnippetTimer = 0f;
+            AudioManager.Play(Sfx.WindGust, -9f, 1.3f);
+            await WaitSeconds(RewindSeconds);
+            if (!StillHere())
+                return;
+            if (_rewindTextLabel != null)
+                _rewindTextLabel.Visible = false;
+            AudioManager.Play(Sfx.BreathSlow, -9f, 0.9f);
 
             gs.SpendAllClarityForRewind();
             gs.RestoreAllPicks("time rewound before the breaking");
@@ -809,7 +900,9 @@ public partial class LockpickPuzzle : Node2D
         {
             PickState.Success => "It turns.",
             PickState.Panic => "—",
-            _ when _binding && _stress > 0.55f => "It's going to snap — LET GO.",
+            PickState.Rewinding => "—",
+            _ when _binding && _pickDamage > 0.78f => "That thin sound. That is the sound steel makes last. LET GO.",
+            _ when _binding && _pickDamage > 0.5f => "The steel has started to sound tired. Let go. Breathe. Bent doesn't un-bend.",
             _ when _binding => "It binds there. Let go, breathe, try a hair to one side.",
             _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set{toolNote} · {picks} of {GameState.LockpickTotal} picks sound",
         };
@@ -867,7 +960,6 @@ public partial class LockpickPuzzle : Node2D
 
         DrawLeaveControl();
         DrawPlugAndTools();
-        DrawStress();
         DrawLayerPips();
         DrawPickRoll();
 
@@ -880,6 +972,13 @@ public partial class LockpickPuzzle : Node2D
 
         if (_state == PickState.Panic)
             DrawPanic();
+        else if (_state == PickState.Rewinding)
+            DrawRewind();
+        else
+        {
+            DrawEchoCracks();
+            DrawSnapFlash();
+        }
     }
 
     /// <summary>The panic itself: a red held breath over everything,
@@ -997,10 +1096,17 @@ public partial class LockpickPuzzle : Node2D
         Vector2 direction = DirectionFromDegrees(_pickDegrees);
         Vector2 side = new(-direction.Y, direction.X);
         Vector2 jitter = Vector2.Zero;
-        if (_stress > 0.25f && _state == PickState.Picking &&
-            !Settings.ReduceMotionOrDefault())
+        if (_state == PickState.Picking && !Settings.ReduceMotionOrDefault())
         {
-            float shake = (_stress - 0.25f) * 8f;
+            // The trembling is the durability gauge she was born
+            // with: strain now, damage underneath it. A pick that
+            // has been forced hard trembles worse at every later
+            // bind — and her hands themselves worsen with every
+            // pick already lost. No numbers anywhere; just shake.
+            float strain = Mathf.Max(_stress,
+                _binding ? _pickDamage * 0.9f : _pickDamage * 0.22f);
+            float nerves = 0.35f * (GameState.Instance?.BrokenPickCount ?? 0);
+            float shake = Mathf.Max(0f, strain - 0.18f) * 9f + nerves;
             jitter = side * (float)Math.Sin(Time.GetTicksMsec() / 28.0) * shake;
         }
 
@@ -1088,6 +1194,10 @@ public partial class LockpickPuzzle : Node2D
     private void DrawPickRoll()
     {
         int broken = GameState.Instance?.BrokenPickCount ?? 0;
+        // While time runs backwards the roll is seen mending,
+        // pick by pick, newest wound first.
+        if (_state == PickState.Rewinding)
+            broken = Mathf.RoundToInt((1f - _rewindT) * broken);
         var sound = new Color(0.88f, 0.78f, 0.5f, 0.95f);
         var gone = new Color(0.55f, 0.5f, 0.44f, 0.55f);
         DrawRect(new Rect2(986, 566, 150, 64), new Color(0.03f, 0.025f, 0.02f, 0.66f), true);
@@ -1108,18 +1218,127 @@ public partial class LockpickPuzzle : Node2D
         }
     }
 
-    private void DrawStress()
+    /// <summary>What stays on the screen after each snap: one more
+    /// hairline in the glass for every broken pick, and a red
+    /// pulse at the edges of her vision that breathes faster the
+    /// emptier the roll gets. The panic is legible at a glance —
+    /// it just never becomes a number.</summary>
+    private void DrawEchoCracks()
     {
-        var frame = new Rect2(426, 528, 300, 12);
-        DrawRect(frame, new Color(0.02f, 0.02f, 0.02f, 0.82f), true);
-        DrawRect(frame, new Color(0.7f, 0.62f, 0.48f, 0.65f), false, 1f);
-        if (_stress <= 0.01f)
+        int broken = GameState.Instance?.BrokenPickCount ?? 0;
+        if (broken <= 0 || _state == PickState.Success)
             return;
-        var fill = new Rect2(frame.Position, new Vector2(frame.Size.X * Mathf.Clamp(_stress, 0f, 1f), frame.Size.Y));
-        Color color = _stress < 0.5f
-            ? new Color(0.95f, 0.76f, 0.38f, 0.95f)
-            : new Color(0.92f, 0.32f, 0.22f, 0.98f);
-        DrawRect(fill, color, true);
+
+        var line = new Color(0.93f, 0.96f, 1f, 0.1f + 0.045f * broken);
+        var twin = new Vector2(1.5f, 1.5f);
+        for (int c = 0; c < Mathf.Min(broken, PanicCracks.Length); c++)
+        {
+            var chain = PanicCracks[c];
+            for (int i = 0; i < chain.Length - 1; i++)
+            {
+                DrawLine(chain[i] + twin, chain[i + 1] + twin,
+                    new Color(0, 0, 0, line.A * 0.8f), 2.2f, true);
+                DrawLine(chain[i], chain[i + 1], line, 1.1f, true);
+            }
+        }
+
+        float pace = 460f - 36f * broken;
+        float pulse = Settings.ReduceMotionOrDefault()
+            ? 0.5f
+            : 0.5f + 0.5f * (float)Math.Sin(Time.GetTicksMsec() / (double)pace);
+        var edge = new Color(0.55f, 0.05f, 0.04f, (0.05f + 0.022f * broken) * pulse + 0.02f * broken);
+        DrawRect(new Rect2(0, 0, 1152, 44), edge, true);
+        DrawRect(new Rect2(0, 604, 1152, 44), edge, true);
+        DrawRect(new Rect2(0, 0, 44, 648), edge, true);
+        DrawRect(new Rect2(1108, 0, 44, 648), edge, true);
+    }
+
+    /// <summary>The instant of a snap, worn on the whole screen:
+    /// a hot red wash strobing at the edges, cooling inside a
+    /// second — flinch first, words after.</summary>
+    private void DrawSnapFlash()
+    {
+        if (_snapFlashLeft <= 0f)
+            return;
+        float heat = Mathf.Clamp01(_snapFlashLeft / 0.9f);
+        bool on = Settings.ReduceMotionOrDefault()
+            ? true
+            : (Time.GetTicksMsec() / 80) % 2 == 0;
+        var screen = new Rect2(0, 0, 1152, 648);
+        DrawRect(screen, new Color(0.5f, 0.03f, 0.02f, 0.16f * heat * (on ? 1f : 0.4f)), true);
+        var edge = new Color(0.62f, 0.04f, 0.03f, 0.5f * heat * (on ? 1f : 0.45f));
+        DrawRect(new Rect2(0, 0, 1152, 64), edge, true);
+        DrawRect(new Rect2(0, 584, 1152, 64), edge, true);
+        DrawRect(new Rect2(0, 0, 64, 648), edge, true);
+        DrawRect(new Rect2(1088, 0, 64, 648), edge, true);
+    }
+
+    /// <summary>Time going back in plain sight: the colour drains
+    /// to grey, the picture strobes and tears like abused tape,
+    /// the cracks walk themselves OFF the glass, and underneath
+    /// it all the evening reassembles — plug unturning, picks
+    /// rising whole into the roll, her words reversing overhead.</summary>
+    private void DrawRewind()
+    {
+        var screen = new Rect2(0, 0, 1152, 648);
+        float t = _rewindT;
+        bool calm = Settings.ReduceMotionOrDefault();
+
+        // The grey comes for everything, then deeper towards black.
+        DrawRect(screen, new Color(0.55f, 0.55f, 0.55f, 0.45f * (1f - t) + 0.15f), true);
+        if (!calm && (Time.GetTicksMsec() / 90) % 2 == 0)
+            DrawRect(screen, new Color(0.92f, 0.92f, 0.92f, 0.22f * (1f - t)), true);
+        DrawRect(screen, new Color(0, 0, 0, 0.55f * t * t), true);
+
+        // Tape tears: pale and dark bands skating sideways.
+        var tearRng = new RandomNumberGenerator();
+        tearRng.Seed = (ulong)(Time.GetTicksMsec() / 70);
+        for (int i = 0; i < 5; i++)
+        {
+            float y = tearRng.RandfRange(0f, 648f);
+            float h = tearRng.RandfRange(3f, 14f);
+            bool pale = tearRng.Randf() > 0.5f;
+            DrawRect(new Rect2(0, y, 1152, h),
+                pale ? new Color(0.9f, 0.9f, 0.9f, 0.14f) : new Color(0, 0, 0, 0.2f), true);
+        }
+
+        // The cracks, leaving the way they came.
+        float remain = 1f - t;
+        var bright = new Color(0.95f, 0.97f, 1f, 0.75f * remain + 0.1f);
+        var twin = new Vector2(1.5f, 1.5f);
+        foreach (var chain in PanicCracks)
+        {
+            int segments = Mathf.Clamp(
+                Mathf.FloorToInt(remain * (chain.Length - 1)), 0, chain.Length - 1);
+            for (int i = 0; i < segments; i++)
+            {
+                DrawLine(chain[i] + twin, chain[i + 1] + twin,
+                    new Color(0, 0, 0, bright.A * 0.6f), 2.2f, true);
+                DrawLine(chain[i], chain[i + 1], bright, 1.2f, true);
+            }
+        }
+    }
+
+    /// <summary>Her words, unspooling: fragments of the snap lines
+    /// and the intro, word order reversed, walking backwards
+    /// through the evening faster than she can hold them.</summary>
+    private static string RewindSnippetText(int index)
+    {
+        string[] pool =
+        [
+            SnapLines[5], SnapLines[4], SnapLines[3],
+            SnapLines[2], SnapLines[1], SnapLines[0],
+            "don't push a sound you don't like",
+            "seven picks in the roll",
+        ];
+        string source = pool[Mathf.Min(index, pool.Length - 1)];
+        // A bite of it, not the whole sentence — tape at speed.
+        var words = source.Split(' ');
+        int take = Mathf.Min(words.Length, 9);
+        var bite = new string[take];
+        System.Array.Copy(words, bite, take);
+        System.Array.Reverse(bite);
+        return "…" + string.Join(" ", bite) + "…";
     }
 
     private static Vector2 DirectionFromDegrees(float degrees)

@@ -55,6 +55,7 @@ public partial class Room5Final : MemoryRoomBase
     private const string LampNoticeFlag = "story_monologue_room5_lamp_still";
     private const string LockpickScenePath = "res://scenes/world/lockpick_puzzle.tscn";
     private const string VentCrawlScenePath = "res://scenes/world/vent_crawl.tscn";
+    private const string BasementScenePath = "res://scenes/world/basement.tscn";
     private static readonly Rect2 VentRect = new(812, 438, 76, 52);
 
     private Label _anchorLabel;
@@ -677,6 +678,16 @@ public partial class Room5Final : MemoryRoomBase
                 }
 
                 AudioManager.Play(Sfx.FlashlightClick, -6f);
+                // The duct only needs crawling once. After that the
+                // house keeps the way worn: in, down, out — the
+                // cellar receives her without the whole journey.
+                if (gs.HasFlag("basement_entered"))
+                {
+                    await Say("The duct again. My knees know every seam of it by now. Down we go.", 4f, 24);
+                    if (GodotObject.IsInstanceValid(this))
+                        SceneManager.ChangeScene(BasementScenePath);
+                    return;
+                }
                 await Say("Flashlight on. Knees, elbows, and a duct built by somebody who had never met a grown woman. Deep breath.", 4.5f, 24);
                 if (GodotObject.IsInstanceValid(this))
                     SceneManager.ChangeScene(VentCrawlScenePath);
@@ -991,6 +1002,29 @@ public partial class Room5Final : MemoryRoomBase
         {
             Busy = false;
         }
+    }
+
+    /// <summary>The HUD's "Leave for the last afternoon" lands here.
+    /// The button may name the intention from the moment the room's
+    /// fragment is hers — but the road itself is and stays the
+    /// wardrobe. In the blackout the coats refuse her in her own
+    /// words; with the light back, October takes her the authored
+    /// way, walked, not teleported.</summary>
+    public void LeaveForAfternoon()
+    {
+        if (Busy)
+            return;
+        var gs = GameState.Instance;
+        if (gs == null || !gs.IsShardRecovered(4))
+            return;
+        if (IsBlackoutOn() && !gs.HasFlag("backup_power_on"))
+        {
+            var wardrobe = GetHotspot("Wardrobe");
+            if (wardrobe != null)
+                _ = BlackoutWardrobeAsync(wardrobe);
+            return;
+        }
+        _ = ExitToGardenAsync();
     }
 
     /// <summary>Do not cut from the wardrobe's mouth to the garden. Mara

@@ -1094,7 +1094,12 @@ public partial class GameState : Node
             "room_1.tscn" or "room_1_puzzle.tscn" => IsShardRecovered(0) ? "room_2.tscn" : null,
             "room_2.tscn" or "room_2_puzzle.tscn" => IsShardRecovered(1) ? "room_3.tscn" : null,
             "room_3.tscn" or "jar_closeup.tscn" => IsShardRecovered(2) ? "room_4.tscn" : null,
-            "room_5.tscn" => IsShardRecovered(4) && HasFlag("backup_power_on") ? "room_6.tscn" : null,
+            // The afternoon's Leave stands open from the moment the
+            // fragment is hers — the button names the wish early.
+            // The walking of it stays the wardrobe's: GameUI hands
+            // this target back to Room5Final.LeaveForAfternoon,
+            // which the blackout still bars until power returns.
+            "room_5.tscn" => IsShardRecovered(4) ? "room_6.tscn" : null,
             // No Leave shortcut from Room 6 to the porch: that road
             // is authored — front door, walked journey, and the
             // bridge her father's tools must mend first. A one-click

@@ -36,7 +36,9 @@ public partial class DifferenceInvestigation : Node2D
     private const string DoorKeyFlag = "item_hall_key_door";
     private const string ArrivalHeardFlag = "difference_arrival_heard";
     private const float CrumbleSeconds = 35f;
-    private const float WrongClickTimeCost = 4f;
+    // A wrong guess doesn't just cost seconds — the breaking
+    // itself speeds up, this much more for every one.
+    private const float WrongClickAcceleration = 0.35f;
 
     // The painted fireplace's mouth, in 1152×648 design space — where
     // the fire lives, and where the ashes sit while it doesn't.
@@ -123,6 +125,9 @@ public partial class DifferenceInvestigation : Node2D
     private float _lightLevel = 0.04f;
     private float _lightTarget = 0.04f;
     private float _crumbleRemaining = CrumbleSeconds;
+    private float _crumbleRate = 1f;
+    // The migraine's weather: red at the edges, flickering.
+    private float _migraineRedLeft;
     private int _lastCountdownWhole = -1;
     private bool _warned30;
     private bool _warned15;
@@ -258,6 +263,7 @@ public partial class DifferenceInvestigation : Node2D
                 AudioManager.Play(Sfx.ScreenCrack2, -8f, 0.75f);
                 _lightTarget = 0.12f;
                 _glitchLeft = 0.6f;
+                _migraineRedLeft = 2.6f;
                 await Say("Ah—! Ah. There. THERE it is—");
                 if (!StillHere())
                     return;
@@ -298,6 +304,7 @@ public partial class DifferenceInvestigation : Node2D
     {
         _phase = Phase.Search;
         _crumbleRemaining = CrumbleSeconds;
+        _crumbleRate = 1f;
         _lastCountdownWhole = -1;
         _rumbleTimer = 0.4f;
         AudioManager.Play(Sfx.CrumbleRumble, -12f, 0.95f);
@@ -340,7 +347,7 @@ public partial class DifferenceInvestigation : Node2D
 
             if (!blocked)
             {
-                _crumbleRemaining -= dt;
+                _crumbleRemaining -= dt * _crumbleRate;
 
                 int whole = Mathf.Clamp(Mathf.CeilToInt(_crumbleRemaining), 0, (int)CrumbleSeconds);
                 if (whole != _lastCountdownWhole)
@@ -400,6 +407,7 @@ public partial class DifferenceInvestigation : Node2D
             Position = Vector2.Zero;
         }
         _glitchLeft = Mathf.Max(0f, _glitchLeft - dt);
+        _migraineRedLeft = Mathf.Max(0f, _migraineRedLeft - dt);
 
         if (_broken && !_left)
         {
@@ -527,7 +535,9 @@ public partial class DifferenceInvestigation : Node2D
     private void RegisterWrongClick(Vector2 position)
     {
         _wrongClicks++;
-        _crumbleRemaining = Mathf.Max(0.5f, _crumbleRemaining - WrongClickTimeCost);
+        // Not a fee. An acceleration: from here the memory breaks
+        // faster, and every further wrong guess presses harder.
+        _crumbleRate += WrongClickAcceleration;
         AudioManager.Play(Sfx.Denied, -10f, 0.94f);
         AudioManager.Play(Sfx.CrumbleRumble, -11f, 0.8f);
 
@@ -545,7 +555,7 @@ public partial class DifferenceInvestigation : Node2D
         }
 
         string toast = _wrongClicks == 1
-            ? $"{WrongLines[0]} And the ceiling gives a little more — wrong guesses cost the room time."
+            ? $"{WrongLines[0]} And the ceiling gives a little more — wrong guesses make the breaking run faster."
             : _wrongClicks >= 4
                 ? "Still the same. The photograph, Mara. Bag (B) — look at it properly before the room goes."
                 : WrongLines[_wrongClicks % WrongLines.Length];
@@ -751,6 +761,7 @@ public partial class DifferenceInvestigation : Node2D
             DrawDust();
         }
         DrawPhasePanel();
+        DrawMigraineRed(screen);
 
         if (_phase == Phase.Breaking)
             DrawRect(screen, new Color(0.02f, 0.01f, 0.01f, 0.45f), true);
@@ -782,6 +793,31 @@ public partial class DifferenceInvestigation : Node2D
                 DrawLine(chain[i], chain[i + 1], bright, 1.1f, true);
             }
         }
+    }
+
+    /// <summary>The migraine's colour: red breathing at the edges of
+    /// her vision and a red wash strobing over the whole room —
+    /// hard, fast flicker while it lands, the same red returning
+    /// in miniature whenever it touches the crumble's glitches.</summary>
+    private void DrawMigraineRed(Rect2 screen)
+    {
+        bool strong = _migraineRedLeft > 0f;
+        if (!strong && _glitchLeft <= 0f)
+            return;
+
+        bool on = Settings.ReduceMotionOrDefault()
+            ? true
+            : (Time.GetTicksMsec() / 90) % 2 == 0;
+        float edgeAlpha = strong ? (on ? 0.42f : 0.18f) : (on ? 0.22f : 0.08f);
+        float washAlpha = strong ? (on ? 0.12f : 0.03f) : (on ? 0.05f : 0f);
+
+        if (washAlpha > 0.005f)
+            DrawRect(screen, new Color(0.62f, 0.03f, 0.02f, washAlpha), true);
+        var edge = new Color(0.62f, 0.03f, 0.02f, edgeAlpha);
+        DrawRect(new Rect2(0, 0, 1152, 56), edge, true);
+        DrawRect(new Rect2(0, 592, 1152, 56), edge, true);
+        DrawRect(new Rect2(0, 0, 56, 648), edge, true);
+        DrawRect(new Rect2(1096, 0, 56, 648), edge, true);
     }
 
     /// <summary>While the fire is out (or catching), the painted flames

@@ -471,24 +471,25 @@ public partial class VentCrawl : Node2D
     {
         DrawCrawlView();
         DrawFlashlightDarkness();
-        // The far grille is the whole point of the dark: a small lit
-        // square from the very first elbow, growing as she nears it.
+        // The far grille is the whole point of the dark: an unlit
+        // steel square seated in the duct's mouth from the very
+        // first elbow, growing as she nears it.
         DrawFarGrate();
         if (_fade > 0f)
             DrawRect(new Rect2(0, 0, 1152, 648), new Color(0, 0, 0, _fade), true);
     }
 
-    private void DrawCrawlView()
+    /// <summary>Where the painting currently sits on screen — one
+    /// computation shared by the view and by the grille, so the
+    /// drawn grille can be seated IN the painted duct mouth and
+    /// ride the same zoom and sway instead of swimming near it.</summary>
+    private void BackgroundTransform(out Vector2 position, out Vector2 drawnSize)
     {
-        DrawRect(new Rect2(0, 0, 1152, 648), new Color(0.015f, 0.015f, 0.018f), true);
-        if (_background == null)
-            return;
-
         float eased = _progress * _progress * (3f - 2f * _progress);
         float zoom = Mathf.Lerp(1.14f, 2.68f, eased);
         Vector2 textureSize = _background.GetSize();
         float coverScale = Mathf.Max(1152f / textureSize.X, 648f / textureSize.Y);
-        Vector2 drawnSize = textureSize * coverScale * zoom;
+        drawnSize = textureSize * coverScale * zoom;
 
         Vector2 sway = Vector2.Zero;
         if (!Settings.ReduceMotionOrDefault() && _crawlMoving)
@@ -499,7 +500,16 @@ public partial class VentCrawl : Node2D
                 (1f - _progress * 0.45f);
         }
         Vector2 focus = new(0.5f + sway.X, 0.5f + sway.Y);
-        Vector2 position = ScreenCenter - focus * drawnSize;
+        position = ScreenCenter - focus * drawnSize;
+    }
+
+    private void DrawCrawlView()
+    {
+        DrawRect(new Rect2(0, 0, 1152, 648), new Color(0.015f, 0.015f, 0.018f), true);
+        if (_background == null)
+            return;
+
+        BackgroundTransform(out Vector2 position, out Vector2 drawnSize);
         DrawTextureRect(_background, new Rect2(position, drawnSize), false);
     }
 
@@ -543,16 +553,24 @@ public partial class VentCrawl : Node2D
 
     }
 
+    // The duct mouth in the painting, measured off the art itself
+    // (1376×768: x 616–756, y 332–400). The painting's far end is
+    // dark now — no light waits down there — and the grille drawn
+    // here is seated exactly in that mouth at every zoom.
+    private static readonly Vector2 OpeningMin = new(0.4477f, 0.4323f);
+    private static readonly Vector2 OpeningMax = new(0.5494f, 0.5208f);
+
     private void DrawFarGrate()
     {
-        // Full size at her boots; a lit thumbnail at the duct's far
-        // end while she's still crawling toward it.
-        bool atGrate = _stage == CrawlStage.AtGrate || _stage == CrawlStage.Kicking ||
-            _stage == CrawlStage.Leaving || _progress >= 1f;
-        float eased = _progress * _progress * (3f - 2f * _progress);
-        float scale = atGrate ? 1f : Mathf.Lerp(0.2f, 1f, eased);
-        Vector2 size = new Vector2(166, 156) * scale;
-        var rect = new Rect2(ScreenCenter - size * 0.5f, size);
+        if (_background == null)
+            return;
+
+        BackgroundTransform(out Vector2 bgPos, out Vector2 bgSize);
+        Vector2 topLeft = bgPos + OpeningMin * bgSize;
+        Vector2 bottomRight = bgPos + OpeningMax * bgSize;
+        var rect = new Rect2(topLeft, bottomRight - topLeft);
+        float scale = rect.Size.Y / 153f;
+
         // Every true kick bends it further off its frame.
         rect.Position += new Vector2(7f * _kicksLanded, 4f * _kicksLanded) * scale;
         if (_grateShake > 0.01f && !Settings.ReduceMotionOrDefault())
@@ -563,13 +581,17 @@ public partial class VentCrawl : Node2D
         }
         if (_stage == CrawlStage.Leaving)
             rect.Position += new Vector2(28, 12);
-        // A halo of the cellar's thin light around it, so the far
-        // end is findable even where her own beam isn't pointing.
-        DrawRect(rect.Grow(7f), new Color(1f, 0.84f, 0.5f, 0.1f), true);
-        DrawRect(rect, new Color(0.1f, 0.09f, 0.07f, 0.98f), true);
-        DrawRect(rect, new Color(0.78f, 0.66f, 0.42f, 0.95f), false, Mathf.Max(2f, 4f * scale));
+
+        // Dark steel in a dark mouth. The only light on it is the
+        // memory of hers: a cold hairline where the beam's edge
+        // would catch the frame's top, so the shape still reads
+        // down the duct without anything glowing to meet her.
+        DrawRect(rect, new Color(0.05f, 0.055f, 0.06f, 0.98f), true);
+        DrawRect(rect, new Color(0.32f, 0.36f, 0.4f, 0.95f), false, Mathf.Max(1.5f, 4f * scale));
+        DrawRect(new Rect2(rect.Position, new Vector2(rect.Size.X, Mathf.Max(1.5f, 3f * scale))),
+            new Color(0.55f, 0.62f, 0.7f, 0.45f), true);
         var inner = rect.Grow(-13f * scale);
-        DrawRect(inner, new Color(0.23f, 0.2f, 0.15f, 1f), true);
+        DrawRect(inner, new Color(0.015f, 0.015f, 0.018f, 1f), true);
         int slats = scale < 0.45f ? 3 : 6;
         float step = inner.Size.Y / (slats + 1f);
         for (int i = 0; i < slats; i++)
@@ -578,10 +600,20 @@ public partial class VentCrawl : Node2D
             float barH = Mathf.Max(2f, 5f * scale);
             DrawRect(new Rect2(inner.Position.X + 8f * scale, y,
                     inner.Size.X - 16f * scale, barH),
-                new Color(0.86f, 0.72f, 0.42f, 0.95f), true);
+                new Color(0.22f, 0.25f, 0.28f, 0.98f), true);
             DrawRect(new Rect2(inner.Position.X + 8f * scale, y + barH,
                     inner.Size.X - 16f * scale, Mathf.Max(1.5f, 4f * scale)),
                 new Color(0.03f, 0.03f, 0.03f, 1f), true);
+        }
+        if (scale > 0.6f)
+        {
+            var screw = new Color(0.4f, 0.44f, 0.48f, 0.9f);
+            float r = 3f * scale;
+            float ix = 7f * scale;
+            DrawCircle(rect.Position + new Vector2(ix, ix), r, screw);
+            DrawCircle(rect.Position + new Vector2(rect.Size.X - ix, ix), r, screw);
+            DrawCircle(rect.Position + new Vector2(ix, rect.Size.Y - ix), r, screw);
+            DrawCircle(rect.Position + new Vector2(rect.Size.X - ix, rect.Size.Y - ix), r, screw);
         }
 
         if (_stage == CrawlStage.Kicking)

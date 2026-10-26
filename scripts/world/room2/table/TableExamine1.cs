@@ -2,8 +2,8 @@ using Godot;
 
 /// <summary>
 /// The sitting room's side table — the way into the drawer close-up.
-/// (The little door key the crumbling room gives up waits beside the
-/// globe instead; see GlobeExamine1.)
+/// (The little door key the crumbling room gives up waits on this
+/// table where the letter lived; see Room2.LayDoorKeyOnTable.)
 /// </summary>
 public partial class TableExamine1 : ExamineHandler
 {

@@ -21,6 +21,24 @@ public partial class Room2 : ExamineHandler
     private const string FireOutFlag = "difference_fire_out";
     private const string DifferenceScenePath = "res://scenes/world/difference_investigation.tscn";
 
+    // The little door key, set down on the table where the letter
+    // lived once the other room has been remembered right. It lives
+    // HERE, on the room root, on purpose: its first home was a child
+    // sprite of the globe's Examine1 layer, and the examine
+    // machinery hides that layer (children inherit the alpha) and
+    // frees it on restore — the key was being unmade by the very
+    // system that let Mara look at the globe. The room root is
+    // never layered, hidden or freed, so the key simply stays.
+    private const string SolvedFlag = "difference_room2_solved";
+    private const string DoorKeyFlag = "item_hall_key_door";
+    private const string DoorKeyIconPath = "res://assets/images/core/items/door_key.png";
+    private Sprite2D _doorKeySprite;
+    private bool _takingDoorKey;
+
+    private bool DoorKeyWaiting =>
+        (GameState.Instance?.HasFlag(SolvedFlag) ?? false) &&
+        !(GameState.Instance?.HasFlag(DoorKeyFlag) ?? false);
+
     private bool _windPlaying;
 
     // The wind, made visible: pale streaks that tear left-to-right
@@ -34,6 +52,10 @@ public partial class Room2 : ExamineHandler
 
     public override void _Ready()
     {
+        // This root never calls base._Ready (it is not one of the
+        // room's examine layers), so say out loud that the key's
+        // click must reach _Input here.
+        SetProcessInput(true);
         _rng.Randomize();
         BuildWindStreaks();
         // The wind beat first, before any legacy reveal bookkeeping:
@@ -43,6 +65,9 @@ public partial class Room2 : ExamineHandler
         // fault alone was enough to swallow the wind whole.)
         if (GameState.Instance?.HasFlag(WindPendingFlag) == true)
             _ = PlayWindBeatAsync();
+
+        if (DoorKeyWaiting)
+            LayDoorKeyOnTable();
 
         if (Globals.Instance != null && Globals.SHARDS_COLLECTED[1])
         {
@@ -87,19 +112,35 @@ public partial class Room2 : ExamineHandler
             // sound, streaks, the bubble itself shivering — and the
             // flames are the first thing it takes.
             _ = FireGustAsync();
-            await Dialogue.ShowText(this, "WHOOSH—", 2.4f, 576f, 324f, fontSize: 40);
+            await Dialogue.ShowText(this, "WHOOSH—", 2.0f, 576f, 324f, fontSize: 40);
             if (!StillHere())
                 return;
 
-            // The words are still trembling when she answers them.
-            Dialogue.Gust(1.3f, 0.55f);
-            await Dialogue.ShowText(this,
-                "—the fire. Gone, like a hand closed over it. The curtains are still swinging and there is no— all right. All right. Wherever this goes, I know what this room is supposed to look like. I have it on paper.",
-                5.5f, 576f, 324f, fontSize: 24);
+            // Nothing said about the fire. The eyes have said it:
+            // the fire is simply out, the way it happens in life —
+            // no line stands between the wind and the dark. A held
+            // breath in a fireless room… and then it comes again.
+            await WaitSeconds(0.85f);
+            if (!StillHere())
+                return;
+            AudioManager.Play(Sfx.WindGust, -4f, 0.85f);
+            Dialogue.Gust(1.2f, 1.05f);
+            _gustLeft = 1.7f;
+            foreach (var streak in _windStreaks)
+            {
+                if (GodotObject.IsInstanceValid(streak))
+                {
+                    streak.Position = new Vector2(
+                        _rng.RandfRange(-260f, 500f), _rng.RandfRange(36f, 580f));
+                    streak.Visible = true;
+                }
+            }
+            await WaitSeconds(0.45f);
             if (!StillHere())
                 return;
 
-            // Only now does the dark get the rest of the room.
+            // Straight to black this time — the second gust takes
+            // the rest of the light with it, all at once.
             var dark = new ColorRect
             {
                 Color = new Color(0, 0, 0, 0),
@@ -111,8 +152,11 @@ public partial class Room2 : ExamineHandler
             AddChild(dark);
             var fade = CreateTween();
             fade.TweenProperty(dark, "color", new Color(0, 0, 0, 1),
-                Settings.ReduceMotionOrDefault() ? 0.35f : 0.9f);
+                Settings.ReduceMotionOrDefault() ? 0.2f : 0.14f);
             await ToSignal(fade, Tween.SignalName.Finished);
+            if (!StillHere())
+                return;
+            await WaitSeconds(0.5f);
             if (!StillHere())
                 return;
 
@@ -173,6 +217,7 @@ public partial class Room2 : ExamineHandler
     public override void _Process(double delta)
     {
         base._Process(delta);
+        UpdateDoorKeyProp();
         if (_gustLeft <= 0f)
             return;
 
@@ -197,6 +242,107 @@ public partial class Room2 : ExamineHandler
             var color = streak.Color;
             color.A = 0.17f * envelope;
             streak.Color = color;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // The little door key on the table (see the constants above for
+    // why it lives on the room root and nowhere near a layer).
+    // ------------------------------------------------------------------
+
+    private void LayDoorKeyOnTable()
+    {
+        var texture = GD.Load<Texture2D>(DoorKeyIconPath);
+        if (texture == null)
+            return;
+
+        _doorKeySprite = new Sprite2D
+        {
+            Name = "LittleDoorKeyProp",
+            Texture = texture,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            // Over every painted layer in the room, under the HUD.
+            ZIndex = 12,
+        };
+        // Aim for a key about 84 px tall on screen whatever the
+        // nesting says (the icon sheet is 512 px).
+        Vector2 parentScale = GlobalTransform.Scale;
+        float s = 84f / 512f / Mathf.Max(0.01f, Mathf.Abs(parentScale.X));
+        _doorKeySprite.Scale = Vector2.One * s;
+        AddChild(_doorKeySprite);
+        // On the little table itself, where the letter lived its
+        // ordinary life — the same spot the crumbling room keeps
+        // losing (DifferenceInvestigation's VanishedLetter).
+        _doorKeySprite.GlobalPosition = new Vector2(606, 456);
+    }
+
+    private void UpdateDoorKeyProp()
+    {
+        if (_doorKeySprite == null)
+            return;
+        if (!DoorKeyWaiting)
+        {
+            _doorKeySprite.QueueFree();
+            _doorKeySprite = null;
+            return;
+        }
+        float pulse = Settings.ReduceMotionOrDefault()
+            ? 1f
+            : 0.86f + 0.14f * (float)System.Math.Sin(Time.GetTicksMsec() / 240.0);
+        _doorKeySprite.Modulate = new Color(pulse, pulse, pulse);
+    }
+
+    public override void _Input(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
+            mouseEvent.ButtonIndex == MouseButton.Left &&
+            !Dialogue.IsInputBlocked && !Dialogue.IsShowing && !_takingDoorKey &&
+            _doorKeySprite != null && DoorKeyWaiting &&
+            new Rect2(_doorKeySprite.GlobalPosition - new Vector2(48, 48),
+                new Vector2(96, 96)).HasPoint(GetGlobalMousePosition()))
+        {
+            GetTree().Root.SetInputAsHandled();
+            _ = TakeDoorKeyAsync();
+            return;
+        }
+
+        base._Input(@event);
+    }
+
+    private async Task TakeDoorKeyAsync()
+    {
+        var gs = GameState.Instance;
+        if (_takingDoorKey || gs == null || gs.HasFlag(DoorKeyFlag))
+            return;
+        _takingDoorKey = true;
+        try
+        {
+            Vector2 anchor = _doorKeySprite?.GlobalPosition ?? new Vector2(606, 456);
+            AudioManager.Play(Sfx.KeyType, -8f, 0.95f);
+            await Dialogue.ShowText(this,
+                "A key. Not a metaphor wearing key-coloured paint. Iron — and its bow is a little door, down to a knob too small for any hand but memory's.",
+                5.5f, anchor.X, anchor.Y, fontSize: 24);
+            if (!StillHere())
+                return;
+            await Dialogue.ShowText(this,
+                "He taped it behind an evening and trusted I'd remember the room right. …I did, Dad. Just barely, with the ceiling coming down. But I did.",
+                5.5f, anchor.X, anchor.Y, fontSize: 24);
+            if (!StillHere())
+                return;
+
+            gs.SetFlag(DoorKeyFlag, save: false);
+            gs.UnlockClue("hall_key_door");
+            gs.Toast("Little door key — kept in Mara's bag (B). Somewhere ahead is a door with a little door stamped above its middle keyhole.");
+            gs.SaveGame("little door key taken");
+            if (_doorKeySprite != null)
+            {
+                _doorKeySprite.QueueFree();
+                _doorKeySprite = null;
+            }
+        }
+        finally
+        {
+            _takingDoorKey = false;
         }
     }
 

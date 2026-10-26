@@ -197,6 +197,9 @@ public partial class JarCloseup : Node2D
                 await Say("The last jar. Its seal has had twelve years to become one with the glass. But I watched Mum do this a hundred times — hairpin under the rubber, worked round and round, tapped true every time it crossed where the rubber gives. Seven of those, usually. She counted under her breath.");
                 if (!StillHere())
                     return;
+                await Say("Wait — under the folded paper. Is that—? Something round. Metal. A ring, sitting in the dark beneath the tape like it was put there to be found second. All right. Whatever you are, you're why this jar stayed sealed.");
+                if (!StillHere())
+                    return;
                 // Physically out of the bag before anything starts:
                 // her line, then the pin travelling up to the seal.
                 AudioManager.Play(Sfx.PhotoPickup, -12f, 0.9f);
@@ -209,6 +212,9 @@ public partial class JarCloseup : Node2D
             else
             {
                 await Say("The last jar. Whichever of Ida's spiders this one held, the seal has had twelve years to become one with the glass.");
+                if (!StillHere())
+                    return;
+                await Say("Wait — under the folded paper. Is that—? Something round. Metal. A ring, sitting in the dark beneath the tape like it was put there to be found second. All right, jar. Let's see how stubborn twelve years made you.");
             }
             if (!StillHere())
                 return;
@@ -395,7 +401,7 @@ public partial class JarCloseup : Node2D
             _lidLift = Mathf.MoveToward(_lidLift, 1f, dt / 0.5f);
 
         if (_pinIntro < 1f)
-            _pinIntro = Mathf.MoveToward(_pinIntro, 1f, dt / 1.5f);
+            _pinIntro = Mathf.MoveToward(_pinIntro, 1f, dt / 2.1f);
         if (_state == JarState.Sealed && _hasHairpin && _tapReady && _pinIntro >= 1f && !_busy &&
             !Dialogue.IsShowing && !Dialogue.IsInputBlocked && !GetTree().Paused &&
             !(GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()))
@@ -821,6 +827,14 @@ public partial class JarCloseup : Node2D
     {
         if (!TapeTaken)
         {
+            // Under the folded paper, something round: the circle
+            // key shows one cold edge of itself below the tape's
+            // hem — enough to be pointed at, not enough to be had.
+            if (!KeyTaken && _circleKeyTexture != null)
+            {
+                DrawTextureRect(_circleKeyTexture, new Rect2(504, 322, 76, 76), false,
+                    new Color(0.82f, 0.8f, 0.74f, 0.92f));
+            }
             // The folded name tape, pale on top of the dark.
             var tape = TapeRect;
             DrawRect(tape, new Color(0.9f, 0.85f, 0.7f, 0.98f), true);
@@ -848,6 +862,29 @@ public partial class JarCloseup : Node2D
         }
     }
 
+    /// <summary>She has her bag at her hip the whole evening; for the
+    /// seconds the hairpin is LEAVING it, the bag gets to exist on
+    /// screen — a worn dark shape bottom-right, flap open, so the
+    /// taking-out reads as a taking-out and not as an appearing.</summary>
+    private void DrawBagProp(float open01)
+    {
+        var body = new Rect2(942, 580, 150, 62);
+        DrawRect(new Rect2(body.Position + new Vector2(4, 5), body.Size),
+            new Color(0, 0, 0, 0.4f), true);
+        DrawRect(body, new Color(0.16f, 0.1f, 0.07f, 0.98f), true);
+        DrawRect(body, new Color(0.42f, 0.3f, 0.18f, 0.9f), false, 2f);
+        // The strap, going up out of frame toward her shoulder.
+        DrawLine(new Vector2(1078, 586), new Vector2(1128, 470),
+            new Color(0.2f, 0.13f, 0.09f, 0.95f), 10f, true);
+        // The flap, folded back further as the pin comes out.
+        float flapLift = 26f * open01;
+        var flap = new Rect2(950, 556 - flapLift * 0.4f, 134, 30 - flapLift * 0.35f);
+        DrawRect(flap, new Color(0.22f, 0.14f, 0.09f, 0.98f), true);
+        DrawRect(flap, new Color(0.5f, 0.37f, 0.22f, 0.85f), false, 1.5f);
+        // The clasp catching what light there is.
+        DrawRect(new Rect2(1006, 600, 22, 14), new Color(0.72f, 0.56f, 0.3f, 0.95f), true);
+    }
+
     private void DrawWorkingLine()
     {
         // The hairpin IS the working line now: no separate hand, no
@@ -869,11 +906,15 @@ public partial class JarCloseup : Node2D
         if (_pinIntro < 1f)
         {
             float eased = _pinIntro * _pinIntro * (3f - 2f * _pinIntro);
-            Vector2 bagPos = new(1024f, 716f);
+            // Her bag hangs bottom-right, ON screen — the pin's
+            // whole errand happens where eyes can follow it: first
+            // it rises clear of the bag's mouth, then it travels.
+            DrawBagProp(Mathf.Clamp01(_pinIntro * 3f));
+            Vector2 bagPos = new(1008f, 566f);
             pinPos = bagPos.Lerp(needlePos, eased);
-            pinPos.Y -= Mathf.Sin(eased * Mathf.Pi) * 46f;
+            pinPos.Y -= Mathf.Sin(eased * Mathf.Pi) * 52f;
             pinAngle = Mathf.Lerp(0.3f, needleAngle, eased);
-            pinSize = Mathf.Lerp(104f, 152f, eased);
+            pinSize = Mathf.Lerp(118f, 152f, eased);
         }
         else
         {
