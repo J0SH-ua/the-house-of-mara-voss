@@ -123,6 +123,14 @@ public partial class Room5Final : MemoryRoomBase
     private static readonly Rect2 WardrobePortalRect = new(968, 118, 152, 428);
 
     protected override string RoomName => "Room5";
+
+    /// <summary>The room may go sealed-quiet once she's done with
+    /// it; its two thresholds never do. The wardrobe is a door to
+    /// October and the low vent is the way under the house — both
+    /// stay enterable on every single visit, which errands to the
+    /// garden and the cellar rather depend on.</summary>
+    protected override bool HotspotSealedException(Hotspot hotspot) =>
+        hotspot != null && (hotspot.Id == "Wardrobe" || hotspot.Id == "LowVent");
     protected override string BackgroundPath => "res://assets/images/bgs/Room_5_BG.png";
 
     protected override IEnumerable<Hotspot> BuildHotspots()

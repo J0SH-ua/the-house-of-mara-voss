@@ -17,9 +17,12 @@ using Godot;
 /// Each lock is a sequence of pin layers with its own hidden sweet
 /// spot. A layer turned all the way home sets with the unlocked
 /// click of a little lock inside the lock, and stays set; deeper
-/// layers sit narrower. And the picks do not break — Mara never once
-/// saw her father break one, so in her memory of his hands they
-/// simply don't. Force only makes the pick tremble and complain.
+/// layers sit narrower. And the picks *break*: the roll holds
+/// seven, forcing a bind until the trembling tops out snaps one,
+/// and every snap costs Mara a little more of her nerve. Break
+/// them all and the panic takes the room — unless she has Clarity
+/// saved to spend the whole moment away and wake back at the
+/// flashlight, remembering nothing. That is what saving it is for.
 ///
 /// The scene serves both locks in the under-house chain. Choice of
 /// target arrives through saved transient flags (with a progress-based
@@ -44,6 +47,8 @@ public partial class LockpickPuzzle : Node2D
     {
         Intro,
         Picking,
+        Broken,
+        Panic,
         Success,
         Leaving,
     }
@@ -54,6 +59,32 @@ public partial class LockpickPuzzle : Node2D
     [
         "There. Did you hear that? The little clean sound. Stay there.",
         "That's not the knock. That's the pins. Easy. Easy.",
+    ];
+
+    // One for each of the seven, in the order they go. The seventh
+    // has no line here — the panic speaks for it.
+    private static readonly string[] SnapLines =
+    [
+        "—the pick. It— no. No no. Dad's pick just snapped in my hands. Forty years he's had these. Okay. Okay. There are more in the roll. There are more.",
+        "Another one. My hands won't— stop shaking first, then pick. That's the order, Mara. Hands first.",
+        "Three. I'm forcing it. He told me never to push a sound I didn't like and I pushed it anyway—",
+        "Four gone. The whole of my childhood fits in this roll and I'm spending it like loose change. Breathe. Breathe.",
+        "Five. They feel like they're breaking easier. They aren't. It's not the steel getting weaker. It's the hands.",
+        "Six— God. One left. One. If this one goes I can't open anything ever again in this house— stop. Stop. Slow down. His voice. Slow.",
+    ];
+
+    private static readonly Rect2 RewindRect = new(216, 468, 350, 54);
+    private static readonly Rect2 LetGoRect = new(586, 468, 350, 54);
+    private const float PanicSeconds = 10f;
+    private const string KitchenCabinetScenePath = "res://scenes/world/kitchen_cabinet.tscn";
+
+    // The screen's own glass, giving up while the choice runs out.
+    private static readonly Vector2[][] PanicCracks =
+    [
+        [new Vector2(576, -8), new Vector2(548, 96), new Vector2(590, 190), new Vector2(552, 290), new Vector2(588, 392), new Vector2(566, 500)],
+        [new Vector2(-8, 260), new Vector2(110, 290), new Vector2(206, 262), new Vector2(306, 298), new Vector2(398, 274)],
+        [new Vector2(1160, 380), new Vector2(1040, 356), new Vector2(944, 390), new Vector2(850, 362), new Vector2(764, 394)],
+        [new Vector2(240, 656), new Vector2(284, 546), new Vector2(252, 448), new Vector2(296, 356)],
     ];
 
     private Texture2D _background;
@@ -80,6 +111,12 @@ public partial class LockpickPuzzle : Node2D
     private ulong _lastBindSoundMsec;
     private bool _leaveCursorOwned;
     private PickState _state = PickState.Intro;
+    private float _panicLeft;
+    private float _panicRumbleTimer;
+    private bool _panicDecided;
+    private Label _rewindLabel;
+    private Label _letGoLabel;
+    private readonly RandomNumberGenerator _rng = new();
 
     public override void _Ready()
     {
@@ -91,6 +128,7 @@ public partial class LockpickPuzzle : Node2D
             (gs.HasFlag("lockpick_target_trunk") ||
              (!gs.HasFlag("lockpick_target_vent") && gs.HasFlag("room5_vent_open")));
         _hasFineWrench = gs?.HasFlag("item_fine_tension_wrench") ?? false;
+        _rng.Randomize();
         BuildLayers();
         _lastPickTickBand = Mathf.RoundToInt(_pickDegrees / 4f);
 
@@ -175,7 +213,7 @@ public partial class LockpickPuzzle : Node2D
             new Vector2(326, 18), new Vector2(500, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(
-            "Mouse — seat the pick (it follows you)      Hold A — turn the lock\nHow far it turns before it shakes says how close you are. His picks don't break.",
+            "Mouse — seat the pick (it follows you)      Hold A — turn the lock\nHow far it turns before it shakes says how close you are. Force a bind and the pick snaps — she has seven.",
             new Vector2(276, 58), new Vector2(600, 62), 20,
             new Color(0.9f, 0.86f, 0.76f, 0.94f));
         _statusLabel = MakeLabel(string.Empty,
@@ -184,6 +222,14 @@ public partial class LockpickPuzzle : Node2D
         _leaveLabel = MakeLabel("Put the tools away",
             LeaveRect.Position, LeaveRect.Size, 20,
             new Color(0.95f, 0.88f, 0.72f, 0.97f));
+        _rewindLabel = MakeLabel(string.Empty,
+            RewindRect.Position, RewindRect.Size, 21,
+            new Color(0.97f, 0.93f, 0.82f, 0.98f));
+        _letGoLabel = MakeLabel("Let it take me",
+            LetGoRect.Position, LetGoRect.Size, 21,
+            new Color(0.94f, 0.88f, 0.78f, 0.98f));
+        _rewindLabel.Visible = false;
+        _letGoLabel.Visible = false;
     }
 
     private Label MakeLabel(string text, Vector2 position, Vector2 size, int fontSize, Color color)
@@ -238,9 +284,27 @@ public partial class LockpickPuzzle : Node2D
             }
             if (!StillHere())
                 return;
-            await Say("And don't fret for the picks. I held the lamp for him half my childhood and never once saw one break. In here, they remember that.");
+            await Say("Seven picks in the roll. He oiled them like they were alive, and they'll take a lot — but force one while it's binding and even his steel remembers it can break. So: don't push a sound I don't like. His words. I'm going to try and deserve them.");
             if (!StillHere())
                 return;
+
+            if (gs != null && gs.PicksLeft <= 0)
+            {
+                // A gathered memory gathers the small breakages too;
+                // if she has somehow arrived with an empty roll, the
+                // house has already put it back together for her.
+                gs.RestoreAllPicks("the roll was whole again when she opened it");
+                await Say("Seven. All seven lying whole in their pockets, like the breaking got gathered back along with everything else. …All right. I won't waste that twice.");
+                if (!StillHere())
+                    return;
+            }
+            else if (gs != null && gs.BrokenPickCount > 0)
+            {
+                await Say($"{gs.PicksLeft} sound picks left in the roll. The broken ones are still in their pockets. I keep them there so my hands remember what forcing costs.");
+                if (!StillHere())
+                    return;
+            }
+
             _state = PickState.Picking;
             UpdateStatus();
         }
@@ -267,6 +331,28 @@ public partial class LockpickPuzzle : Node2D
         // This handler exists only for the drawn "put the tools away"
         // control. Waiting for unhandled input keeps Bag, Journal, Pause
         // and navigation ordinary buttons over the lock close-up.
+        if (_state == PickState.Panic)
+        {
+            if (GetTree().Paused || Dialogue.IsShowing || _panicDecided)
+                return;
+            if (@event is InputEventMouseButton panicClick &&
+                panicClick.ButtonIndex == MouseButton.Left && panicClick.Pressed)
+            {
+                if (RewindRect.HasPoint(panicClick.Position))
+                {
+                    GetViewport().SetInputAsHandled();
+                    _ = ChooseRewindAsync();
+                }
+                else if (LetGoRect.HasPoint(panicClick.Position))
+                {
+                    GetViewport().SetInputAsHandled();
+                    _panicDecided = true;
+                    _ = FallToShatterAsync();
+                }
+            }
+            return;
+        }
+
         if (_state != PickState.Picking || GetTree().Paused || Dialogue.IsShowing)
             return;
 
@@ -286,6 +372,27 @@ public partial class LockpickPuzzle : Node2D
 
         bool blocked = GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen());
+
+        // The panic runs its own ten seconds while the screen goes.
+        if (_state == PickState.Panic && !blocked && !_panicDecided)
+        {
+            _panicLeft -= dt;
+            _panicRumbleTimer -= dt;
+            if (_panicRumbleTimer <= 0f)
+            {
+                _panicRumbleTimer = _rng.RandfRange(0.9f, 1.6f);
+                AudioManager.Play(Sfx.CrumbleRumble, -9f, _rng.RandfRange(0.75f, 0.95f));
+                AudioManager.Play(Sfx.ScreenCrack3, -13f, _rng.RandfRange(0.8f, 1.1f));
+            }
+            if (_panicLeft <= 0f)
+            {
+                _panicDecided = true;
+                _ = FallToShatterAsync();
+            }
+            QueueRedraw();
+            return;
+        }
+
         if (_state != PickState.Picking || blocked)
         {
             _binding = false;
@@ -337,6 +444,14 @@ public partial class LockpickPuzzle : Node2D
             else
             {
                 _stress = Mathf.MoveToward(_stress, 0f, 1.8f * dt);
+            }
+
+            // Forced past the trembling's top, his steel remembers
+            // what steel does.
+            if (_binding && _stress >= 0.999f)
+            {
+                SnapPick();
+                return;
             }
 
             if (error <= tolerance)
@@ -430,6 +545,169 @@ public partial class LockpickPuzzle : Node2D
             Sfx.LockpickTick,
             -18f + closeness * 5f,
             0.76f + closeness * 0.42f);
+    }
+
+    // ------------------------------------------------------- the breaking
+
+    private void SnapPick()
+    {
+        if (_state != PickState.Picking)
+            return;
+        _state = PickState.Broken;
+        _binding = false;
+        _stress = 0f;
+        _plugDegrees = CurrentLayerStart;
+
+        var gs = GameState.Instance;
+        gs?.RegisterPickBroken();
+        int broken = gs?.BrokenPickCount ?? 1;
+        AudioManager.Play(Sfx.ScreenCrack1, -4f, 1.1f);
+        AudioManager.Play(Sfx.LockpickTick, -6f, 0.45f);
+        // Every snap is a small panic, and the house keeps count.
+        gs?.AddCorruption(2);
+        UpdateStatus();
+        QueueRedraw();
+        _ = SnapBeatAsync(broken);
+    }
+
+    private async Task SnapBeatAsync(int broken)
+    {
+        Dialogue.BeginInputBlock();
+        try
+        {
+            await WaitSeconds(0.45f);
+            if (!StillHere())
+                return;
+
+            var gs = GameState.Instance;
+            if ((gs?.PicksLeft ?? 1) <= 0)
+            {
+                BeginPanic();
+                return;
+            }
+
+            await Say(SnapLines[Mathf.Min(broken - 1, SnapLines.Length - 1)]);
+            if (!StillHere())
+                return;
+            _state = PickState.Picking;
+            UpdateStatus();
+            QueueRedraw();
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+    }
+
+    /// <summary>Seven gone. The room starts coming apart at the
+    /// glass, and she has ten seconds to decide what her saved
+    /// Clarity was for.</summary>
+    private void BeginPanic()
+    {
+        _state = PickState.Panic;
+        _panicLeft = PanicSeconds;
+        _panicRumbleTimer = 0.2f;
+        _panicDecided = false;
+        AudioManager.Play(Sfx.ScreenCrack2, -3f, 0.8f);
+        AudioManager.Play(Sfx.CrumbleRumble, -6f, 0.8f);
+        Dialogue.Gust(2.2f, 1.1f);
+
+        var gs = GameState.Instance;
+        int clarity = gs?.ClarityCount ?? 0;
+        if (_titleLabel != null)
+            _titleLabel.Text = "Seven. All seven.";
+        if (_helpLabel != null)
+        {
+            _helpLabel.Text = clarity > 0
+                ? "Her breath goes. The glass goes. Everything goes — unless the Clarity she saved can buy the whole moment back."
+                : "Her breath goes. The glass goes. And there is no Clarity left to buy any of it back with.";
+        }
+        if (_rewindLabel != null)
+        {
+            _rewindLabel.Text = clarity > 0
+                ? $"Spend all my Clarity ({clarity}) — go back"
+                : "No Clarity left to spend";
+            _rewindLabel.Visible = true;
+        }
+        if (_letGoLabel != null)
+            _letGoLabel.Visible = true;
+        if (_leaveLabel != null)
+            _leaveLabel.Visible = false;
+        UpdateStatus();
+        QueueRedraw();
+        _ = PanicCryAsync();
+    }
+
+    private async Task PanicCryAsync()
+    {
+        // Short, and said over the counting — the ten seconds do
+        // not politely wait for her to finish the sentence.
+        await Say("No— no no no, not the last one, not Dad's last— I can't open anything, I'm stuck in the walls of this—");
+    }
+
+    private async Task ChooseRewindAsync()
+    {
+        if (_panicDecided || _state != PickState.Panic)
+            return;
+        var gs = GameState.Instance;
+        if (gs == null || gs.ClarityCount <= 0)
+        {
+            GameState.Instance?.Toast("Nothing left to spend. That's why it mattered to keep some.");
+            return;
+        }
+        _panicDecided = true;
+        Dialogue.BeginInputBlock();
+        try
+        {
+            if (_rewindLabel != null) _rewindLabel.Visible = false;
+            if (_letGoLabel != null) _letGoLabel.Visible = false;
+            AudioManager.Play(Sfx.WordChime, -7f, 0.7f);
+            AudioManager.Play(Sfx.BreathSlow, -9f, 0.8f);
+            await Say("Back. Take it all — every clear thought I've been saving, take them — just give me back the bit where my hands hadn't—");
+            if (!StillHere())
+                return;
+
+            gs.SpendAllClarityForRewind();
+            gs.RestoreAllPicks("time rewound before the breaking");
+            ClearTargetFlags(gs);
+            // She does not remember the attempt. That is the mercy
+            // and the price of it. The cabinet will ask her the
+            // rest ("I feel like I've done this before…").
+            gs.SetFlag("lockpick_rewound", save: false);
+            gs.SaveGame("clarity rewind from the lock");
+            SceneManager.ChangeScene(KitchenCabinetScenePath);
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+    }
+
+    private async Task FallToShatterAsync()
+    {
+        if (_state != PickState.Panic)
+            return;
+        _state = PickState.Leaving;
+        Dialogue.BeginInputBlock();
+        try
+        {
+            if (_rewindLabel != null) _rewindLabel.Visible = false;
+            if (_letGoLabel != null) _letGoLabel.Visible = false;
+            AudioManager.Play(Sfx.ScreenCrack1, -3f, 0.8f);
+            await Say("—I can't— Dad, I can't— the walls—");
+        }
+        finally
+        {
+            Dialogue.EndInputBlock();
+        }
+        if (!StillHere())
+            return;
+
+        // The memory does what strained memories do in this house.
+        // It shatters, it is gathered — and the gathering puts her
+        // father's roll back together too (GameState sees to it),
+        // so the lock can be faced again rather than never.
+        GameState.Instance?.AddCorruption(GameState.ShatterThreshold);
     }
 
     private async Task SucceedAsync()
@@ -526,11 +804,14 @@ public partial class LockpickPuzzle : Node2D
         if (_statusLabel == null)
             return;
         string toolNote = _hasFineWrench ? " · fine wrench" : string.Empty;
+        int picks = GameState.Instance?.PicksLeft ?? GameState.LockpickTotal;
         _statusLabel.Text = _state switch
         {
             PickState.Success => "It turns.",
+            PickState.Panic => "—",
+            _ when _binding && _stress > 0.55f => "It's going to snap — LET GO.",
             _ when _binding => "It binds there. Let go, breathe, try a hair to one side.",
-            _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set{toolNote} · the pick will hold",
+            _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set{toolNote} · {picks} of {GameState.LockpickTotal} picks sound",
         };
     }
 
@@ -588,6 +869,7 @@ public partial class LockpickPuzzle : Node2D
         DrawPlugAndTools();
         DrawStress();
         DrawLayerPips();
+        DrawPickRoll();
 
         // A held-breath vignette, in plain strips so it stays in the
         // game's chunky visual language.
@@ -595,6 +877,60 @@ public partial class LockpickPuzzle : Node2D
         DrawRect(new Rect2(0, 626, 1152, 22), new Color(0, 0, 0, 0.28f), true);
         DrawRect(new Rect2(0, 0, 24, 648), new Color(0, 0, 0, 0.22f), true);
         DrawRect(new Rect2(1128, 0, 24, 648), new Color(0, 0, 0, 0.22f), true);
+
+        if (_state == PickState.Panic)
+            DrawPanic();
+    }
+
+    /// <summary>The panic itself: a red held breath over everything,
+    /// the screen's glass walking apart segment by segment, the
+    /// two ways out of the next ten seconds, and the seconds.</summary>
+    private void DrawPanic()
+    {
+        var screen = new Rect2(0, 0, 1152, 648);
+        float gone = 1f - Mathf.Clamp(_panicLeft / PanicSeconds, 0f, 1f);
+        float pulse = Settings.ReduceMotionOrDefault()
+            ? 0.3f
+            : 0.3f + 0.12f * (float)Math.Sin(Time.GetTicksMsec() / 120.0);
+        DrawRect(screen, new Color(0.3f, 0.02f, 0.02f, 0.24f + 0.3f * gone), true);
+        var edge = new Color(0.55f, 0.05f, 0.04f, pulse);
+        DrawRect(new Rect2(0, 0, 1152, 60), edge, true);
+        DrawRect(new Rect2(0, 588, 1152, 60), edge, true);
+        DrawRect(new Rect2(0, 0, 60, 648), edge, true);
+        DrawRect(new Rect2(1092, 0, 60, 648), edge, true);
+
+        var bright = new Color(0.93f, 0.96f, 1f, 0.25f + 0.6f * gone);
+        var faint = new Color(0.93f, 0.96f, 1f, 0.08f + 0.25f * gone);
+        var twin = new Vector2(1.5f, 1.5f);
+        foreach (var chain in PanicCracks)
+        {
+            int segments = Mathf.Clamp(
+                Mathf.FloorToInt(gone * (chain.Length - 1) + 0.001f), 0, chain.Length - 1);
+            for (int i = 0; i < segments; i++)
+            {
+                DrawLine(chain[i] + twin, chain[i + 1] + twin, faint, 2.4f, true);
+                DrawLine(chain[i], chain[i + 1], bright, 1.2f, true);
+            }
+        }
+
+        bool canRewind = (GameState.Instance?.ClarityCount ?? 0) > 0;
+        DrawPanicChoice(RewindRect, canRewind);
+        DrawPanicChoice(LetGoRect, true);
+
+        // The ten seconds, draining red above the choice.
+        var track = new Rect2(316, 446, 520, 8);
+        DrawRect(track, new Color(1f, 0.92f, 0.68f, 0.15f), true);
+        DrawRect(new Rect2(track.Position,
+                new Vector2(track.Size.X * Mathf.Clamp(_panicLeft / PanicSeconds, 0f, 1f), track.Size.Y)),
+            new Color(1f, 0.36f, 0.26f, 0.95f), true);
+    }
+
+    private void DrawPanicChoice(Rect2 rect, bool live)
+    {
+        bool hover = live && rect.HasPoint(GetGlobalMousePosition());
+        DrawRect(rect, new Color(0.05f, 0.04f, 0.03f, live ? (hover ? 0.95f : 0.86f) : 0.6f), true);
+        DrawRect(rect, new Color(0.82f, 0.68f, 0.45f, live ? (hover ? 1f : 0.65f) : 0.3f),
+            false, hover ? 2.5f : 1.5f);
     }
 
     private void DrawLeaveControl()
@@ -674,6 +1010,20 @@ public partial class LockpickPuzzle : Node2D
         Vector2 shaftEnd = LockCenter + direction * 176f + jitter;
         Vector2 handleEnd = LockCenter + direction * 258f + jitter;
 
+        if (_state == PickState.Broken || _state == PickState.Panic)
+        {
+            // The snap, held a moment too long: a stub in her hand,
+            // the working end already somewhere on the floor.
+            Vector2 stubEnd = LockCenter + direction * 92f;
+            DrawLine(stubEnd, handleEnd, darkSteel, 6f, true);
+            DrawLine(stubEnd, handleEnd, steel, 3.5f, true);
+            DrawLine(stubEnd, stubEnd + side * 6f - direction * 7f, steel, 3f, true);
+            DrawLine(shaftEnd, handleEnd, new Color(0.16f, 0.12f, 0.09f), 15f, true);
+            Vector2 frag = LockCenter + new Vector2(30, 58);
+            DrawLine(frag, frag + new Vector2(15, 9), steel, 3f, true);
+            return;
+        }
+
 
 
         DrawLine(tip, shaftEnd, darkSteel, 6f, true);
@@ -729,6 +1079,32 @@ public partial class LockpickPuzzle : Node2D
                 : new Color(0.9f, 0.82f, 0.64f, current ? pulse : 0.38f);
             DrawLine(LockCenter + direction * 79f, LockCenter + direction * 91f,
                 tick, set || current ? 3f : 2f, true);
+        }
+    }
+
+    /// <summary>The roll, unrolled along the bottom right: seven
+    /// picks in their pockets, the broken ones drawn in two dim
+    /// pieces with the gap where the steel gave up.</summary>
+    private void DrawPickRoll()
+    {
+        int broken = GameState.Instance?.BrokenPickCount ?? 0;
+        var sound = new Color(0.88f, 0.78f, 0.5f, 0.95f);
+        var gone = new Color(0.55f, 0.5f, 0.44f, 0.55f);
+        DrawRect(new Rect2(986, 566, 150, 64), new Color(0.03f, 0.025f, 0.02f, 0.66f), true);
+        DrawRect(new Rect2(986, 566, 150, 64), new Color(0.72f, 0.58f, 0.34f, 0.45f), false, 1.5f);
+        for (int i = 0; i < GameState.LockpickTotal; i++)
+        {
+            float x = 1002f + i * 18f;
+            if (i < GameState.LockpickTotal - broken)
+            {
+                DrawLine(new Vector2(x, 576), new Vector2(x, 618), sound, 3f, true);
+                DrawLine(new Vector2(x, 576), new Vector2(x + 5, 570), sound, 2f, true);
+            }
+            else
+            {
+                DrawLine(new Vector2(x, 576), new Vector2(x, 592), gone, 2.5f, true);
+                DrawLine(new Vector2(x + 2, 600), new Vector2(x, 618), gone, 2.5f, true);
+            }
         }
     }
 

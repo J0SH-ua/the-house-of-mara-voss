@@ -94,6 +94,31 @@ public partial class KitchenCabinet : Node2D
             if (!StillHere())
                 return;
 
+            // A Clarity rewind lands here: back at the moment the
+            // torch came to hand, with no memory of the lock, the
+            // breaking, or the price — only the shape of having
+            // lost something, already fading.
+            var gsRewind = GameState.Instance;
+            if (gsRewind != null && gsRewind.HasFlag("lockpick_rewound"))
+            {
+                gsRewind.ClearFlag("lockpick_rewound", save: false);
+                _doorOpen = true;
+                _doorSwing = 1f;
+                if (_helpLabel != null)
+                    _helpLabel.Text = "Candles, matches, and a torch-shaped space. The cabinet has done its providing.";
+                await Say("…Huh.");
+                if (!StillHere())
+                    return;
+                await Say("I feel like I've done this before. This exact cupboard, this exact dark. Like I lost something small and steel and important — and the losing got… unhappened.");
+                if (!StillHere())
+                    return;
+                await Say("Nevermind. Torch in hand, picks in my pocket — seven, I just counted. Don't ask me why I counted. I need to open that vent. Slowly, this time. Like he taught me.");
+                if (!StillHere())
+                    return;
+                gsRewind.Toast("Back at the kitchen cabinet, certain she's stood here twice. The lock waits where she left it — and the roll is whole.");
+                return;
+            }
+
             if (FlashlightTaken)
             {
                 _doorOpen = true;

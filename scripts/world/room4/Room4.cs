@@ -353,7 +353,7 @@ public partial class Room4 : Node2D
 			AudioManager.Play(Sfx.KeyType, -12f, 1.2f);
 			await Dialogue.ShowText(this, "Under the keys is an oilcloth roll, tied twice. Dad's handwriting on the cloth: MARA DO NOT — and then, in smaller letters, — lose these.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
 			if (!GodotObject.IsInstanceValid(this)) return;
-			await Dialogue.ShowText(this, "His proper lockpicks. Slender steel, oiled and clean, each one in its pocket. I held the lamp while he opened half the street's doors with these. I was listening, even when I pretended I was only holding the light.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "His proper lockpicks. Seven of them. Slender steel, oiled and clean, each one in its pocket. I held the lamp while he opened half the street's doors with these. I was listening, even when I pretended I was only holding the light.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
 			if (!GodotObject.IsInstanceValid(this)) return;
 
 			gs.SetFlag("item_lockpick_set", save: false);

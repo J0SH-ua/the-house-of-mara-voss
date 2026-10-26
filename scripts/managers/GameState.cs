@@ -411,6 +411,9 @@ public partial class GameState : Node
         ["basement_negatives"] = ("Straight-on",
             "In the basement trunk, a tin of photograph negatives their mother never had printed. Held to the flashlight, Ida is looking straight into the camera in every one — not half-turned, not edited gentle by the house.\n\n" +
             "Mara cannot keep her that way. But for one breath she can know the straight-on face was real, and that the turning-away is only what twelve years have done to the remembering."),
+        ["negatives_cellar_frame"] = ("A map in reverse",
+            "One of the unprinted frames is not of the garden at all: their father in the cellar lamplight, hanging his claw hammer on the inside of the little tool cabinet's door.\\n\\n" +
+            "The negatives are the only pictures of the rooms as they were actually kept — which makes them, held to any light, a map. What the mending of a crossing needs sleeps on the inside of that door."),
         ["porch_447"] = ("The porch, at 4:47",
             "The light was on. The garden was empty. Between the garden and the last room there is a porch Mara has crossed a thousand times in the memory without ever stopping on it: the exact place where being late became being too late.\n\n" +
             "She called from the steps until her voice gave out. The house has been answering for Ida ever since."),
@@ -1747,6 +1750,10 @@ public partial class GameState : Node
 
         Globals.Instance.CORRUPTION_COUNT = 13;
         _shattered = false;
+        // The gathering takes the small breakages with it: a memory
+        // put back together puts her father's roll back together
+        // too, all seven picks lying whole in their pockets.
+        RestoreAllPicks("gathered after the shatter");
         AudioManager.Instance?.SetCorruption01(Corruption01);
         CorruptionChanged?.Invoke(Globals.Instance.CORRUPTION_COUNT, CurrentTier);
         if (ClarityCount < 2)
@@ -1787,6 +1794,63 @@ public partial class GameState : Node
         if (Globals.Instance.CLARITY_TOGGLE_COUNT > before && CollapseActive)
             EndCollapse(rescued: true);
         return Globals.Instance.CLARITY_TOGGLE_COUNT > before;
+    }
+
+    // ------------------------------------------------------------ lockpicks
+    // Her father's roll holds seven picks, and in this house his
+    // steel remembers it can break. Broken picks are run-wide: they
+    // only come back whole when time itself is rewound by Clarity,
+    // or when a shattered memory is gathered and takes the roll
+    // with it. This is what saving Clarity is *for*.
+
+    public const int LockpickTotal = 7;
+
+    public int BrokenPickCount
+    {
+        get
+        {
+            int count = 0;
+            for (int i = 1; i <= LockpickTotal; i++)
+            {
+                if (HasFlag($"lockpick_broken_{i}"))
+                    count++;
+            }
+            return count;
+        }
+    }
+
+    public int PicksLeft => LockpickTotal - BrokenPickCount;
+
+    public void RegisterPickBroken()
+    {
+        int next = BrokenPickCount + 1;
+        if (next <= LockpickTotal)
+            SetFlag($"lockpick_broken_{next}", save: false);
+    }
+
+    public void RestoreAllPicks(string reason)
+    {
+        for (int i = 1; i <= LockpickTotal; i++)
+            ClearFlag($"lockpick_broken_{i}", save: false);
+        Logger.Info($"[GameState] Lockpicks restored: {reason}.");
+    }
+
+    /// <summary>Spend every remaining Clarity charge on turning the
+    /// memory back. Deliberately silent to the collapse machinery:
+    /// this spend is what stands between Mara and the fall, not
+    /// what starts it. Returns how many charges were spent.</summary>
+    public int SpendAllClarityForRewind()
+    {
+        if (Globals.Instance == null)
+            return 0;
+        int spent = Globals.Instance.CLARITY_TOGGLE_COUNT;
+        if (spent <= 0)
+            return 0;
+        Globals.Instance.CLARITY_TOGGLE_COUNT = 0;
+        ClarifiesUsed += spent;
+        ClarityChanged?.Invoke(0);
+        ObjectiveChanged?.Invoke();
+        return spent;
     }
 
     // ------------------------------------------------------------- memory verbs

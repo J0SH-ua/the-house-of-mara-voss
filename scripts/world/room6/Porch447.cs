@@ -70,6 +70,18 @@ public partial class Porch447 : MemoryRoomBase
     private float _nauseaTimer = 5f;
     private float _nauseaLeft;
 
+    // And from the window onward she is doing two things at once:
+    // announcing herself the family's way, and keeping her own
+    // head. Steadiness drains while she works — faster while a
+    // symptom has her — and the only way back is breathing with
+    // the ring: SPACE as it swells. Empty the meter and the porch
+    // takes the stage out of her hands.
+    private float _steadiness = 0.85f;
+    private float _breathPhase;
+    private float _breathFlash;
+    private int _breathMisses;
+    private ulong _lastBreathMsec;
+
     private bool NauseaOn => _nauseaLeft > 0f || _sanity == SanityKind.Nausea;
 
     protected override string RoomName => "Porch447";
@@ -248,8 +260,10 @@ public partial class Porch447 : MemoryRoomBase
                 _windowTimer = 1.9f;
                 _steadyElapsed = 0f;
                 _windowCatches = 0;
+                _steadiness = 0.85f;
+                _breathMisses = 0;
                 _ritual = RitualStage.Window;
-                GameState.Instance?.Toast("Click the lit window while its light is steady — four times seen. Not in the flicker.");
+                GameState.Instance?.Toast("Click the lit window while its light is steady — four times seen. And breathe with the ring (SPACE as it swells) or the porch takes her steadiness with it.");
             }
             else if (next == RitualStage.Hold)
             {
@@ -260,8 +274,9 @@ public partial class Porch447 : MemoryRoomBase
                 _holdProgress = 0f;
                 _holdSlips = 0;
                 _holdWasPressed = false;
+                _steadiness = Mathf.Max(_steadiness, 0.7f);
                 _ritual = RitualStage.Hold;
-                GameState.Instance?.Toast("Press and HOLD with her hand inside the ring until it fills. However the porch sways.");
+                GameState.Instance?.Toast("Press and HOLD with her hand inside the ring until it fills — and keep breathing (SPACE). Two things at once, like coming home always was.");
             }
             else if (next == RitualStage.Done)
             {
@@ -363,11 +378,87 @@ public partial class Porch447 : MemoryRoomBase
         }
     }
 
+    private void RegisterBreath()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (now - _lastBreathMsec < 350)
+            return;
+        _lastBreathMsec = now;
+
+        float dist = Mathf.Abs(_breathPhase - 0.5f);
+        if (dist <= 0.09f)
+        {
+            // A true breath, taken at the top of the swell. It even
+            // talks the nausea down a little — breathe through it
+            // is not just something people say.
+            _steadiness = Mathf.Min(1f, _steadiness + 0.16f);
+            _breathFlash = 0.3f;
+            AudioManager.Play(Sfx.BreathSlow, -13f, 1.0f);
+            if (_nauseaLeft > 0.4f)
+                _nauseaLeft = 0.4f;
+        }
+        else if (dist <= 0.2f)
+        {
+            _steadiness = Mathf.Min(1f, _steadiness + 0.07f);
+            _breathFlash = 0.18f;
+            AudioManager.Play(Sfx.BreathSlow, -16f, 0.85f);
+        }
+        else
+        {
+            _steadiness = Mathf.Max(0.02f, _steadiness - 0.05f);
+            _breathMisses++;
+            AudioManager.Play(Sfx.BreathSlow, -15f, 0.62f);
+            if (_breathMisses % 3 == 0)
+                GameState.Instance?.Toast("Gasping isn't breathing. With the ring — as it swells.");
+        }
+        QueueRedraw();
+    }
+
+    private async Task FailBreathAsync()
+    {
+        if (_failing || _advancing)
+            return;
+        _failing = true;
+        try
+        {
+            AudioManager.Play(Sfx.CorruptionWhisper, -9f, 0.8f);
+            await Say("It comes up too fast — the porch tilts, her breath goes with it, and for one second the door is just a door on a house where nobody knows her. …Again. Breathe first. Announce second.", 5f, 23);
+            if (!GodotObject.IsInstanceValid(this) || !IsInsideTree())
+                return;
+            GameState.Instance?.AddCorruption(2);
+            if (_ritual == RitualStage.Window)
+                _windowCatches = 0;
+            else if (_ritual == RitualStage.Hold)
+            {
+                _holdProgress = 0f;
+                _holdSlips = 0;
+            }
+            _steadiness = 0.7f;
+            QueueRedraw();
+        }
+        finally
+        {
+            _failing = false;
+        }
+    }
+
     public override void _UnhandledInput(InputEvent @event)
     {
         if (!RitualActive || _failing || _advancing || GetTree().Paused ||
             Dialogue.IsShowing || Dialogue.IsInputBlocked)
             return;
+
+        // Breathing is the one thing her head never locks: SPACE,
+        // taken as the ring swells, is how she holds the second
+        // job together while her hands do the first.
+        if (@event is InputEventKey key && key.Pressed && !key.Echo &&
+            key.PhysicalKeycode == Key.Space)
+        {
+            GetViewport().SetInputAsHandled();
+            if (_ritual is RitualStage.Window or RitualStage.Hold)
+                RegisterBreath();
+            return;
+        }
         if (@event is not InputEventMouseButton mouse ||
             mouse.ButtonIndex != MouseButton.Left)
             return;
@@ -567,6 +658,20 @@ public partial class Porch447 : MemoryRoomBase
         {
             UpdateSanity(dt);
 
+            // The second job, from the window onward: keeping steady
+            // while announcing herself. The meter runs down under
+            // her own working nerves, faster while a symptom has
+            // her; only breathing with the ring puts it back.
+            _breathPhase = (float)((Time.GetTicksMsec() / 3400.0) % 1.0);
+            _breathFlash = Mathf.Max(0f, _breathFlash - dt);
+            if (_ritual is RitualStage.Window or RitualStage.Hold)
+            {
+                float drain = 0.022f + (_sanity != SanityKind.None || NauseaOn ? 0.03f : 0f);
+                _steadiness = Mathf.Max(0f, _steadiness - drain * dt);
+                if (_steadiness <= 0f)
+                    _ = FailBreathAsync();
+            }
+
             if (_ritual == RitualStage.Knock && _knockStarted &&
                 Time.GetTicksMsec() - _lastKnockMsec > 2300)
             {
@@ -704,6 +809,9 @@ public partial class Porch447 : MemoryRoomBase
             DrawCircle(center, 4f, new Color(0.72f, 0.55f, 0.27f, 0.98f));
         }
 
+        if (_ritual is RitualStage.Window or RitualStage.Hold)
+            DrawBreathGuide();
+
         if (NauseaOn)
         {
             // Where her hand actually is, while the porch disagrees.
@@ -712,6 +820,39 @@ public partial class Porch447 : MemoryRoomBase
                 new Color(1f, 0.9f, 0.66f, 0.8f), 1.8f, true);
             DrawCircle(aim, 1.8f, new Color(1f, 0.9f, 0.66f, 0.9f));
         }
+    }
+
+    /// <summary>The second job, made visible: a ring that swells
+    /// and settles on a slow tide (SPACE at the top of the swell),
+    /// over a thin steadiness meter that drains gold into red.</summary>
+    private void DrawBreathGuide()
+    {
+        var center = new Vector2(576, 578);
+        float swell = Mathf.Sin(_breathPhase * Mathf.Pi);
+        float targetR = 34f;
+        float ringR = Mathf.Lerp(13f, targetR, swell);
+
+        // A dim plate so the ring reads over any part of the yard.
+        DrawRect(new Rect2(470, 526, 212, 104), new Color(0.02f, 0.018f, 0.014f, 0.66f), true);
+        DrawRect(new Rect2(470, 526, 212, 104), new Color(0.74f, 0.6f, 0.36f, 0.4f), false, 1.5f);
+
+        // The gold the swell has to touch.
+        DrawArc(center, targetR, 0f, Mathf.Tau, 48,
+            new Color(1f, 0.84f, 0.45f, 0.75f), 2.5f, true);
+        float ringAlpha = _breathFlash > 0f ? 1f : 0.55f + 0.3f * swell;
+        DrawArc(center, ringR, 0f, Mathf.Tau, 48,
+            new Color(0.92f, 0.94f, 1f, ringAlpha), _breathFlash > 0f ? 4f : 2.5f, true);
+        DrawCircle(center, 2.5f, new Color(0.92f, 0.94f, 1f, 0.8f));
+
+        // Her remaining steadiness, draining gold into red.
+        var track = new Rect2(486, 620, 180, 6);
+        DrawRect(track, new Color(1f, 0.92f, 0.68f, 0.14f), true);
+        var fillColor = _steadiness > 0.35f
+            ? new Color(1f, 0.86f, 0.52f, 0.92f)
+            : new Color(1f, 0.36f, 0.26f, 0.95f);
+        DrawRect(new Rect2(track.Position,
+                new Vector2(track.Size.X * Mathf.Clamp(_steadiness, 0f, 1f), track.Size.Y)),
+            fillColor, true);
     }
 
     private void DrawSanityOverlays()

@@ -2266,6 +2266,11 @@ public partial class GameUI : CanvasLayer
             ShowToast("Already held to this light. The reversed weather has said its piece here.");
             return;
         }
+        // Older journeys already carrying the hammer have, by
+        // definition, seen what the frames know.
+        if (gs.HasFlag("item_hammer_nails"))
+            gs.SetFlag("negatives_developed", save: false);
+        bool developedNow = !gs.HasFlag("negatives_developed");
         gs.SetFlag(flag, save: false);
         CloseBag(backToPause: false);
 
@@ -2300,6 +2305,31 @@ public partial class GameUI : CanvasLayer
             ? "Steadier. MEMORY eased, Clarity +1."
             : "Steadier. MEMORY eased.");
         gs.SaveGame("negatives held to the light");
+
+        // And one frame — the first time any light goes through
+        // them — is not about Ida at all. It is a map, and it was
+        // the negatives' purpose all along: they are the only
+        // pictures of rooms as they were actually kept.
+        if (developedNow)
+        {
+            gs.SetFlag("negatives_developed", save: false);
+            gs.UnlockClue("negatives_cellar_frame");
+            Dialogue.BeginInputBlock();
+            try
+            {
+                await Dialogue.ShowText(this,
+                    "Wait. This frame. Not the garden — the cellar. Dad, in lamplight, hanging his claw hammer on the inside of the little tool cabinet's door. The inside. She photographed him mid-chore and never printed it. It's been a map this whole time, waiting for a light.",
+                    7f, 576f, 486f, fontSize: 24);
+            }
+            finally
+            {
+                Dialogue.EndInputBlock();
+            }
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            ShowToast("A map in reverse: the hammer hangs inside the cellar cabinet's door — the mending tools, found the moment she's back down there.");
+            gs.SaveGame("negatives developed");
+        }
     }
 
     // ------------------------------------------------------- the warning

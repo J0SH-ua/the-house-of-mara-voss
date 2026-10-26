@@ -269,8 +269,8 @@ public partial class Basement : MemoryRoomBase
         bool refilled = gs.RefillClarity(1);
         Hotspots.SpawnRipple(trunk.Center, new Color(1f, 0.88f, 0.58f));
         gs.Toast(refilled
-            ? "Tin of photograph negatives — kept in Mara's bag (B). A steadier breath: MEMORY eased, Clarity +1."
-            : "Tin of photograph negatives — kept in Mara's bag (B). A steadier breath: MEMORY eased.");
+            ? "Tin of photograph negatives — kept in Mara's bag (B). A steadier breath: MEMORY eased, Clarity +1. Hold them to a light from the bag: some frames remember rooms better than she does."
+            : "Tin of photograph negatives — kept in Mara's bag (B). A steadier breath: MEMORY eased. Hold them to a light from the bag: some frames remember rooms better than she does.");
         QueueRedraw();
     }
 
@@ -303,9 +303,26 @@ public partial class Basement : MemoryRoomBase
             await WaitSeconds(0.22f);
             AudioManager.Play(Sfx.DoorUnlock, -7f, 0.94f);
             AudioManager.Play(Sfx.DrawerOpen, -8f, 0.86f);
+
+            // The cabinet opens for the iron key — but knowing where
+            // in it the mending tools actually live is a different
+            // kind of key, and it is printed on nothing. It sleeps
+            // in the trunk's unprinted frames.
+            if (!gs.HasFlag("negatives_developed"))
+            {
+                await SaySequence(
+                    "The iron key turns like it was oiled yesterday. Inside: screwdrivers by size, a coil of wire, pencils cut short. Orderly as a held breath.",
+                    "But nothing for mending. Nothing heavy. A man who oiled half the street's locks out of kindness kept more than this — and a cabinet this shallow shouldn't have a back this dark. Where would you put the real work, Dad?",
+                    "Somewhere there's a picture of this cellar as it was. There has to be. Mum photographed everything except what she couldn't look at straight.");
+                if (!GodotObject.IsInstanceValid(this))
+                    return;
+                gs.Toast("The cabinet is open, but the mending tools aren't where a hand falls. Something remembers this cellar better than Mara does.");
+                return;
+            }
+
             await SaySequence(
-                "The iron key turns like it was oiled yesterday. Inside: screwdrivers by size, a coil of wire, pencils cut short — and on top, where a reaching hand falls first, his claw hammer and a twist of paper holding bridge nails older than I am.",
-                "He kept the mending tools below stairs because that's where things broke quietly. Crossings. Railings. Anything the weather worries at. …All right, Dad. Whatever's broken between here and morning, I'll bring these.");
+                "The iron key turns like it was oiled yesterday. Screwdrivers by size, a coil of wire, pencils cut short — and this time I know where to look. The frame Mum never printed: Dad, hanging his claw hammer on the inside of the cabinet door. The inside. Twelve years of looking past the insides of doors.",
+                "Here. The hammer, and a twist of paper holding bridge nails older than I am. He kept the mending tools below stairs because that's where things broke quietly. Crossings. Railings. Anything the weather worries at. …All right, Dad. Whatever's broken between here and morning, I'll bring these.");
             if (!GodotObject.IsInstanceValid(this))
                 return;
 
