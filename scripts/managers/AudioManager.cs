@@ -51,6 +51,7 @@ public static class Sfx
     public const string FlashlightClick = "flashlight_click";
     // Second synthesized batch: weather, hands and things breaking.
     public const string WindGust = "wind_gust";
+    public const string BreathSlow = "breath_slow";
     public const string FireWhoomph = "fire_whoomph";
     public const string CrumbleRumble = "crumble_rumble";
     public const string VentKick = "vent_kick";
