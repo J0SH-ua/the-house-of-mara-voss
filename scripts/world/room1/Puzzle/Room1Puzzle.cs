@@ -223,6 +223,10 @@ public partial class Room1Puzzle : Area2D
 	private bool IsInsideArea2D(Area2D area, Vector2 globalMousePosition)
 	{
 		var collisionShape = area.GetNodeOrNull<CollisionShape2D>("CollisionShape2D");
+		// A taken thing's shape is disabled — the hover pointer must
+		// not keep pointing at the empty place where it lay.
+		if (collisionShape?.Disabled == true)
+			return false;
 		if (collisionShape?.Shape is not RectangleShape2D rect)
 			return false;
 

@@ -42,11 +42,23 @@ public partial class BrassKey1 : Area2D
 	private bool _collecting;
 	private Sprite2D _copperSprite;
 	private CollisionShape2D _copperShape;
+	// The brass key itself is authored in the scene (a Sprite2D and
+	// its shape under this Area2D). Nothing in the scene knows it
+	// has been taken — this script has to put it away.
+	private Sprite2D _brassSprite;
+	private CollisionShape2D _brassShape;
 
 	public override void _Ready()
 	{
 		InputPickable = true;
+		_brassSprite = GetNodeOrNull<Sprite2D>("BrassKey2");
+		_brassShape = GetNodeOrNull<CollisionShape2D>("CollisionShape2D");
 		BuildDrawerExtras();
+
+		// However she came by the morning, the drawer does not get
+		// to keep a ghost of it: taken means gone, on every visit.
+		if (GameState.Instance?.IsShardRecovered(0) == true)
+			HideTaken(_brassSprite, _brassShape);
 	}
 
 	/// <summary>The copper key was never in the authored scene, so it is
@@ -122,6 +134,11 @@ public partial class BrassKey1 : Area2D
 			return;
 		}
 
+		// Once the morning is hers, this corner of the drawer is
+		// simply empty — no ghost-key left lying in it to click.
+		if (gs?.IsShardRecovered(0) == true)
+			return;
+
 		_collecting = true;
 		bool firstTime;
 		if (GameState.Instance != null)
@@ -133,6 +150,11 @@ public partial class BrassKey1 : Area2D
 			firstTime = !Globals.SHARDS_COLLECTED[0];
 			Globals.SHARDS_COLLECTED[0] = true;
 		}
+
+		// It leaves the drawer the instant it is hers — the palm
+		// reveal plays over a drawer that is already empty.
+		if (firstTime)
+			HideTaken(_brassSprite, _brassShape);
 
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
