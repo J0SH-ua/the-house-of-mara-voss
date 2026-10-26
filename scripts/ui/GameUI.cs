@@ -5007,103 +5007,99 @@ public partial class GameUI : CanvasLayer
         _endingTween.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * toScale, zoomSeconds);
     }
 
+    /// <summary>The way into BOTH endings now: the memory's price
+    /// lands all at once. A cry, the light strobing like the
+    /// journeys taught, and then — nothing, for a breath.</summary>
+    private async System.Threading.Tasks.Task EndingMigrainePassOutAsync(string flashFramePath)
+    {
+        AudioManager.Play(Sfx.ScreenCrack2, -7f, 0.8f);
+        await EndingCaptionAsync("Mara", "Ah—!", 1.2f);
+        if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
+            return;
+
+        _endingImage.Texture = GD.Load<Texture2D>(flashFramePath);
+        for (int i = 0; i < 3; i++)
+        {
+            var flash = CreateTween();
+            flash.SetPauseMode(Tween.TweenPauseMode.Process);
+            flash.TweenProperty(_endingImage, "modulate:a", 0.38f - i * 0.11f, 0.09f);
+            await ToSignal(flash, Tween.SignalName.Finished);
+            if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
+                return;
+            var drop = CreateTween();
+            drop.SetPauseMode(Tween.TweenPauseMode.Process);
+            drop.TweenProperty(_endingImage, "modulate:a", 0f, 0.13f);
+            await ToSignal(drop, Tween.SignalName.Finished);
+            if (_endingSkipRequested || !GodotObject.IsInstanceValid(this))
+                return;
+        }
+        AudioManager.Play(Sfx.BreathSlow, -14f, 0.8f);
+        await EndingBeatAsync(1.4f);
+    }
+
     private async System.Threading.Tasks.Task WakingApproachAsync(
         (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo)
     {
-        // Dark first. Then, out of nowhere a door has any right to
-        // be: the family's knock. Two — a breath — three.
-        await EndingBeatAsync(1.1f);
+        // The last piece goes where the others went — and the
+        // migraine that has been charging interest all night
+        // collects, all at once.
+        await EndingBeatAsync(0.9f);
         if (_endingSkipRequested) return;
-        AudioManager.Play(Sfx.KnockWood, -6f, 0.95f);
-        await EndingBeatAsync(0.38f);
-        AudioManager.Play(Sfx.KnockWood, -6f, 0.99f);
-        await EndingBeatAsync(0.95f);
-        AudioManager.Play(Sfx.KnockWood, -5f, 1.0f);
-        await EndingBeatAsync(0.36f);
-        AudioManager.Play(Sfx.KnockWood, -5f, 1.03f);
-        await EndingBeatAsync(0.36f);
-        AudioManager.Play(Sfx.KnockWood, -4f, 1.06f);
-        await EndingBeatAsync(0.8f);
+        await EndingCaptionAsync("Mara", "The last of it goes where the others went. All of me, in order. And for one moment the whole house holds its breath—", 6.0f);
         if (_endingSkipRequested) return;
 
-        await EndingCaptionAsync("Mara", "Two. A breath. Three. That's — nobody knocks like that. Nobody living knocks like that.", 6.2f);
-        await EndingCaptionAsync("Mara", "I— Ida? Is that you?", 4.6f);
+        await EndingMigrainePassOutAsync(convo.Frames[2]);
         if (_endingSkipRequested) return;
 
-        // She is standing where the light is. The run is the shortest
-        // twelve years of Mara's life.
-        await EndingShotAsync(convo.Frames[2], 0.64f, 1.05f, 2.6f);
-        _endingCaption.Text = "Mara: I'm running before I've decided to. Twelve years — and my feet decide first.";
-        var runCap = CreateTween();
-        runCap.SetPauseMode(Tween.TweenPauseMode.Process);
-        runCap.TweenProperty(_endingCaption, "modulate:a", 1f, 0.5f);
-        AudioManager.PlayVaried(Sfx.FootstepDirtA, -8f, 1.05f, 0.02f);
-        await EndingBeatAsync(0.55f);
-        AudioManager.PlayVaried(Sfx.FootstepDirtB, -8f, 1.1f, 0.02f);
-        await EndingBeatAsync(0.48f);
-        AudioManager.PlayVaried(Sfx.FootstepDirtA, -7f, 1.15f, 0.02f);
-        await EndingBeatAsync(0.42f);
-        AudioManager.PlayVaried(Sfx.FootstepDirtB, -7f, 1.2f, 0.02f);
-        await EndingBeatAsync(0.7f);
+        // Waking the slow way: light first, then a face in it,
+        // close the way faces are from a lap — the very face the
+        // conversation is about to hold.
+        await EndingShotAsync(convo.Frames[2], 1.3f, 1.07f, 10f);
+        await EndingBeatAsync(0.9f);
+        if (_endingSkipRequested) return;
+        var blink = CreateTween();
+        blink.SetPauseMode(Tween.TweenPauseMode.Process);
+        blink.TweenProperty(_endingImage, "modulate:a", 0.25f, 0.28f);
+        blink.TweenProperty(_endingImage, "modulate:a", 1f, 0.5f);
+        AudioManager.Play(Sfx.BreathSlow, -13f, 0.95f);
+        await ToSignal(blink, Tween.SignalName.Finished);
         if (_endingSkipRequested) return;
 
-        // The hug: the world goes close and dark and warm, the way it
-        // does with your face in your sister's shoulder.
-        _endingTween?.Kill();
-        var hug = CreateTween();
-        hug.SetPauseMode(Tween.TweenPauseMode.Process);
-        hug.TweenProperty(_endingImage, "modulate:a", 0.1f, 0.8f);
-        hug.Parallel().TweenProperty(_endingImage, "scale", Vector2.One * 1.35f, 0.8f);
-        AudioManager.Play(Sfx.PhotoPickup, -13f, 0.7f);
-        var capOut = CreateTween();
-        capOut.SetPauseMode(Tween.TweenPauseMode.Process);
-        capOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.4f);
-        await ToSignal(hug, Tween.SignalName.Finished);
-        if (_endingSkipRequested) return;
-
-        await EndingCaptionAsync("Mara", "I've got you. I've got you. You're — God. You're really here.", 5.6f);
-        await EndingCaptionAsync("Ida", "…Okay. Okay. Breathe, Mara.", 4.6f);
+        await EndingCaptionAsync("Mara", "…warm. Someone's lap. Someone's hand, keeping the hair off my face the way—", 6.0f);
+        await EndingCaptionAsync("Mara", "Ida? Is— is that you?", 4.8f);
+        await EndingCaptionAsync("Ida", "Steady. You went down like the ceiling did. I caught the important part.", 5.8f);
+        await EndingCaptionAsync("Mara", "Don't let go of my head yet. Just — one more second of this being true.", 6.0f);
+        await EndingCaptionAsync("Ida", "One second. I'm counting. …Done. Up you get. On your feet, Mara.", 6.0f);
     }
 
     private async System.Threading.Tasks.Task KeptApproachAsync(
         (string[] Frames, (int Frame, string Speaker, string Text)[] Lines) convo)
     {
-        // The way back, in first person, with the weather turning.
+        // The way back, in first person, with the weather turning —
+        // and the same price, collected the same way.
         AudioManager.Instance?.PlayCutsceneAmbience(AudioManager.AmbienceRainLoopPath, -19f);
-        await EndingShotAsync("res://assets/images/bgs/Truth_Bridge.png", 1.04f, 1.12f, 14f);
+        await EndingBeatAsync(0.8f);
+        if (_endingSkipRequested) return;
         await EndingCaptionAsync("Mara", "Going back is easy. That's the worst part. Somewhere behind me it starts to rain, and the rain just — follows.", 6.4f);
         if (_endingSkipRequested) return;
 
-        // A child, crossing the bridge. This bridge. In this rain.
-        await EndingShotAsync("res://assets/images/bgs/Truth_Ida_Walks.png", 1.03f, 1.1f, 12f);
-        await EndingCaptionAsync("Mara", "There's a child on the bridge. In this rain. On THIS bridge—", 4.8f);
-        await EndingCaptionAsync("Mara", "IDA! Ida — wait! Stay where you are — don't touch the rail — PLEASE—", 5.6f);
+        await EndingMigrainePassOutAsync("res://assets/images/bgs/Truth_Bridge.png");
         if (_endingSkipRequested) return;
 
-        // The run she has been rehearsing for twelve years.
-        _endingTween?.Kill();
-        _endingTween = CreateTween();
-        _endingTween.SetPauseMode(Tween.TweenPauseMode.Process);
-        _endingTween.TweenProperty(_endingImage, "scale", Vector2.One * 1.24f, 2.1f);
-        AudioManager.Play(Sfx.TruthBridgeSteps, -6f, 1.1f);
-        _endingCaption.Text = "Mara: I run. The stones are wet and I do not care. Not this time. Not this time.";
-        var runCap = CreateTween();
-        runCap.SetPauseMode(Tween.TweenPauseMode.Process);
-        runCap.TweenProperty(_endingCaption, "modulate:a", 1f, 0.45f);
-        await EndingBeatAsync(2.2f);
-        if (!GodotObject.IsInstanceValid(this))
-            return;
-        var capOut = CreateTween();
-        capOut.SetPauseMode(Tween.TweenPauseMode.Process);
-        capOut.TweenProperty(_endingCaption, "modulate:a", 0f, 0.35f);
-        await ToSignal(capOut, Tween.SignalName.Finished);
+        // Up from the concrete: the world at cheek height, wet
+        // stone and dark, with the rain getting in everywhere.
+        _endingImage.Modulate = new Color(0.5f, 0.55f, 0.68f, 0f);
+        await EndingShotAsync("res://assets/images/bgs/Truth_Bridge.png", 1.22f, 1.16f, 9f);
+        await EndingCaptionAsync("Mara", "Cold. Wet. Concrete under my cheek, and the rain — how long was I—", 5.8f);
         if (_endingSkipRequested) return;
 
-        // Caught up. Safe. And already, somehow, not the point.
-        await EndingShotAsync("res://assets/images/bgs/Truth_Ida_Waits.png", 1.05f, 1.1f, 16f);
-        await EndingCaptionAsync("Ida", "…Mara? You look like you've seen a ghost.", 5.2f);
-        await EndingCaptionAsync("Mara", "The railing. You were right beside the railing—", 5.2f);
-        await EndingCaptionAsync("Ida", "It's a bridge, Mara. People cross it every day.", 5.4f);
+        // And to the right, standing in it: her.
+        _endingImage.Modulate = new Color(1, 1, 1, 0);
+        await EndingShotAsync(convo.Frames[0], 1.18f, 1.07f, 12f);
+        await EndingCaptionAsync("Mara", "—Ida?", 3.6f);
+        AudioManager.Play(Sfx.PhotoPickup, -13f, 0.75f);
+        await EndingCaptionAsync("Mara", "Ida — stay there. Don't go anywhere. I'm getting up. I'm— just stay exactly there.", 6.4f);
+        await EndingCaptionAsync("Ida", "…Mara? You're on the ground. You're all wet.", 5.4f);
         // The rain stays for what she says next. It was always going
         // to: "she does not turn back. The rain takes the rest."
     }

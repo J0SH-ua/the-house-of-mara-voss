@@ -200,16 +200,15 @@ public partial class BedroomPrologue : MemoryRoomBase
                 return;
             }
 
-            await SaySequence(new[]
-            {
-                "My alarm clock. The hands have stopped, and honestly? Fair enough.",
-                "It used to ring me awake for school. She'd already be in the doorway talking before I'd even sat up.",
-            });
-            if (!StillHere())
-                return;
-
             if (first)
             {
+                await SaySequence(new[]
+                {
+                    "My alarm clock. The hands have stopped, and honestly? Fair enough.",
+                    "It used to ring me awake for school. She'd already be in the doorway talking before I'd even sat up.",
+                });
+                if (!StillHere())
+                    return;
                 await Say("Under the clock: the little drawer every childhood nightstand is legally required to have. My hand finds the knob — and stops there. Whatever child-me kept in the dark of this drawer, adult me gets a say before it sees the light.", 5.5f, 24);
                 if (!StillHere())
                     return;
