@@ -254,7 +254,7 @@ public partial class Porch447 : MemoryRoomBase
             else if (next == RitualStage.Hold)
             {
                 AudioManager.Play(Sfx.WordChime, -10f, 1.0f);
-                await Say("Seen. Known. Now the handle — and hold it like somebody coming home, not somebody breaking in. Steady. A slow count of four.", 5f, 23);
+                await Say("Seen. Known. Now the handle — and hold it like somebody coming home, not somebody breaking in. Steady. A slow count of five.", 5f, 23);
                 if (!GodotObject.IsInstanceValid(this))
                     return;
                 _holdProgress = 0f;

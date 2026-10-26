@@ -161,7 +161,7 @@ public partial class JarCloseup : Node2D
             return;
         _helpLabel.Text = _state switch
         {
-            JarState.Sealed when _hasHairpin => $"Tap as the working line crosses the red give in the seal.  ·  {_tapsLanded} of {TapsNeeded} true",
+            JarState.Sealed when _hasHairpin => $"Tap as the hairpin crosses the red give in the seal.  ·  {_tapsLanded} of {TapsNeeded} true",
             JarState.Sealed => "The seal is twelve years stubborn. Fingernails are what she has. Click the jar to try.",
             JarState.Open when !TapeTaken => "Something folded sleeps on top. Take it gently.",
             JarState.Open when !KeyTaken => "Under where the tape lay, something cold catches the light.",

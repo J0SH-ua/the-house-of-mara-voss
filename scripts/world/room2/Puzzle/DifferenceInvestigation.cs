@@ -15,9 +15,8 @@ using Godot;
 /// dust and cracks while Mara points at everything the house moved
 /// (the clock run to 4:47, the red book changed chairs, the letter
 /// vanished, the cup gone over). Name them all before the room goes
-/// and the evening steadies — and sets a little door key down on the
-/// beside the globe, in the real room, to be picked up by hand.
-/// Run out of
+/// and the evening steadies — and sets a little door key down beside
+/// the globe, in the real room, to be picked up by hand. Run out of
 /// time and the memory does what strained memories do: it breaks.
 ///
 /// This is a standalone Node2D rather than a MemoryRoomBase room for
@@ -386,7 +385,7 @@ public partial class DifferenceInvestigation : Node2D
             Position = Vector2.Zero;
             return;
         }
-        float amp = (2.2f + 5.5f * gone) * (1f - 0.13f * _found.Count);
+        float amp = (3.0f + 7.0f * gone) * (1f - 0.13f * _found.Count);
         if (_glitchLeft > 0f)
             amp *= 2.4f;
         Position = new Vector2(

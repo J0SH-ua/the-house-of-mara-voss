@@ -15,7 +15,7 @@ using Godot;
 /// The wind does the rest. It takes the fire, the light, and Mara —
 /// into the room from the photograph, with something off, crumbling
 /// around a memory held wrong. Name what moved before it breaks, and
-/// the steadied room sets the little door key down on its side table
+/// the steadied room sets the little door key down beside the globe
 /// in the real sitting room, to be picked up by hand.
 /// </summary>
 public partial class Photo1Reward : Area2D

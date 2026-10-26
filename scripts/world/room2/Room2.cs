@@ -70,6 +70,7 @@ public partial class Room2 : ExamineHandler
                 return;
 
             AudioManager.Play(Sfx.WindGust, -6f);
+            AudioManager.Play(Sfx.FireWhoomph, -8f, 0.8f);
             var dark = new ColorRect
             {
                 Color = new Color(0, 0, 0, 0),
