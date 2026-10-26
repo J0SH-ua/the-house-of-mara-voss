@@ -102,6 +102,7 @@ public partial class GameUI : CanvasLayer
 
     private Label _toastLabel;
     private PanelContainer _toastPanel;
+    private Control _controlsChip;
     private Tween _toastTween;
     private double _toastUntilMsec;
 
@@ -995,10 +996,10 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        // Inside the hedge walls, A is her left foot and C is
-        // crouching. The movement scene consumes those keys first;
-        // this is the second lock on the same door, so neither can
-        // arm Anchor or Clarity underneath the walking.
+        // Inside the hedge walls, A turns her and C crouches. The
+        // movement scene consumes those keys first; this is the
+        // second lock on the same door. Memory Verbs rest there too
+        // (their bar is hidden), so E/T/R cannot arm one unseen.
         bool hedgeMazeOwnsMovementKeys = SceneManager.Instance?.CurrentScene is HedgeMaze;
 
         if (@event.IsActionPressed(InputSetup.OpenJournal) && !FocusIsTextEditing())
@@ -1012,7 +1013,7 @@ public partial class GameUI : CanvasLayer
                 ClaritySystem.Toggle();
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryEcho) && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryEcho) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Echo);
@@ -1024,13 +1025,13 @@ public partial class GameUI : CanvasLayer
                 MemoryVerbSystem.Toggle(MemoryVerb.Anchor);
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryTrace) && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryTrace) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Trace);
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryRelease) && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryRelease) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Release);
@@ -1387,8 +1388,11 @@ public partial class GameUI : CanvasLayer
         _verbPanel.AnchorTop = 1f;
         _verbPanel.AnchorBottom = 1f;
 
+        // Memory Verbs rest inside the hedge walls: A turns Mara
+        // there, and her torch hand owns the bottom-left corner.
         _verbPanel.Visible = _context == UiContext.Game
                              && anyUnlocked
+                             && !(SceneManager.Instance?.CurrentScene is HedgeMaze)
                              && !AnyPanelOpen()
                              && !Dialogue.IsShowing
                              && !GetTree().Paused
@@ -3598,6 +3602,12 @@ public partial class GameUI : CanvasLayer
               (gs.CountPlaced() > 0 ? $"   ·   Returned {gs.CountPlaced()}" : "")
             : string.Empty;
 
+        // The hedge walls draw their own controls and Mara's torch
+        // hand in the bottom-left; the room chip's C/A/E/T/R help
+        // does not apply there.
+        if (_controlsChip != null)
+            _controlsChip.Visible = !(SceneManager.Instance?.CurrentScene is HedgeMaze);
+
         RefreshBagButton();
         RefreshMemoryVerbBar();
     }
@@ -4002,6 +4012,7 @@ public partial class GameUI : CanvasLayer
         controls.MouseFilter = Control.MouseFilterEnum.Ignore;
         controlsChip.AddChild(controls);
         _hud.AddChild(controlsChip);
+        _controlsChip = controlsChip;
     }
 
     private void BuildPausePanel()

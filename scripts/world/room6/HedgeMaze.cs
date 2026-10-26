@@ -11,8 +11,19 @@ using Godot;
 /// and no idea which green corridor was meant to be a road.
 ///
 /// This first version is deliberately only the explorable place:
-/// a code-drawn, chunky first-person hedge maze with real WASD
-/// movement, running, crouching, jumping and looking behind her.
+/// a code-drawn, chunky first-person hedge maze. Her body keeps
+/// the house's own manners. W and S walk at the same unhurried
+/// pace as every walked journey (footfalls 0.92 s apart on the
+/// dirt road); A and D turn her at one steady rate that stops the
+/// instant the key is let go, so the view can never drift. The
+/// mouse is her wrist on Father's flashlight: the same circle of
+/// light, with the same chunky dark around it, that the vent, the
+/// basement and the blackout use. Her left hand holds the torch
+/// in the same palm, drawn with the same art, as every item she
+/// has held up in first person. Jumping and crouching belong to
+/// Mara alone: the hand and torch rise, dip and lower, while the
+/// world itself stays still.
+///
 /// The south break returns to the bridge and the far north-west
 /// break continues to the last room, so exploring it can never
 /// strand a run while its future puzzles are still being thought
@@ -21,6 +32,8 @@ using Godot;
 public partial class HedgeMaze : Node2D
 {
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
+    private const string HandTexturePath = "res://assets/images/core/hand_palm.png";
+    private const string FlashlightTexturePath = "res://assets/images/core/items/flashlight.png";
     private const string BridgeScenePath = "res://scenes/world/bridge_repair.tscn";
     private const string Room7ScenePath = "res://scenes/world/room_7.tscn";
 
@@ -30,14 +43,61 @@ public partial class HedgeMaze : Node2D
 
     private const float ScreenWidth = 1152f;
     private const float ScreenHeight = 648f;
-    private const float ColumnWidth = 12f;
-    private const int ColumnCount = 96;
+
+    // The world is never lifted, lowered or bobbed. Jumps, crouches
+    // and steps move Mara's hand instead of the horizon.
+    private const float Horizon = 324f;
+    private const float ColumnWidth = 8f;
+    private const int ColumnCount = 144;
     private const float FieldOfView = 1.08f;
+    private const float ProjectionScale = 680f;
+    private const float EyeHeightPixels = ProjectionScale * 0.37f;
+    private const float SkyBand = 24f;
     private const float PlayerRadius = 0.23f;
-    private const float WalkSpeed = 2.35f;
-    private const float RunSpeed = 4f;
-    private const float CrouchSpeed = 1.25f;
-    private const float ArrowTurnSpeed = 2.35f;
+
+    // Walking pace. Every walked journey sets its footfalls about
+    // 0.92 s apart on the dirt road; the maze uses that cadence
+    // and a slow ground speed to match it.
+    private const float WalkSpeed = 0.55f;
+    private const float RunSpeed = 1.25f;
+    private const float CrouchSpeed = 0.28f;
+    private const float BackwardFactor = 0.7f;
+    private const float LookingBackFactor = 0.82f;
+    private const float MovementResponse = 14f;
+    private const float WalkStepSeconds = 0.92f;
+    private const float RunStepSeconds = 0.5f;
+    private const float CrouchStepSeconds = 1.25f;
+
+    // Turning is a constant angular speed with no inertia: holding
+    // A/D turns, releasing stops on that frame.
+    private const float TurnSpeed = 1.3f;
+
+    // Jump and crouch are Mara's body, shown through her hand.
+    private const float JumpVelocity = 3.4f;
+    private const float JumpGravity = 11f;
+    private const float HandJumpLift = 115f;
+
+    // The flashlight circle, exactly the basement's (the stronger
+    // battery from older saves widens it the same way).
+    private const float BeamRadius = 158f;
+    private const float StrongBeamRadius = 208f;
+
+    // The held hand is GameUI's held-item hand: the same palm art,
+    // aspect and palm anchor, sized down for walking.
+    private const float HeldPalmX = 0.51f;
+    private const float HeldPalmY = 0.36f;
+    private const float HeldHandAspect = 1.332f;
+    private const float HandWidth = 260f;
+    private const float HandVisibleFraction = 0.78f;
+    private const float HandRestCentreX = 194f;
+    private const float TorchIconSize = 150f;
+
+    // The lens in the flashlight item art (512 px: about x 420,
+    // y 105), as a fraction of the icon from its centre.
+    private static readonly Vector2 TorchLensLocal = new(0.32f, -0.295f);
+    private static readonly float TorchLensBaseAngle = Mathf.Atan2(-0.295f, 0.32f);
+    private const float TorchMinRotation = -1.66f;
+    private const float TorchMaxRotation = 1.05f;
 
     // # hedge, P stone pillar, F dry fountain, T topiary,
     // S south waking place, B bridge opening, X far opening.
@@ -64,6 +124,16 @@ public partial class HedgeMaze : Node2D
         "#############B###########",
     ];
 
+    private struct RayHit
+    {
+        public bool Hit;
+        public float Distance;
+        public Vector2I Cell;
+        public char Tile;
+        public int Side;
+        public float WallX;
+    }
+
     private static bool _pendingFromNorth;
 
     /// <summary>SceneManager arms the physical end Mara is entering
@@ -71,24 +141,37 @@ public partial class HedgeMaze : Node2D
     public static void ArmEntry(bool fromNorth) => _pendingFromNorth = fromNorth;
 
     private FontFile _font;
+    private Texture2D _handTexture;
+    private Texture2D _torchTexture;
     private Label _titleLabel;
     private Label _promptLabel;
     private Label _exitLabel;
 
     private Vector2 _playerPosition = new(13.5f, 17.5f);
     private Vector2 _velocity = Vector2.Zero;
-    private float _yaw = -Mathf.Pi / 2f;
-    private float _pendingMouseTurn;
+    private float _yaw = Mathf.Pi;
     private bool _lookingBack;
+    private bool _moving;
+    private bool _running;
 
     private float _crouchAmount;
     private float _jumpHeight;
     private float _verticalVelocity;
     private bool _grounded = true;
-    private float _bobPhase;
+    private float _landDip;
+    private float _stepPhase;
+    private bool _stepping;
     private float _bobAmount;
-    private float _footstepTimer;
+    private float _bobAmpX;
+    private float _bobAmpY;
     private bool _footstepAlternate;
+
+    private Vector2 _beamPosition = new(576f, 324f);
+    private bool _beamReady;
+    private float _torchRotation;
+    private bool _torchRotationReady;
+    private float _handRise = 1f;
+    private Tween _handTween;
 
     private float _eyeOpen = 1f;
     private Tween _eyeTween;
@@ -102,11 +185,18 @@ public partial class HedgeMaze : Node2D
     private Vector2I _startCell = new(13, 17);
     private Vector2I _southExitCell = new(13, 18);
     private Vector2I _northExitCell = new(3, 0);
+    private readonly float[] _depthByColumn = new float[ColumnCount];
+    private readonly float[] _shortDepthByColumn = new float[ColumnCount];
+    private readonly float[] _skyLimitByColumn = new float[ColumnCount];
     private string _exitHintCache = string.Empty;
 
     public override void _Ready()
     {
         _font = GD.Load<FontFile>(FontPath);
+        _handTexture = GD.Load<Texture2D>(HandTexturePath);
+        _torchTexture = GD.Load<Texture2D>(FlashlightTexturePath);
+        TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
+
         bool fromNorth = _pendingFromNorth;
         _pendingFromNorth = false;
 
@@ -118,6 +208,14 @@ public partial class HedgeMaze : Node2D
         _hasFlashlight = gs?.HasFlag("item_flashlight") ?? false;
         _flashlightOn = !_playWakeIntro && _hasFlashlight;
         _eyeOpen = _playWakeIntro ? 0f : 1f;
+        _handRise = 1f;
+
+        for (int i = 0; i < ColumnCount; i++)
+        {
+            _depthByColumn[i] = 40f;
+            _shortDepthByColumn[i] = float.MaxValue;
+            _skyLimitByColumn[i] = Horizon;
+        }
 
         BuildLabels();
         QueueRedraw();
@@ -161,35 +259,41 @@ public partial class HedgeMaze : Node2D
 
     private void BuildLabels()
     {
-        _titleLabel = MakeLabel("Inside the green walls",
-            new Vector2(326, 18), new Vector2(500, 40), 28,
-            new Color(0.88f, 0.94f, 0.82f, 0.95f));
+        // Bottom-right: her left hand owns the bottom-left corner, and
+        // the HUD's objective and status chips own the top.
         _exitLabel = MakeLabel(string.Empty,
-            new Vector2(276, 88), new Vector2(600, 36), 21,
-            new Color(0.96f, 0.9f, 0.72f, 0.95f));
+            new Vector2(560, 498), new Vector2(568, 30), 20,
+            new Color(0.96f, 0.9f, 0.72f, 0.95f), HorizontalAlignment.Right);
+        _titleLabel = MakeLabel("Inside the green walls",
+            new Vector2(560, 530), new Vector2(568, 34), 25,
+            new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Right);
         _promptLabel = MakeLabel(
-            "WASD move · mouse or ←/→ turn · SHIFT run\nCAPS LOCK look behind · C crouch · SPACE jump",
-            new Vector2(276, 584), new Vector2(600, 52), 19,
-            new Color(0.92f, 0.89f, 0.78f, 0.92f));
+            "W/S walk · A/D turn · mouse aims the torch\nSHIFT run · C crouch · SPACE jump · CAPS LOCK look back",
+            new Vector2(480, 566), new Vector2(648, 56), 17,
+            new Color(0.92f, 0.89f, 0.78f, 0.92f), HorizontalAlignment.Right);
 
         bool labelsVisible = !_playWakeIntro;
-        _titleLabel.Visible = labelsVisible;
         _exitLabel.Visible = labelsVisible;
+        _titleLabel.Visible = labelsVisible;
         _promptLabel.Visible = labelsVisible;
     }
 
-    private Label MakeLabel(string text, Vector2 position, Vector2 size, int fontSize, Color color)
+    private Label MakeLabel(string text, Vector2 position, Vector2 size, int fontSize,
+        Color color, HorizontalAlignment alignment)
     {
         var label = new Label
         {
             Text = text,
             Position = position,
             Size = size,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = alignment,
             VerticalAlignment = VerticalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.Word,
             MouseFilter = Control.MouseFilterEnum.Ignore,
             ZIndex = 100,
+            // The maze node draws its pixel-art hand and torch with
+            // nearest filtering; the words keep ordinary filtering.
+            TextureFilter = CanvasItem.TextureFilterEnum.Linear,
         };
         if (_font != null)
             label.AddThemeFontOverride("font", _font);
@@ -218,10 +322,10 @@ public partial class HedgeMaze : Node2D
                 if (!StillHere())
                     return;
 
-                if (_titleLabel != null)
-                    _titleLabel.Visible = true;
                 if (_exitLabel != null)
                     _exitLabel.Visible = true;
+                if (_titleLabel != null)
+                    _titleLabel.Visible = true;
                 if (_promptLabel != null)
                     _promptLabel.Visible = true;
 
@@ -244,8 +348,9 @@ public partial class HedgeMaze : Node2D
                 {
                     AudioManager.Play(Sfx.FlashlightClick, -5f);
                     _flashlightOn = true;
+                    RaiseHand();
                     QueueRedraw();
-                    await WaitSeconds(0.3f);
+                    await WaitSeconds(0.45f);
                     if (!StillHere())
                         return;
                     await Say("Dad's flashlight. Still with me. Good. At least the dark has to share.");
@@ -269,6 +374,7 @@ public partial class HedgeMaze : Node2D
             else if (_hasFlashlight)
             {
                 AudioManager.Play(Sfx.FlashlightClick, -7f);
+                RaiseHand();
             }
 
             _exploring = true;
@@ -327,6 +433,30 @@ public partial class HedgeMaze : Node2D
         QueueRedraw();
     }
 
+    /// <summary>The same entrance the held-item hand makes everywhere
+    /// else: it rises into frame from below over 0.65 s, eased out.</summary>
+    private void RaiseHand()
+    {
+        if (!_hasFlashlight)
+            return;
+        _handTween?.Kill();
+        if (Settings.ReduceMotionOrDefault())
+        {
+            SetHandRise(0f);
+            return;
+        }
+        _handTween = CreateTween();
+        _handTween.TweenMethod(Callable.From<float>(SetHandRise), _handRise, 0f, 0.65f)
+            .SetTrans(Tween.TransitionType.Cubic)
+            .SetEase(Tween.EaseType.Out);
+    }
+
+    private void SetHandRise(float value)
+    {
+        _handRise = Mathf.Clamp(value, 0f, 1f);
+        QueueRedraw();
+    }
+
     // ------------------------------------------------------------ input
 
     public override void _Input(InputEvent @event)
@@ -336,43 +466,36 @@ public partial class HedgeMaze : Node2D
         if (GetTree().Paused ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()))
             return;
+        if (@event is not InputEventKey keyEvent)
+            return;
 
-        if (@event is InputEventKey keyEvent)
+        bool capsLock = keyEvent.PhysicalKeycode == Key.Capslock ||
+            keyEvent.Keycode == Key.Capslock;
+        bool shift = keyEvent.PhysicalKeycode == Key.Shift ||
+            keyEvent.Keycode == Key.Shift;
+        bool movementKey = capsLock || shift ||
+            keyEvent.PhysicalKeycode is
+                Key.W or Key.A or Key.S or Key.D or Key.C or Key.Space or
+                Key.Left or Key.Right or Key.Up or Key.Down;
+        if (!movementKey)
+            return;
+
+        if (capsLock && keyEvent.Pressed && !keyEvent.Echo && InputFree())
         {
-            bool capsLock = keyEvent.PhysicalKeycode == Key.Capslock ||
-                keyEvent.Keycode == Key.Capslock;
-            bool shift = keyEvent.PhysicalKeycode == Key.Shift ||
-                keyEvent.Keycode == Key.Shift;
-            bool movementKey = capsLock || shift ||
-                keyEvent.PhysicalKeycode is
-                    Key.W or Key.A or Key.S or Key.D or Key.C or Key.Space or
-                    Key.Left or Key.Right or Key.Up or Key.Down;
-
-            if (movementKey)
-            {
-                if (capsLock && keyEvent.Pressed && !keyEvent.Echo && InputFree())
-                {
-                    _lookingBack = !_lookingBack;
-                    AudioManager.Play(Sfx.PageTurn, -15f, _lookingBack ? 0.82f : 1.02f);
-                }
-                if (keyEvent.PhysicalKeycode == Key.Space && keyEvent.Pressed &&
-                    !keyEvent.Echo && InputFree())
-                {
-                    TryJump();
-                }
-
-                // Space still belongs to a line of dialogue while one
-                // is actually on screen. Every other movement key is
-                // claimed here so A cannot arm Anchor and C cannot
-                // toggle Clarity underneath Mara's feet.
-                if (!(keyEvent.PhysicalKeycode == Key.Space && Dialogue.IsShowing))
-                    GetViewport().SetInputAsHandled();
-                return;
-            }
+            _lookingBack = !_lookingBack;
+            AudioManager.Play(Sfx.PageTurn, -15f, _lookingBack ? 0.82f : 1.02f);
+        }
+        if (keyEvent.PhysicalKeycode == Key.Space && keyEvent.Pressed &&
+            !keyEvent.Echo && InputFree())
+        {
+            TryJump();
         }
 
-        if (@event is InputEventMouseMotion motion && InputFree())
-            _pendingMouseTurn += motion.Relative.X * 0.00165f;
+        // Space still belongs to a line of dialogue while one is on
+        // screen. Every other movement key is claimed here so A
+        // cannot arm Anchor and C cannot toggle Clarity under her.
+        if (!(keyEvent.PhysicalKeycode == Key.Space && Dialogue.IsShowing))
+            GetViewport().SetInputAsHandled();
     }
 
     private bool InputFree() =>
@@ -382,105 +505,120 @@ public partial class HedgeMaze : Node2D
 
     private void TryJump()
     {
-        if (!_grounded)
+        if (!_grounded || _crouchAmount > 0.5f)
             return;
         _grounded = false;
-        _verticalVelocity = 4.7f;
-        AudioManager.PlayVaried(Sfx.FootstepDirtB, -16f, 0.82f, 0.03f);
+        _verticalVelocity = JumpVelocity;
+        AudioManager.PlayVaried(Sfx.FootstepDirtB, -15f, 0.84f, 0.03f);
     }
+
+    // ------------------------------------------------------------ simulation
 
     public override void _Process(double delta)
     {
         float dt = Mathf.Min((float)delta, 0.05f);
+        bool free = InputFree();
 
-        UpdateCrouch(dt);
-        UpdateVertical(dt);
-        if (InputFree())
+        UpdateBeam(dt);
+        UpdateCrouch(dt, free);
+        UpdateJump(dt);
+        if (free)
         {
+            UpdateTurning(dt);
             UpdateMovement(dt);
             CheckExit();
         }
         else
         {
-            _pendingMouseTurn = 0f;
-            _velocity = _velocity.Lerp(Vector2.Zero,
-                Mathf.Clamp(1f - Mathf.Exp(-12f * dt), 0f, 1f));
-            _bobAmount = Mathf.MoveToward(_bobAmount, 0f, dt * 5f);
+            // A dialogue line, a panel or a scene change is a full stop.
+            _velocity = Vector2.Zero;
+            _moving = false;
+            _running = false;
         }
 
-        UpdateExitHint();
+        UpdateGait(dt);
+        UpdateTorchAim(dt);
+        UpdateLabels(dt);
         QueueRedraw();
     }
 
-    private void UpdateCrouch(float dt)
+    /// <summary>The beam is Mara's hand on the torch: it follows the
+    /// mouse directly, smoothed exactly as the basement, the vent and
+    /// the blackout smooth theirs.</summary>
+    private void UpdateBeam(float dt)
     {
-        bool wantsCrouch = InputFree() && Input.IsPhysicalKeyPressed(Key.C);
-        _crouchAmount = Mathf.MoveToward(_crouchAmount, wantsCrouch ? 1f : 0f, dt * 7f);
+        Vector2 mouse = GetGlobalMousePosition();
+        mouse = new Vector2(
+            Mathf.Clamp(mouse.X, 0f, ScreenWidth),
+            Mathf.Clamp(mouse.Y, 0f, ScreenHeight));
+        if (!_beamReady)
+        {
+            _beamPosition = mouse;
+            _beamReady = true;
+            return;
+        }
+
+        float weight = 1f - Mathf.Exp(-20f * Mathf.Max(dt, 0f));
+        _beamPosition = _beamPosition.Lerp(mouse, Mathf.Clamp(weight, 0f, 1f));
     }
 
-    private void UpdateVertical(float dt)
+    private void UpdateCrouch(float dt, bool free)
     {
-        if (_grounded || GetTree().Paused)
-            return;
+        bool wantsCrouch = free && Input.IsPhysicalKeyPressed(Key.C);
+        _crouchAmount = Mathf.MoveToward(_crouchAmount, wantsCrouch ? 1f : 0f, dt * 6f);
+    }
 
-        _verticalVelocity -= 11.5f * dt;
-        _jumpHeight += _verticalVelocity * dt;
-        if (_jumpHeight <= 0f)
+    private void UpdateJump(float dt)
+    {
+        if (!_grounded)
         {
-            _jumpHeight = 0f;
-            _verticalVelocity = 0f;
-            _grounded = true;
-            AudioManager.PlayVaried(Sfx.FootstepDirtA, -14f, 0.88f, 0.03f);
+            _verticalVelocity -= JumpGravity * dt;
+            _jumpHeight += _verticalVelocity * dt;
+            if (_jumpHeight <= 0f)
+            {
+                _jumpHeight = 0f;
+                _verticalVelocity = 0f;
+                _grounded = true;
+                _landDip = 1f;
+                AudioManager.PlayVaried(Sfx.FootstepDirtA, -12f, 0.8f, 0.03f);
+            }
         }
+        _landDip = Mathf.MoveToward(_landDip, 0f, dt / 0.3f);
+    }
+
+    private void UpdateTurning(float dt)
+    {
+        float turn = 0f;
+        if (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left))
+            turn -= 1f;
+        if (Input.IsPhysicalKeyPressed(Key.D) || Input.IsPhysicalKeyPressed(Key.Right))
+            turn += 1f;
+        if (turn != 0f)
+            _yaw = NormalizeAngle(_yaw + turn * TurnSpeed * dt);
     }
 
     private void UpdateMovement(float dt)
     {
-        if (Input.IsPhysicalKeyPressed(Key.Left))
-            _yaw -= ArrowTurnSpeed * dt;
-        if (Input.IsPhysicalKeyPressed(Key.Right))
-            _yaw += ArrowTurnSpeed * dt;
-        _yaw = NormalizeAngle(_yaw + _pendingMouseTurn);
-        _pendingMouseTurn = 0f;
-
-        Vector2 mouse = GetGlobalMousePosition();
-        if (mouse.Y > 130f)
-        {
-            float edge = (mouse.X - ScreenWidth * 0.5f) / (ScreenWidth * 0.5f);
-            float deadZone = 0.62f;
-            if (Mathf.Abs(edge) > deadZone)
-            {
-                float strength = (Mathf.Abs(edge) - deadZone) / (1f - deadZone);
-                float direction = edge > 0f ? 1f : -1f;
-                _yaw = NormalizeAngle(_yaw + direction * strength * 1.8f * dt);
-            }
-        }
-
-        float forwardInput = 0f;
-        float strafeInput = 0f;
+        float forward = 0f;
         if (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up))
-            forwardInput += 1f;
+            forward += 1f;
         if (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down))
-            forwardInput -= 1f;
-        if (Input.IsPhysicalKeyPressed(Key.D))
-            strafeInput += 1f;
-        if (Input.IsPhysicalKeyPressed(Key.A))
-            strafeInput -= 1f;
+            forward -= 1f;
 
-        Vector2 forward = new(Mathf.Cos(_yaw), Mathf.Sin(_yaw));
-        Vector2 right = new(-forward.Y, forward.X);
-        Vector2 desired = forward * forwardInput + right * strafeInput;
-        if (desired.LengthSquared() > 1f)
-            desired = desired.Normalized();
-
-        bool running = Input.IsKeyPressed(Key.Shift) && _crouchAmount < 0.45f;
-        float speed = _crouchAmount >= 0.45f ? CrouchSpeed : running ? RunSpeed : WalkSpeed;
+        bool crouching = _crouchAmount >= 0.45f;
+        _running = !crouching && forward > 0f && Input.IsKeyPressed(Key.Shift);
+        float speed = crouching ? CrouchSpeed : _running ? RunSpeed : WalkSpeed;
+        if (forward < 0f)
+            speed *= BackwardFactor;
         if (_lookingBack)
-            speed *= 0.82f;
+            speed *= LookingBackFactor;
 
-        float responsiveness = _grounded ? 11f : 3.5f;
-        _velocity = _velocity.Lerp(desired * speed,
-            Mathf.Clamp(1f - Mathf.Exp(-responsiveness * dt), 0f, 1f));
+        Vector2 facing = new(Mathf.Cos(_yaw), Mathf.Sin(_yaw));
+        Vector2 desired = facing * forward * speed;
+        float weight = Mathf.Clamp(1f - Mathf.Exp(-MovementResponse * dt), 0f, 1f);
+        _velocity = _velocity.Lerp(desired, weight);
+        if (forward == 0f && _velocity.LengthSquared() < 0.0004f)
+            _velocity = Vector2.Zero;
 
         Vector2 candidateX = _playerPosition + new Vector2(_velocity.X * dt, 0f);
         if (CanStand(candidateX))
@@ -494,29 +632,93 @@ public partial class HedgeMaze : Node2D
         else
             _velocity.Y = 0f;
 
-        float horizontalSpeed = _velocity.Length();
-        if (_grounded && horizontalSpeed > 0.22f)
+        _moving = forward != 0f && _velocity.Length() > 0.05f;
+    }
+
+    /// <summary>Footfalls on the journeys' cadence, and the hand's
+    /// sway riding the same steps.</summary>
+    private void UpdateGait(float dt)
+    {
+        bool crouching = _crouchAmount >= 0.45f;
+        float stepSeconds = crouching ? CrouchStepSeconds : _running ? RunStepSeconds : WalkStepSeconds;
+        float targetAmpY = crouching ? 2.5f : _running ? 9f : 5f;
+        float targetAmpX = crouching ? 2f : _running ? 7f : 4f;
+        _bobAmpY = Mathf.MoveToward(_bobAmpY, targetAmpY, dt * 24f);
+        _bobAmpX = Mathf.MoveToward(_bobAmpX, targetAmpX, dt * 24f);
+
+        if (_moving && _grounded)
         {
-            if (!Settings.ReduceMotionOrDefault())
-                _bobPhase += dt * horizontalSpeed * 3.4f;
-            _bobAmount = Mathf.MoveToward(_bobAmount, 1f, dt * 5f);
-            _footstepTimer -= dt * horizontalSpeed;
-            if (_footstepTimer <= 0f)
+            if (!_stepping)
             {
-                _footstepTimer = running ? 1.55f : 1.35f;
-                _footstepAlternate = !_footstepAlternate;
-                AudioManager.PlayVaried(
-                    _footstepAlternate ? Sfx.FootstepDirtA : Sfx.FootstepDirtB,
-                    _crouchAmount >= 0.45f ? -19f : running ? -11f : -14f,
-                    _crouchAmount >= 0.45f ? 0.82f : running ? 1.08f : 0.96f,
-                    0.04f);
+                _stepping = true;
+                if (_bobAmount < 0.2f)
+                    _stepPhase = Mathf.Floor(_stepPhase) + 0.55f;
             }
+
+            float before = _stepPhase;
+            _stepPhase += dt / stepSeconds;
+            if (Mathf.Floor(_stepPhase) > Mathf.Floor(before))
+                PlayFootstep(crouching);
+            _bobAmount = Mathf.MoveToward(_bobAmount, 1f, dt * 4f);
         }
         else
         {
-            _bobAmount = Mathf.MoveToward(_bobAmount, 0f, dt * 5f);
-            _footstepTimer = Mathf.Min(_footstepTimer, 0.2f);
+            _stepping = false;
+            _bobAmount = Mathf.MoveToward(_bobAmount, 0f, dt * 3f);
         }
+    }
+
+    private void PlayFootstep(bool crouching)
+    {
+        _footstepAlternate = !_footstepAlternate;
+        AudioManager.PlayVaried(
+            _footstepAlternate ? Sfx.FootstepDirtA : Sfx.FootstepDirtB,
+            crouching ? -19f : _running ? -9.5f : -12f,
+            crouching ? 0.86f : _running ? 1.06f : 0.97f,
+            0.035f);
+    }
+
+    /// <summary>The torch in her palm turns to face the circle the
+    /// mouse has put on the dark, at the beam's own smoothing.</summary>
+    private void UpdateTorchAim(float dt)
+    {
+        GetHandPose(out _, out _, out Vector2 palm);
+        Vector2 toBeam = _beamPosition - palm;
+        float target = _torchRotation;
+        if (toBeam.LengthSquared() > 1f)
+        {
+            float diff = NormalizeAngle(Mathf.Atan2(toBeam.Y, toBeam.X) - TorchLensBaseAngle);
+            if (diff < TorchMinRotation || diff > TorchMaxRotation)
+            {
+                float toMin = Mathf.Abs(NormalizeAngle(diff - TorchMinRotation));
+                float toMax = Mathf.Abs(NormalizeAngle(diff - TorchMaxRotation));
+                diff = toMin < toMax ? TorchMinRotation : TorchMaxRotation;
+            }
+            target = diff;
+        }
+
+        if (!_torchRotationReady)
+        {
+            _torchRotation = target;
+            _torchRotationReady = true;
+            return;
+        }
+        float weight = Mathf.Clamp(1f - Mathf.Exp(-20f * dt), 0f, 1f);
+        _torchRotation = Mathf.Lerp(_torchRotation, target, weight);
+    }
+
+    private void UpdateLabels(float dt)
+    {
+        UpdateExitHint();
+        if (_promptLabel == null)
+            return;
+
+        // The same courtesy the walked journeys give "Hold W to walk":
+        // dim while she is moving, back to full while she stands.
+        float target = _moving ? 0.4f : 0.95f;
+        var modulate = _promptLabel.Modulate;
+        modulate.A = Mathf.MoveToward(modulate.A, target, dt * 2.2f);
+        _promptLabel.Modulate = modulate;
     }
 
     private bool CanStand(Vector2 position)
@@ -600,6 +802,8 @@ public partial class HedgeMaze : Node2D
             text = "A break in the hedge — the far side";
         else if (_lookingBack)
             text = "Looking behind her";
+        else if (_crouchAmount >= 0.45f)
+            text = "Crouching";
 
         if (text != _exitHintCache)
         {
@@ -622,8 +826,12 @@ public partial class HedgeMaze : Node2D
 
     private static bool IsSolid(char tile) => tile is '#' or 'P' or 'F' or 'T';
 
-    private (float Distance, Vector2I Cell, char Tile, int Side, float WallX) CastRay(float angle)
+    /// <summary>One grid ray. The low dry fountain blocks her feet but
+    /// not her eyes: it is reported separately and the ray carries on
+    /// to the hedge behind it.</summary>
+    private RayHit CastRay(float angle, out RayHit shortHit)
     {
+        shortHit = default;
         Vector2 dir = new(Mathf.Cos(angle), Mathf.Sin(angle));
         int mapX = Mathf.FloorToInt(_playerPosition.X);
         int mapY = Mathf.FloorToInt(_playerPosition.Y);
@@ -667,159 +875,107 @@ public partial class HedgeMaze : Node2D
             float wallX = side == 0
                 ? hitPoint.Y - Mathf.Floor(hitPoint.Y)
                 : hitPoint.X - Mathf.Floor(hitPoint.X);
-            return (Mathf.Max(distance, 0.001f), cell, tile, side, Mathf.Clamp(wallX, 0f, 0.999f));
+            var hit = new RayHit
+            {
+                Hit = true,
+                Distance = Mathf.Max(distance, 0.001f),
+                Cell = cell,
+                Tile = tile,
+                Side = side,
+                WallX = Mathf.Clamp(wallX, 0f, 0.999f),
+            };
+
+            if (tile == 'F')
+            {
+                if (!shortHit.Hit)
+                    shortHit = hit;
+                continue;
+            }
+            return hit;
         }
 
-        return (40f, new Vector2I(mapX, mapY), '#', side, 0f);
-    }
-
-    private float Horizon(Vector2 mouse)
-    {
-        float bob = Settings.ReduceMotionOrDefault()
-            ? 0f
-            : Mathf.Sin(_bobPhase * Mathf.Tau) * 4f * _bobAmount;
-        float pitch = Mathf.Clamp((mouse.Y - ScreenHeight * 0.5f) * 0.07f, -26f, 26f);
-        return ScreenHeight * 0.5f + _crouchAmount * 28f - _jumpHeight * 34f + bob + pitch;
+        return new RayHit
+        {
+            Hit = true,
+            Distance = 40f,
+            Cell = new Vector2I(mapX, mapY),
+            Tile = '#',
+            Side = side,
+            WallX = 0f,
+        };
     }
 
     private float ViewYaw => NormalizeAngle(_yaw + (_lookingBack ? Mathf.Pi : 0f));
 
-    private Vector2 BeamAim(Vector2 mouse, float horizon)
+    private float BeamFlicker() => Settings.ReduceMotionOrDefault()
+        ? 1f
+        : 0.95f + 0.05f * Mathf.Sin(Time.GetTicksMsec() / 57f);
+
+    private float BeamRadiusNow() =>
+        GameState.Instance?.HasFlag("basement_battery_taken") == true ? StrongBeamRadius : BeamRadius;
+
+    /// <summary>How much of Father's torch reaches something at this
+    /// depth. The circle itself decides where on screen it lands.</summary>
+    private float TorchReach(float depth)
     {
-        float x = ScreenWidth * 0.5f + Mathf.Clamp(mouse.X - ScreenWidth * 0.5f, -360f, 360f) * 0.28f;
-        float y = horizon + 14f + Mathf.Clamp(mouse.Y - ScreenHeight * 0.5f, -180f, 180f) * 0.14f;
-        return new Vector2(x, y);
+        if (!_flashlightOn)
+            return 0f;
+        return Mathf.Clamp(1.15f - depth / 7f, 0f, 1f) * BeamFlicker();
     }
 
-    private Vector2 TorchLensPosition()
-    {
-        float bob = Settings.ReduceMotionOrDefault()
-            ? 0f
-            : Mathf.Sin(_bobPhase * Mathf.Tau + 0.7f) * 3f * _bobAmount;
-        return new Vector2(694f, 548f + _crouchAmount * 18f - _jumpHeight * 10f + bob);
-    }
+    private float SurfaceLight(float depth) =>
+        Mathf.Clamp(0.12f + 0.95f * TorchReach(depth), 0.06f, 1.05f);
+
+    // ------------------------------------------------------------ drawing
 
     public override void _Draw()
     {
-        Vector2 mouse = GetGlobalMousePosition();
         float viewYaw = ViewYaw;
-        float horizon = Horizon(mouse);
-        Vector2 aim = BeamAim(mouse, horizon);
 
-        DrawSky(viewYaw, horizon);
-        DrawGround(viewYaw, horizon, aim);
-        DrawWalls(viewYaw, horizon, aim);
-        DrawFlashlightGlow(aim);
-        DrawTorch();
-        DrawVignette();
-        DrawEyelids();
+        DrawRect(new Rect2(0, 0, ScreenWidth, Horizon), SkyColorAt(Horizon * 0.5f), true);
+        DrawGroundBase();
+        DrawWalls(viewYaw);
+        DrawGroundTufts(viewYaw);
+
+        DrawTorchDarkness();
+        DrawSkyAboveWalls(viewYaw);
+        DrawTorchRings();
+
+        DrawBeamShaft();
+        DrawHeldFlashlight();
 
         DrawRect(new Rect2(0, 0, ScreenWidth, 22), new Color(0, 0, 0, 0.28f), true);
         DrawRect(new Rect2(0, 626, ScreenWidth, 22), new Color(0, 0, 0, 0.28f), true);
         DrawRect(new Rect2(0, 0, 24, ScreenHeight), new Color(0, 0, 0, 0.22f), true);
         DrawRect(new Rect2(1128, 0, 24, ScreenHeight), new Color(0, 0, 0, 0.22f), true);
+        DrawEyelids();
     }
 
-    private void DrawSky(float viewYaw, float horizon)
+    private static Color SkyColorAt(float y)
     {
-        for (float y = 0f; y < horizon; y += 16f)
-        {
-            float t = Mathf.Clamp(y / Mathf.Max(horizon, 1f), 0f, 1f);
-            var color = new Color(
-                Mathf.Lerp(0.004f, 0.025f, t),
-                Mathf.Lerp(0.008f, 0.045f, t),
-                Mathf.Lerp(0.02f, 0.085f, t));
-            DrawRect(new Rect2(0, y, ScreenWidth, Mathf.Min(16f, horizon - y)), color, true);
-        }
-
-        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
-        for (int i = 0; i < 105; i++)
-        {
-            float starYaw = i * 2.399963f;
-            float relative = NormalizeAngle(starYaw - viewYaw);
-            if (Mathf.Abs(relative) > FieldOfView * 0.56f)
-                continue;
-            float x = ScreenWidth * 0.5f + Mathf.Tan(relative) / tanHalfFov * ScreenWidth * 0.5f;
-            float y = 18f + Hash01(i, 17, 91) * Mathf.Max(30f, horizon - 70f);
-            float alpha = 0.25f + 0.55f * Hash01(i, 43, 7);
-            DrawRect(new Rect2(x, y, 2f, 2f), new Color(0.85f, 0.9f, 1f, alpha), true);
-        }
-
-        float moonRelative = NormalizeAngle(2.45f - viewYaw);
-        if (Mathf.Abs(moonRelative) < FieldOfView * 0.55f)
-        {
-            float moonX = ScreenWidth * 0.5f +
-                Mathf.Tan(moonRelative) / tanHalfFov * ScreenWidth * 0.5f;
-            var moon = new Vector2(moonX, 88f);
-            DrawCircle(moon, 31f, new Color(0.72f, 0.8f, 0.92f, 0.13f));
-            DrawCircle(moon, 19f, new Color(0.78f, 0.84f, 0.92f, 0.72f));
-            DrawCircle(moon + new Vector2(7, -3), 15f, new Color(0.018f, 0.03f, 0.055f, 0.82f));
-        }
+        float t = Mathf.Clamp(y / Horizon, 0f, 1f);
+        return new Color(
+            Mathf.Lerp(0.01f, 0.04f, t),
+            Mathf.Lerp(0.016f, 0.062f, t),
+            Mathf.Lerp(0.036f, 0.105f, t));
     }
 
-    private void DrawGround(float viewYaw, float horizon, Vector2 aim)
+    private void DrawGroundBase()
     {
-        for (float y = horizon; y < ScreenHeight; y += 12f)
+        for (float y = Horizon; y < ScreenHeight; y += 12f)
         {
-            float t = Mathf.Clamp((y - horizon) / Mathf.Max(ScreenHeight - horizon, 1f), 0f, 1f);
-            var color = new Color(
-                Mathf.Lerp(0.008f, 0.035f, t),
-                Mathf.Lerp(0.018f, 0.065f, t),
-                Mathf.Lerp(0.012f, 0.035f, t));
-            DrawRect(new Rect2(0, y, ScreenWidth, Mathf.Min(12f, ScreenHeight - y)), color, true);
-        }
-
-        Vector2 dir = new(Mathf.Cos(viewYaw), Mathf.Sin(viewYaw));
-        Vector2 plane = new(-dir.Y, dir.X);
-        plane *= Mathf.Tan(FieldOfView * 0.5f);
-
-        for (float y = horizon + 18f; y < ScreenHeight; y += 18f)
-        {
-            float rowDistance = 190f / Mathf.Max(y - horizon, 1f);
-            Vector2 left = _playerPosition + (dir - plane) * rowDistance;
-            Vector2 right = _playerPosition + (dir + plane) * rowDistance;
-
-            for (int column = 0; column < ColumnCount; column += 3)
-            {
-                Vector2 sample = left.Lerp(right, (column + 0.5f) / ColumnCount);
-                var cell = new Vector2I(Mathf.FloorToInt(sample.X), Mathf.FloorToInt(sample.Y));
-                if (IsSolid(CellAt(cell)))
-                    continue;
-
-                int subX = Mathf.FloorToInt(sample.X * 3f);
-                int subY = Mathf.FloorToInt(sample.Y * 3f);
-                float hash = Hash01(subX, subY, 71);
-                if (hash < 0.78f)
-                    continue;
-
-                float screenX = column * ColumnWidth + Hash01(subX, subY, 13) * 22f;
-                float size = Mathf.Clamp(10f / Mathf.Max(rowDistance, 0.35f), 2f, 10f);
-                float light = GroundLight(screenX, rowDistance, aim);
-                Color detail = hash > 0.92f
-                    ? ScaleColor(new Color(0.32f, 0.3f, 0.25f), light)
-                    : ScaleColor(new Color(0.08f, 0.24f, 0.09f), light);
-                DrawRect(new Rect2(screenX, y + Hash01(subX, subY, 29) * 7f, size, Mathf.Max(2f, size * 0.55f)),
-                    detail, true);
-            }
+            float height = Mathf.Min(12f, ScreenHeight - y);
+            float centre = y + height * 0.5f;
+            float depth = EyeHeightPixels / Mathf.Max(centre - Horizon, 1f);
+            float light = SurfaceLight(depth);
+            DrawRect(new Rect2(0, y, ScreenWidth, height),
+                ScaleColor(new Color(0.055f, 0.15f, 0.06f), light), true);
         }
     }
 
-    private float GroundLight(float screenX, float distance, Vector2 aim)
-    {
-        float moon = 0.18f + 0.12f * Mathf.Clamp(1f - distance / 14f, 0f, 1f);
-        if (!_flashlightOn)
-            return moon;
-        float beam = Mathf.Clamp(1.08f - Mathf.Abs(screenX - aim.X) / 360f, 0f, 1f);
-        float reach = Mathf.Clamp(1.2f - distance / 10.5f, 0f, 1f);
-        return Mathf.Clamp(moon + beam * reach * 0.95f, 0f, 1.15f);
-    }
-
-    private void DrawWalls(float viewYaw, float horizon, Vector2 aim)
+    private void DrawWalls(float viewYaw)
     {
         float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
-        float flicker = Settings.ReduceMotionOrDefault()
-            ? 1f
-            : 0.96f + 0.04f * Mathf.Sin(Time.GetTicksMsec() / 61f);
 
         for (int column = 0; column < ColumnCount; column++)
         {
@@ -827,60 +983,83 @@ public partial class HedgeMaze : Node2D
             float centerX = screenX + ColumnWidth * 0.5f;
             float cameraX = 2f * centerX / ScreenWidth - 1f;
             float rayAngle = viewYaw + Mathf.Atan(cameraX * tanHalfFov);
-            var hit = CastRay(rayAngle);
-            float correctedDistance = Mathf.Max(
-                hit.Distance * Mathf.Cos(rayAngle - viewYaw), 0.05f);
+            float fisheye = Mathf.Cos(rayAngle - viewYaw);
+            RayHit hit = CastRay(rayAngle, out RayHit shortHit);
 
-            float heightFactor = hit.Tile switch
+            float depth = Mathf.Max(hit.Distance * fisheye, 0.05f);
+            _depthByColumn[column] = depth;
+            float top = DrawWallSlice(screenX, depth, hit, out float crown);
+            float skyLimit = top - crown;
+
+            if (shortHit.Hit && shortHit.Distance < hit.Distance)
             {
-                'F' => 0.48f,
-                'P' => 1.08f,
-                'T' => 1.42f,
-                _ => 1.28f,
-            };
-            float groundLineHeight = 680f / correctedDistance;
-            float lineHeight = groundLineHeight * heightFactor;
-            float bottom = horizon + groundLineHeight * 0.37f;
-            float top = bottom - lineHeight * 1.06f;
-
-            float beam = _flashlightOn
-                ? Mathf.Clamp(1.12f - Mathf.Abs(centerX - aim.X) / 370f, 0f, 1f) * flicker
-                : 0f;
-            float reach = Mathf.Clamp(1.24f - correctedDistance / 10.5f, 0f, 1f);
-            float moon = hit.Side == 0 ? 0.2f : 0.15f;
-            float light = Mathf.Clamp(moon + beam * reach, 0.08f, 1.12f);
-
-            Color baseColor = hit.Tile switch
-            {
-                'P' => new Color(0.34f, 0.35f, 0.34f),
-                'F' => new Color(0.28f, 0.36f, 0.4f),
-                'T' => new Color(0.035f, 0.24f, 0.07f),
-                _ => hit.Side == 0
-                    ? new Color(0.045f, 0.27f, 0.075f)
-                    : new Color(0.03f, 0.2f, 0.055f),
-            };
-            Color wall = ScaleColor(baseColor, light);
-            DrawRect(new Rect2(screenX, top, ColumnWidth + 1f, bottom - top), wall, true);
-
-            if (hit.Tile is '#' or 'T')
-                DrawLeafDetail(screenX, top, bottom, hit.Cell, hit.WallX, light, hit.Tile);
-            else if (hit.Tile == 'P')
-                DrawStoneDetail(screenX, top, bottom, hit.Cell, light);
-            else if (hit.Tile == 'F')
-            {
-                float waterY = top + Mathf.Min(18f, lineHeight * 0.14f);
-                DrawRect(new Rect2(screenX, waterY, ColumnWidth + 1f, 4f),
-                    ScaleColor(new Color(0.35f, 0.55f, 0.68f), light), true);
+                float shortDepth = Mathf.Max(shortHit.Distance * fisheye, 0.05f);
+                _shortDepthByColumn[column] = shortDepth;
+                // Close enough, the low fountain can stand taller on
+                // screen than a far hedge; the sky must not clip it.
+                float shortTop = DrawWallSlice(screenX, shortDepth, shortHit, out _);
+                skyLimit = Mathf.Min(skyLimit, shortTop);
             }
+            else
+            {
+                _shortDepthByColumn[column] = float.MaxValue;
+            }
+            _skyLimitByColumn[column] = Mathf.Clamp(skyLimit, 0f, Horizon);
         }
     }
 
-    private void DrawLeafDetail(float screenX, float top, float bottom, Vector2I cell,
+    /// <summary>Draw one projected slice; returns its top edge.</summary>
+    private float DrawWallSlice(float screenX, float depth, RayHit hit, out float crown)
+    {
+        crown = 0f;
+        float heightFactor = hit.Tile switch
+        {
+            'F' => 0.48f,
+            'P' => 1.08f,
+            'T' => 1.42f,
+            _ => 1.28f,
+        };
+        float groundLineHeight = ProjectionScale / depth;
+        float lineHeight = groundLineHeight * heightFactor;
+        float bottom = Horizon + groundLineHeight * 0.37f;
+        float top = bottom - lineHeight * 1.06f;
+
+        float light = SurfaceLight(depth) * (hit.Side == 0 ? 1f : 0.84f);
+        Color baseColor = hit.Tile switch
+        {
+            'P' => new Color(0.34f, 0.35f, 0.34f),
+            'F' => new Color(0.28f, 0.36f, 0.4f),
+            'T' => new Color(0.035f, 0.24f, 0.07f),
+            _ => new Color(0.045f, 0.27f, 0.075f),
+        };
+        DrawRect(new Rect2(screenX, top, ColumnWidth + 1f, bottom - top),
+            ScaleColor(baseColor, light), true);
+
+        if (hit.Tile is '#' or 'T')
+        {
+            crown = DrawLeafDetail(screenX, top, bottom, hit.Cell, hit.WallX, light, hit.Tile);
+        }
+        else if (hit.Tile == 'P')
+        {
+            DrawStoneDetail(screenX, top, bottom, hit.Cell, light);
+        }
+        else if (hit.Tile == 'F')
+        {
+            float rimY = top + Mathf.Min(18f, lineHeight * 0.14f);
+            DrawRect(new Rect2(screenX, top, ColumnWidth + 1f, Mathf.Max(2f, lineHeight * 0.05f)),
+                ScaleColor(new Color(0.5f, 0.54f, 0.55f), light), true);
+            DrawRect(new Rect2(screenX, rimY, ColumnWidth + 1f, 4f),
+                ScaleColor(new Color(0.35f, 0.55f, 0.68f), light), true);
+        }
+        return top;
+    }
+
+    private float DrawLeafDetail(float screenX, float top, float bottom, Vector2I cell,
         float wallX, float light, char tile)
     {
         float height = bottom - top;
         if (height <= 8f)
-            return;
+            return 0f;
 
         int textureColumn = Mathf.FloorToInt(wallX * 8f);
         float crown = Hash01(cell.X * 9 + textureColumn, cell.Y * 5, 31) *
@@ -905,6 +1084,7 @@ public partial class HedgeMaze : Node2D
                 : ScaleColor(new Color(0.012f, 0.09f, 0.025f), Mathf.Clamp(light + 0.15f, 0f, 1f));
             DrawRect(new Rect2(x, y, size * 0.72f, size), leaf, true);
         }
+        return crown;
     }
 
     private void DrawStoneDetail(float screenX, float top, float bottom, Vector2I cell, float light)
@@ -922,58 +1102,313 @@ public partial class HedgeMaze : Node2D
             ScaleColor(new Color(0.5f, 0.51f, 0.47f), light), true);
     }
 
-    private void DrawFlashlightGlow(Vector2 aim)
+    /// <summary>Grass tufts and pebbles fixed in the world and
+    /// projected with the walls' own eye height, so the ground flows
+    /// past at exactly the speed the hedge bases do.</summary>
+    private void DrawGroundTufts(float viewYaw)
     {
-        if (!_flashlightOn)
-            return;
+        Vector2 dir = new(Mathf.Cos(viewYaw), Mathf.Sin(viewYaw));
+        Vector2 right = new(-dir.Y, dir.X);
+        float focal = ScreenWidth * 0.5f / Mathf.Tan(FieldOfView * 0.5f);
+        int px = Mathf.FloorToInt(_playerPosition.X);
+        int py = Mathf.FloorToInt(_playerPosition.Y);
 
-        Vector2 lens = TorchLensPosition();
-        var warm = new Color(1f, 0.88f, 0.6f);
-        for (int i = 0; i <= 16; i++)
+        for (int cy = py - 8; cy <= py + 8; cy++)
         {
-            float t = i / 16f;
-            Vector2 pos = lens.Lerp(aim, t);
-            float radius = Mathf.Lerp(7f, 92f, t * t * (3f - 2f * t));
-            DrawCircle(pos, radius, new Color(warm.R, warm.G, warm.B, Mathf.Lerp(0.1f, 0.025f, t)));
+            for (int cx = px - 8; cx <= px + 8; cx++)
+            {
+                if (IsSolid(CellAt(new Vector2I(cx, cy))))
+                    continue;
+
+                for (int k = 0; k < 4; k++)
+                {
+                    var world = new Vector2(
+                        cx + 0.08f + 0.84f * Hash01(cx, cy, 11 + k * 7),
+                        cy + 0.08f + 0.84f * Hash01(cx, cy, 23 + k * 13));
+                    Vector2 rel = world - _playerPosition;
+                    float depth = rel.Dot(dir);
+                    if (depth < 0.18f || depth > 8.5f)
+                        continue;
+
+                    float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * focal;
+                    if (screenX < -12f || screenX > ScreenWidth + 12f)
+                        continue;
+                    int column = Mathf.Clamp(Mathf.FloorToInt(screenX / ColumnWidth), 0, ColumnCount - 1);
+                    if (depth > _depthByColumn[column] || depth > _shortDepthByColumn[column])
+                        continue;
+
+                    float screenY = Horizon + EyeHeightPixels / depth;
+                    if (screenY > ScreenHeight + 4f)
+                        continue;
+
+                    float hash = Hash01(cx * 3 + k, cy * 5 - k, 71);
+                    float size = Mathf.Clamp(9f / depth, 2f, 12f);
+                    float light = SurfaceLight(depth);
+                    Color color = hash > 0.86f
+                        ? ScaleColor(new Color(0.34f, 0.32f, 0.27f), light)
+                        : ScaleColor(new Color(0.11f, 0.33f, 0.11f), light);
+                    DrawRect(new Rect2(screenX - size * 0.5f, screenY - size * 0.6f,
+                        size, Mathf.Max(2f, size * 0.6f)), color, true);
+                }
+            }
+        }
+    }
+
+    /// <summary>The flashlight circle, drawn exactly as the basement
+    /// draws it: two square-edged darkness passes in chunky strips.</summary>
+    private void DrawTorchDarkness()
+    {
+        if (!_hasFlashlight || !_flashlightOn)
+        {
+            // Moonlit silhouettes only.
+            DrawRect(new Rect2(0, 0, ScreenWidth, ScreenHeight),
+                new Color(0.002f, 0.002f, 0.005f, 0.8f), true);
+            return;
         }
 
-        DrawSetTransform(aim, 0f, new Vector2(1f, 0.78f));
-        DrawCircle(Vector2.Zero, 190f, new Color(warm.R, warm.G, warm.B, 0.055f));
-        DrawCircle(Vector2.Zero, 145f, new Color(warm.R, warm.G, warm.B, 0.07f));
-        DrawCircle(Vector2.Zero, 100f, new Color(warm.R, warm.G, warm.B, 0.085f));
-        DrawCircle(Vector2.Zero, 56f, new Color(1f, 0.93f, 0.72f, 0.1f));
-        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+        float radius = BeamRadiusNow();
+        DrawDarkOutside(_beamPosition, radius + 58f, new Color(0.002f, 0.002f, 0.004f, 0.42f));
+        DrawDarkOutside(_beamPosition, radius, new Color(0.001f, 0.001f, 0.003f, 0.74f));
     }
 
-    private void DrawTorch()
+    private void DrawTorchRings()
     {
-        if (!_hasFlashlight)
+        if (!_hasFlashlight || !_flashlightOn)
             return;
 
-        Vector2 lens = TorchLensPosition();
-        DrawSetTransform(lens, -0.42f, Vector2.One);
-        var body = new Rect2(-15, 0, 30, 132);
-        var head = new Rect2(-22, -25, 44, 29);
-        DrawRect(body, new Color(0.035f, 0.035f, 0.04f, 0.98f), true);
-        DrawRect(body, new Color(0.32f, 0.32f, 0.3f, 0.9f), false, 2f);
-        DrawRect(head, new Color(0.11f, 0.11f, 0.12f, 0.99f), true);
-        DrawRect(head, new Color(0.45f, 0.43f, 0.38f, 0.95f), false, 2f);
-        DrawRect(new Rect2(-17, -21, 34, 15),
-            _flashlightOn
-                ? new Color(1f, 0.9f, 0.62f, 0.98f)
-                : new Color(0.16f, 0.18f, 0.2f, 0.98f), true);
-        DrawRect(new Rect2(-15, 38, 30, 7), new Color(0.38f, 0.3f, 0.18f, 0.9f), true);
-        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+        float radius = BeamRadiusNow();
+        DrawArc(_beamPosition, radius * 0.97f, 0f, Mathf.Tau, 56,
+            new Color(1f, 0.83f, 0.45f, 0.09f), 13f, true);
+        DrawArc(_beamPosition, radius * 0.68f, 0f, Mathf.Tau, 48,
+            new Color(1f, 0.88f, 0.55f, 0.05f), 20f, true);
+        DrawCircle(_beamPosition, 4f, new Color(1f, 0.9f, 0.62f, 0.28f));
     }
 
-    private void DrawVignette()
+    private void DrawDarkOutside(Vector2 center, float radius, Color dark)
     {
-        float edgeAlpha = _flashlightOn ? 0.34f : 0.42f;
-        var edge = new Color(0, 0, 0, edgeAlpha);
-        DrawRect(new Rect2(0, 0, ScreenWidth, 58), edge, true);
-        DrawRect(new Rect2(0, 590, ScreenWidth, 58), edge, true);
-        DrawRect(new Rect2(0, 0, 72, ScreenHeight), edge, true);
-        DrawRect(new Rect2(1080, 0, 72, ScreenHeight), edge, true);
+        float top = Mathf.Clamp(center.Y - radius, 0f, ScreenHeight);
+        float bottom = Mathf.Clamp(center.Y + radius, 0f, ScreenHeight);
+        if (top > 0f)
+            DrawRect(new Rect2(0, 0, ScreenWidth, top), dark, true);
+        if (bottom < ScreenHeight)
+            DrawRect(new Rect2(0, bottom, ScreenWidth, ScreenHeight - bottom), dark, true);
+
+        const float stripHeight = 9f;
+        for (float y = top; y < bottom; y += stripHeight)
+        {
+            float height = Mathf.Min(stripHeight + 1f, bottom - y);
+            float centreY = y + height * 0.5f;
+            float dy = centreY - center.Y;
+            float half = Mathf.Sqrt(Mathf.Max(0f, radius * radius - dy * dy));
+            float leftEdge = Mathf.Clamp(center.X - half, 0f, ScreenWidth);
+            float rightEdge = Mathf.Clamp(center.X + half, 0f, ScreenWidth);
+            if (leftEdge > 0f)
+                DrawRect(new Rect2(0, y, leftEdge, height), dark, true);
+            if (rightEdge < ScreenWidth)
+                DrawRect(new Rect2(rightEdge, y, ScreenWidth - rightEdge, height), dark, true);
+        }
+    }
+
+    /// <summary>The torch lights hedges, not the sky. After the dark
+    /// is laid down, the night sky is put back wherever it shows
+    /// above the hedge tops, so the walls keep a moonlit outline.</summary>
+    private void DrawSkyAboveWalls(float viewYaw)
+    {
+        for (float y = 0f; y < Horizon; y += SkyBand)
+        {
+            float bandBottom = Mathf.Min(y + SkyBand, Horizon);
+            Color color = SkyColorAt((y + bandBottom) * 0.5f);
+            int runStart = -1;
+            for (int column = 0; column <= ColumnCount; column++)
+            {
+                bool full = column < ColumnCount && _skyLimitByColumn[column] >= bandBottom;
+                if (full)
+                {
+                    if (runStart < 0)
+                        runStart = column;
+                    continue;
+                }
+
+                if (runStart >= 0)
+                {
+                    DrawRect(new Rect2(runStart * ColumnWidth, y,
+                        (column - runStart) * ColumnWidth, bandBottom - y), color, true);
+                    runStart = -1;
+                }
+                if (column < ColumnCount && _skyLimitByColumn[column] > y)
+                {
+                    DrawRect(new Rect2(column * ColumnWidth, y,
+                        ColumnWidth, _skyLimitByColumn[column] - y), color, true);
+                }
+            }
+        }
+
+        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
+        for (int i = 0; i < 105; i++)
+        {
+            float relative = NormalizeAngle(i * 2.399963f - viewYaw);
+            if (Mathf.Abs(relative) > FieldOfView * 0.56f)
+                continue;
+            float x = ScreenWidth * 0.5f + Mathf.Tan(relative) / tanHalfFov * ScreenWidth * 0.5f;
+            if (x < 0f || x >= ScreenWidth - 2f)
+                continue;
+            float y = 18f + Hash01(i, 17, 91) * (Horizon - 70f);
+            int column = Mathf.Clamp(Mathf.FloorToInt(x / ColumnWidth), 0, ColumnCount - 1);
+            if (y + 2f > _skyLimitByColumn[column])
+                continue;
+            float alpha = 0.25f + 0.55f * Hash01(i, 43, 7);
+            DrawRect(new Rect2(x, y, 2f, 2f), new Color(0.85f, 0.9f, 1f, alpha), true);
+        }
+
+        float moonRelative = NormalizeAngle(2.45f - viewYaw);
+        if (Mathf.Abs(moonRelative) < FieldOfView * 0.55f)
+        {
+            float moonX = ScreenWidth * 0.5f +
+                Mathf.Tan(moonRelative) / tanHalfFov * ScreenWidth * 0.5f;
+            var moon = new Vector2(moonX, 88f);
+            DrawSkyDisc(moon, 31f, new Color(0.72f, 0.8f, 0.92f, 0.13f));
+            DrawSkyDisc(moon, 19f, new Color(0.78f, 0.84f, 0.92f, 0.72f));
+            DrawSkyDisc(moon + new Vector2(7, -3), 15f, new Color(0.018f, 0.03f, 0.055f, 0.82f));
+        }
+    }
+
+    private void DrawSkyDisc(Vector2 centre, float radius, Color color)
+    {
+        const float row = 3f;
+        for (float y = centre.Y - radius; y < centre.Y + radius; y += row)
+        {
+            float dy = y + row * 0.5f - centre.Y;
+            float half = Mathf.Sqrt(Mathf.Max(0f, radius * radius - dy * dy));
+            if (half > 0.5f)
+                DrawSkyMaskedRun(centre.X - half, centre.X + half, y, row, color);
+        }
+    }
+
+    private void DrawSkyMaskedRun(float x0, float x1, float y, float height, Color color)
+    {
+        x0 = Mathf.Max(0f, x0);
+        x1 = Mathf.Min(ScreenWidth, x1);
+        if (x1 <= x0)
+            return;
+
+        int firstColumn = Mathf.Clamp((int)(x0 / ColumnWidth), 0, ColumnCount - 1);
+        int lastColumn = Mathf.Clamp((int)((x1 - 0.001f) / ColumnWidth), 0, ColumnCount - 1);
+        float runStart = -1f;
+        for (int column = firstColumn; column <= lastColumn + 1; column++)
+        {
+            bool open = column <= lastColumn && _skyLimitByColumn[column] >= y + height;
+            if (open)
+            {
+                if (runStart < 0f)
+                    runStart = Mathf.Max(x0, column * ColumnWidth);
+                continue;
+            }
+            if (runStart >= 0f)
+            {
+                float runEnd = Mathf.Min(x1, column * ColumnWidth);
+                if (runEnd > runStart)
+                    DrawRect(new Rect2(runStart, y, runEnd - runStart, height), color, true);
+                runStart = -1f;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ Mara's hand
+
+    /// <summary>Where her left hand is this frame. Steps sway it,
+    /// a jump lifts it and the landing dips it, a crouch lowers and
+    /// tilts it, and it rises into frame when the torch comes on —
+    /// the world itself never moves for any of these.</summary>
+    private void GetHandPose(out Vector2 wrist, out float handAngle, out Vector2 palm)
+    {
+        float handHeight = HandWidth * HeldHandAspect;
+        Vector2 offset = Vector2.Zero;
+        if (!Settings.ReduceMotionOrDefault())
+        {
+            offset.Y += Mathf.Cos(_stepPhase * Mathf.Tau) * _bobAmpY * _bobAmount;
+            offset.X += Mathf.Sin(_stepPhase * Mathf.Pi) * _bobAmpX * _bobAmount;
+        }
+        offset.Y -= _jumpHeight * HandJumpLift;
+        offset.Y += _landDip * _landDip * 22f;
+        offset += new Vector2(16f, 62f) * _crouchAmount;
+        offset.Y += _handRise * 320f;
+
+        wrist = new Vector2(HandRestCentreX,
+            ScreenHeight + handHeight * (1f - HandVisibleFraction)) + offset;
+        handAngle = _torchRotation * 0.12f + 0.08f * _crouchAmount;
+        var palmLocal = new Vector2(HandWidth * (HeldPalmX - 0.5f), -handHeight * (1f - HeldPalmY));
+        palm = wrist + palmLocal.Rotated(handAngle);
+    }
+
+    private Vector2 TorchLensPosition(Vector2 palm) =>
+        palm + (TorchLensLocal * TorchIconSize).Rotated(_torchRotation);
+
+    /// <summary>GameUI's held-item light rule: the hand is only as
+    /// bright as the torch light actually landing near it, with a
+    /// little back-spill because this time the torch is in it.</summary>
+    private float HandLightLevel(Vector2 palm)
+    {
+        if (!_flashlightOn)
+            return 0.2f;
+        float distance = _beamPosition.DistanceTo(palm);
+        float falloff = 1f - Mathf.Clamp((distance - 110f) / 330f, 0f, 1f);
+        return Mathf.Clamp((0.46f + 0.54f * falloff) * BeamFlicker(), 0f, 1f);
+    }
+
+    private static Color TorchTint(float level) =>
+        new(level, level * 0.96f, level * 0.84f, 1f);
+
+    /// <summary>The faint shaft of the held-torch beam, from the lens
+    /// in her hand to the circle on the hedges.</summary>
+    private void DrawBeamShaft()
+    {
+        if (!_hasFlashlight || !_flashlightOn || _handRise >= 0.995f)
+            return;
+
+        GetHandPose(out _, out _, out Vector2 palm);
+        Vector2 lens = TorchLensPosition(palm);
+        float strength = BeamFlicker() * (1f - _handRise);
+        var warm = new Color(1f, 0.88f, 0.6f);
+        const int discs = 18;
+        for (int i = 1; i <= discs; i++)
+        {
+            float t = i / (float)discs;
+            Vector2 position = lens.Lerp(_beamPosition, t);
+            float radius = Mathf.Lerp(6f, 66f, t * t * (3f - 2f * t));
+            float alpha = Mathf.Lerp(0.1f, 0.022f, t) * strength;
+            DrawCircle(position, radius, new Color(warm.R, warm.G, warm.B, alpha));
+        }
+    }
+
+    /// <summary>Her left hand and Father's flashlight: the same palm
+    /// art and palm anchor as every held item, with the flashlight's
+    /// own item art resting in it and turned toward the circle.</summary>
+    private void DrawHeldFlashlight()
+    {
+        if (!_hasFlashlight || _handTexture == null || _torchTexture == null || _handRise >= 0.995f)
+            return;
+
+        GetHandPose(out Vector2 wrist, out float handAngle, out Vector2 palm);
+        float handHeight = HandWidth * HeldHandAspect;
+        float level = HandLightLevel(palm);
+
+        DrawSetTransform(wrist, handAngle, Vector2.One);
+        DrawTextureRect(_handTexture,
+            new Rect2(-HandWidth * 0.5f, -handHeight, HandWidth, handHeight),
+            false, TorchTint(level));
+        DrawSetTransform(palm, _torchRotation, Vector2.One);
+        DrawTextureRect(_torchTexture,
+            new Rect2(-TorchIconSize * 0.5f, -TorchIconSize * 0.5f, TorchIconSize, TorchIconSize),
+            false, TorchTint(Mathf.Min(1f, level + 0.12f)));
+        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+
+        if (_flashlightOn)
+        {
+            float flicker = BeamFlicker();
+            Vector2 lens = TorchLensPosition(palm);
+            DrawCircle(lens, 14f, new Color(1f, 0.94f, 0.74f, 0.42f * flicker));
+            DrawCircle(lens, 7f, new Color(1f, 0.98f, 0.86f, 0.7f * flicker));
+        }
     }
 
     private void DrawEyelids()

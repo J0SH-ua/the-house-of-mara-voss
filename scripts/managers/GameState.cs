@@ -1562,7 +1562,7 @@ public partial class GameState : Node
         {
             return NextHintLevel("HedgeMaze") switch
             {
-                1 => ("There is no trick in the green walls yet — only the place itself. Walk it slowly enough to learn its turns: WASD moves, the mouse or arrow keys turn, Shift runs, C crouches, Space jumps, and Caps Lock lets Mara look behind her.", null),
+                1 => ("There is no trick in the green walls yet — only the place itself. Walk it slowly enough to learn its turns: W and S walk, A and D turn her, and the mouse aims Father's flashlight circle; Shift runs, C crouches, Space jumps, and Caps Lock lets Mara look behind her.", null),
                 2 => ("Use the unlike things as landmarks: stone pillars, the dry fountain, the two dark topiary shapes. The opening near where she woke leads back to the bridge; the break she wants is on the far side of the walls.", null),
                 _ => ("Work generally north and west from the waking clearing. The far opening is in the north-western wall and leads onward; the southern opening behind her start returns to the bridge. Caps Lock checks the corridor at her back without turning her body around.", null),
             };
