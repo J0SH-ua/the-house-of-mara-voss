@@ -23,14 +23,16 @@ using Godot;
 /// The torch is a sprite of its own now - both hands wrapped round
 /// the cloth-bound head of it, drawn in the same pixel art as
 /// every other thing in this game (assets/images/core/
-/// hand_flashlight.png) - held low in the bottom-left corner and
-/// swung round to follow the circle of light the mouse puts on the
-/// dark. The world it lights is painted too: the night sky, the
+/// hand_flashlight.png) - held low in the bottom-left corner with
+/// the sleeve of her jumper running off the edge, sliding left and
+/// right along the bottom as she points, but never turning in her
+/// hands. The world it lights is painted too: the night sky, the
 /// grass she walks on, the box-hedge walls and the stone pillars
 /// are all projected from the same tiles the garden outside is
-/// drawn from (assets/images/hedge/), so the maze finally looks
-/// like the house it belongs to instead of like coloured
-/// rectangles.
+/// drawn from (assets/images/hedge/), and the torchlight falls on
+/// them in flat bands of light and shade, the way the rest of the
+/// house is painted, so the maze finally looks like the house it
+/// belongs to instead of like coloured rectangles.
 ///
 /// Crouching and jumping are hers again, and the camera goes with
 /// them: a crouch drops her eye, so the hedge tops lean in and
@@ -38,7 +40,9 @@ using Godot;
 /// whole maze falls away and comes back. Looking behind her is a
 /// thing she *holds*, not a thing she taps: keep Caps Lock down
 /// and the view turns all the way round at a calm, even rate,
-/// and lets go and it turns back.
+/// and lets go and it turns back. It is only her *view* that
+/// turns: her body keeps its heading, so she walks on the way she
+/// was going while she looks over her shoulder.
 ///
 /// The south break returns to the bridge and the far north-west
 /// break continues to the last room, so exploring it can never
@@ -135,21 +139,19 @@ public partial class HedgeMaze : Node2D
     private const float StrongBeamRadius = 208f;
 
     // The torch she carries in here is one sprite: both hands round
-    // the cloth-bound head of it, held low in the bottom-left corner
-    // and swung about her grip to follow the circle of light. The
-    // ember of the torch and the place her hands hold it are fixed
-    // points inside that sprite (measured by tools/build_hedge_art.py).
+    // the cloth-bound head of it, with the sleeve of her jumper
+    // running off the bottom-left corner of the frame. The ember of
+    // the torch and the place her hands hold it are fixed points
+    // inside that sprite (measured by tools/build_hedge_art.py).
     // It is drawn as big as the house draws its held hand elsewhere,
-    // and it sits wholly on the screen: the hands, the fingers and
-    // the sleeve of her jumper all stay in frame.
+    // and it does not turn: it slides along the bottom of the frame,
+    // left and right, with where she is pointing.
     private const float TorchSpriteWidth = 320f;
-    private const float TorchRestX = 215f;
-    private const float TorchRestY = 450f;
+    private const float TorchRestLeft = 0f;
+    private const float TorchSlideRange = 44f;
     private const float TorchRiseDistance = 430f;
     private static readonly Vector2 TorchSpriteGrip = new(0.4349f, 0.4884f);
     private static readonly Vector2 TorchSpriteLens = new(0.8368f, 0.1681f);
-    private const float TorchMinRotation = -1.6f;
-    private const float TorchMaxRotation = 0.85f;
 
     // # hedge, P stone pillar, F dry fountain, T topiary,
     // S south waking place, B bridge opening, X far opening.
@@ -227,8 +229,6 @@ public partial class HedgeMaze : Node2D
 
     private Vector2 _beamPosition = new(576f, 324f);
     private bool _beamReady;
-    private float _torchRotation;
-    private bool _torchRotationReady;
     private float _handRise = 1f;
     private Tween _handTween;
 
@@ -616,7 +616,6 @@ public partial class HedgeMaze : Node2D
         }
 
         UpdateGait(dt);
-        UpdateTorchAim(dt);
         UpdateLabels(dt);
         QueueRedraw();
     }
@@ -721,9 +720,11 @@ public partial class HedgeMaze : Node2D
         if (_lookBackAmount > 0.5f)
             speed *= LookingBackFactor;
 
-        // She walks the way she is looking: while the view is turned
-        // round behind her, W carries her backwards, watching it.
-        float moveYaw = ViewYaw;
+        // She keeps walking the way she is facing. Turning to look
+        // behind her does not turn her body: the view swings round
+        // and she carries on forwards, which is the whole point of
+        // looking back.
+        float moveYaw = _yaw;
         Vector2 facing = new(Mathf.Cos(moveYaw), Mathf.Sin(moveYaw));
         Vector2 desired = facing * forward * speed;
         float weight = Mathf.Clamp(1f - Mathf.Exp(-MovementResponse * dt), 0f, 1f);
@@ -787,35 +788,6 @@ public partial class HedgeMaze : Node2D
             crouching ? -19f : _running ? -9.5f : -12f,
             crouching ? 0.86f : _running ? 1.06f : 0.97f,
             0.035f);
-    }
-
-    /// <summary>The torch in her palm turns to face the circle the
-    /// mouse has put on the dark, at the beam's own smoothing.</summary>
-    private void UpdateTorchAim(float dt)
-    {
-        GetHandPose(out _, out _, out Vector2 lens);
-        Vector2 toBeam = _beamPosition - lens;
-        float target = _torchRotation;
-        if (toBeam.LengthSquared() > 1f)
-        {
-            float diff = NormalizeAngle(Mathf.Atan2(toBeam.Y, toBeam.X) - TorchLensBaseAngle);
-            if (diff < TorchMinRotation || diff > TorchMaxRotation)
-            {
-                float toMin = Mathf.Abs(NormalizeAngle(diff - TorchMinRotation));
-                float toMax = Mathf.Abs(NormalizeAngle(diff - TorchMaxRotation));
-                diff = toMin < toMax ? TorchMinRotation : TorchMaxRotation;
-            }
-            target = diff;
-        }
-
-        if (!_torchRotationReady)
-        {
-            _torchRotation = target;
-            _torchRotationReady = true;
-            return;
-        }
-        float weight = Mathf.Clamp(1f - Mathf.Exp(-20f * dt), 0f, 1f);
-        _torchRotation = Mathf.Lerp(_torchRotation, target, weight);
     }
 
     private void UpdateLabels(float dt)
@@ -1037,8 +1009,21 @@ public partial class HedgeMaze : Node2D
         return Mathf.Clamp(1.15f - depth / 7f, 0f, 1f) * BeamFlicker();
     }
 
+    /// <summary>How much of Father's torch reaches something at this
+    /// depth. The circle itself decides where on screen it lands.
+    ///
+    /// The light is stepped, not smoothed: the rest of the house is
+    /// painted in flat bands of light and shade, and a smooth
+    /// falloff is what makes a drawn scene look like a rendered
+    /// one. So the hedges are lit in a handful of steps, the way the
+    /// rooms are.</summary>
     private float SurfaceLight(float depth) =>
-        Mathf.Clamp(0.12f + 0.95f * TorchReach(depth), 0.06f, 1.05f);
+        Posterize(Mathf.Clamp(0.12f + 0.95f * TorchReach(depth), 0.06f, 1.05f));
+
+    /// <summary>Round a light level onto the house's five steps of
+    /// paint.</summary>
+    private static float Posterize(float light) =>
+        Mathf.Clamp(Mathf.Round(light * 4f) * 0.25f, 0.125f, 1f);
 
     // ------------------------------------------------------------ drawing
 
@@ -1652,7 +1637,12 @@ public partial class HedgeMaze : Node2D
     /// <summary>Where her hands hold the torch this frame. The steps
     /// sway it and the landing dips it, and it rises into frame when
     /// the torch comes on. The camera carries the crouch and the jump
-    /// now, so the hands in front of her eyes do not have to.</summary>
+    /// now, so the hands in front of her eyes do not have to.
+    ///
+    /// The torch never turns in her hands: it is held low at the
+    /// bottom-left of the frame with the sleeve running off the
+    /// corner, and it slides left and right along the bottom with
+    /// where she is pointing.</summary>
     private void GetHandPose(out Vector2 grip, out float torchAngle, out Vector2 lens)
     {
         Vector2 offset = Vector2.Zero;
@@ -1664,52 +1654,23 @@ public partial class HedgeMaze : Node2D
         offset.Y += _landDip * _landDip * 16f;
         offset.Y += _handRise * TorchRiseDistance;
 
-        torchAngle = _torchRotation;
-        Vector2 rest = new Vector2(TorchRestX, TorchRestY) + offset;
+        torchAngle = 0f;
+        float left = TorchRestLeft + TorchSlide() + offset.X;
+        float top = ScreenHeight - _torchSpriteHeight + offset.Y;
+        Vector2 pivot = new(TorchSpriteGrip.X * TorchSpriteWidth, TorchSpriteGrip.Y * _torchSpriteHeight);
+        grip = new Vector2(left + pivot.X, top + pivot.Y);
+        lens = grip + TorchLensOffset;
+    }
 
-        // The torch swings about her grip to follow the light, and a
-        // swing can throw a hand off the edge of the screen. When she
-        // is holding the torch out (not putting it away), the whole
-        // sprite — the hands, the fingers and the sleeve of her
-        // jumper — is nudged back inside the frame.
-        if (_handRise < 0.01f)
-        {
-            float width = TorchSpriteWidth;
-            float height = _torchSpriteHeight;
-            Vector2 pivot = new(TorchSpriteGrip.X * width, TorchSpriteGrip.Y * height);
-            Vector2[] corners =
-            {
-                Vector2.Zero,
-                new Vector2(width, 0f),
-                new Vector2(width, height),
-                new Vector2(0f, height),
-            };
-            float minX = float.MaxValue;
-            float maxX = float.MinValue;
-            float minY = float.MaxValue;
-            float maxY = float.MinValue;
-            foreach (Vector2 corner in corners)
-            {
-                Vector2 turned = (corner - pivot).Rotated(torchAngle);
-                minX = Mathf.Min(minX, turned.X);
-                maxX = Mathf.Max(maxX, turned.X);
-                minY = Mathf.Min(minY, turned.Y);
-                maxY = Mathf.Max(maxY, turned.Y);
-            }
-
-            const float margin = 6f;
-            if (rest.X + minX < margin)
-                rest.X = margin - minX;
-            else if (rest.X + maxX > ScreenWidth - margin)
-                rest.X = ScreenWidth - margin - maxX;
-            if (rest.Y + minY < margin)
-                rest.Y = margin - minY;
-            else if (rest.Y + maxY > ScreenHeight - margin)
-                rest.Y = ScreenHeight - margin - maxY;
-        }
-
-        grip = rest;
-        lens = grip + TorchLensOffset.Rotated(torchAngle);
+    /// <summary>How far along the bottom of the frame the torch has
+    /// slid to follow where she is pointing. It moves left and
+    /// right, and no other way.</summary>
+    private float TorchSlide()
+    {
+        if (!_flashlightOn)
+            return 0f;
+        float t = Mathf.Clamp((_beamPosition.X - 180f) / 620f, 0f, 1f);
+        return t * TorchSlideRange;
     }
 
     /// <summary>Where the ember of the torch sits, measured from the
@@ -1718,7 +1679,6 @@ public partial class HedgeMaze : Node2D
         (TorchSpriteLens.X - TorchSpriteGrip.X) * TorchSpriteWidth,
         (TorchSpriteLens.Y - TorchSpriteGrip.Y) * _torchSpriteHeight);
 
-    private float TorchLensBaseAngle => Mathf.Atan2(TorchLensOffset.Y, TorchLensOffset.X);
 
     /// <summary>GameUI's held-item light rule: the hand is only as
     /// bright as the torch light actually landing near it, with a
@@ -1738,10 +1698,10 @@ public partial class HedgeMaze : Node2D
         new(level, level * 0.96f, level * 0.84f, 1f);
 
     /// <summary>The light itself, thrown from the ember in her hand
-    /// to the circle she has put on the hedges. It is the same cone
-    /// the other dark rooms draw — a run of widening discs for the
-    /// shaft and a hot pool where it lands — so the torch here
-    /// behaves like the torch everywhere else in the house.</summary>
+    /// to the circle she has put on the hedges. The circle is the
+    /// house's own chunky pool of torchlight; the ray is only a
+    /// breath of white between the two, so the light has a direction
+    /// without becoming a second sun.</summary>
     private void DrawBeamShaft()
     {
         if (!_hasFlashlight || !_flashlightOn || _handRise >= 0.995f)
@@ -1751,16 +1711,36 @@ public partial class HedgeMaze : Node2D
         float strength = BeamFlicker() * (1f - _handRise);
         var warm = new Color(1f, 0.88f, 0.6f);
 
-        // The shaft: the house's own run of widening discs, thinning
-        // as the light travels from her hand to the far wall.
-        const int discs = 40;
-        for (int i = 1; i <= discs; i++)
+        // The ray: a faint, transparent wedge of white from the
+        // ember out towards the circle, fading away before it gets
+        // there. Three thin wedges, so the edges of the light are
+        // soft rather than cut.
+        Vector2 toPool = _beamPosition - lens;
+        float length = toPool.Length();
+        if (length > 12f)
         {
-            float t = i / (float)discs;
-            Vector2 position = lens.Lerp(_beamPosition, t);
-            float radius = Mathf.Lerp(7f, 118f, t * t * (3f - 2f * t));
-            float alpha = Mathf.Lerp(0.13f, 0.035f, t) * strength;
-            DrawCircle(position, radius, new Color(warm.R, warm.G, warm.B, alpha));
+            Vector2 dir = toPool / length;
+            Vector2 side = new(-dir.Y, dir.X);
+            Vector2 far = lens + dir * length;
+            for (int i = 0; i < 3; i++)
+            {
+                float spread = Mathf.Lerp(30f, 12f, i / 2f);
+                float alpha = Mathf.Lerp(0.05f, 0.025f, i / 2f) * strength;
+                float width = Mathf.Tan(spread * Mathf.DegToRad) * length;
+                var points = new Vector2[]
+                {
+                    lens,
+                    far + side * width,
+                    far - side * width,
+                };
+                var colors = new Color[]
+                {
+                    new Color(1f, 1f, 1f, alpha),
+                    new Color(1f, 1f, 1f, 0f),
+                    new Color(1f, 1f, 1f, 0f),
+                };
+                DrawPolygon(points, colors);
+            }
         }
 
         // The pool it lands in: a stepped, slightly squashed pool of
