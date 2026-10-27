@@ -1726,7 +1726,7 @@ public partial class HedgeMaze : Node2D
             {
                 float spread = Mathf.Lerp(30f, 12f, i / 2f);
                 float alpha = Mathf.Lerp(0.05f, 0.025f, i / 2f) * strength;
-                float width = Mathf.Tan(spread * Mathf.DegToRad) * length;
+                float width = Mathf.Tan(Mathf.DegToRad(spread)) * length;
                 var points = new Vector2[]
                 {
                     lens,
