@@ -8,7 +8,8 @@ using Godot;
 ///  * HUD — current objective, clarity pips, memory-integrity meter, shards.
 ///  * Corruption screen overlay (shader) driven by GameState corruption.
 ///  * Pause menu, Settings panel, Memory Journal (fragments + echoes), toasts.
-///  * Global input: pause/journal/hint/clarity keys, held-Tab hotspot reveal,
+///  * Global input: pause/journal/hint/clarity keys, Tab-revealed upper HUD,
+///    held-Tab hotspot reveal,
 ///    and dialogue advance forwarding (Dialogue lives in a SubViewport whose
 ///    _Input is not guaranteed to receive root input, so we forward clicks).
 /// Everything is built in code so no .tscn surgery was needed. Context-aware:
@@ -28,6 +29,11 @@ public partial class GameUI : CanvasLayer
 
     // HUD
     private Control _hud;
+    private Control _topHud;
+    private float _topHudHoldTimer;
+    private float _topHudAlpha;
+    private const float TopHudHoldSeconds = 3.5f;
+    private const float TopHudFadeSeconds = 0.7f;
     private Label _objectiveLabel;
     private Label _integrityLabel;
     private ProgressBar _integrityBar;
@@ -719,6 +725,34 @@ public partial class GameUI : CanvasLayer
         Logger.Info("GameUI ready.");
     }
 
+    private void UpdateTopHud(float delta)
+    {
+        if (_topHud == null)
+            return;
+
+        bool canShow = _context == UiContext.Game && !GetTree().Paused &&
+            !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing();
+        if (canShow && Input.IsActionPressed(InputSetup.RevealHotspots))
+            _topHudHoldTimer = TopHudHoldSeconds;
+        else if (!canShow)
+            _topHudHoldTimer = 0f;
+
+        _topHudHoldTimer = Mathf.Max(0f, _topHudHoldTimer - delta);
+        float target = _topHudHoldTimer > 0f ? 1f : 0f;
+        float fadeSpeed = target > _topHudAlpha
+            ? 1f / 0.18f
+            : 1f / TopHudFadeSeconds;
+        _topHudAlpha = Mathf.MoveToward(_topHudAlpha, target, delta * fadeSpeed);
+        _topHud.Modulate = new Color(1f, 1f, 1f, _topHudAlpha);
+
+        // The Remember button must not keep catching room clicks while
+        // its parent HUD is fully faded away.
+        if (_rememberButton != null)
+            _rememberButton.MouseFilter = _topHudAlpha > 0.02f
+                ? Control.MouseFilterEnum.Stop
+                : Control.MouseFilterEnum.Ignore;
+    }
+
     public override void _Process(double delta)
     {
         _contextCheckTimer -= delta;
@@ -728,6 +762,7 @@ public partial class GameUI : CanvasLayer
             UpdateContext();
         }
 
+        UpdateTopHud((float)delta);
         RefreshBackButton();
         RefreshForwardButton();
         RefreshRememberButton();
@@ -836,6 +871,13 @@ public partial class GameUI : CanvasLayer
 
     public override void _Input(InputEvent @event)
     {
+        // Tab is also a quick peek at the upper HUD. The existing held
+        // action still reveals room hotspots; neither use blocks play.
+        if (@event.IsActionPressed(InputSetup.RevealHotspots) &&
+            _context == UiContext.Game && !GetTree().Paused &&
+            !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing())
+            _topHudHoldTimer = TopHudHoldSeconds;
+
         // The held-fragment moment takes the click for itself: admire,
         // then click, and it goes in the bag.
         if (_heldShowing && !GetTree().Paused)
@@ -1101,7 +1143,9 @@ public partial class GameUI : CanvasLayer
         }
 
         if (Over(_bagButton) || Over(_backButton) || Over(_forwardButton) ||
-            Over(_rememberButton) || Over(_verbToggleButton))
+            Over(_verbToggleButton))
+            return true;
+        if (_topHudAlpha > 0.02f && Over(_rememberButton))
             return true;
 
         foreach (var button in _verbButtons.Values)
@@ -1659,7 +1703,7 @@ public partial class GameUI : CanvasLayer
             _recollectionOfferedThisArming = true;
             MaybeOfferRecollection();
         };
-        _hud.AddChild(_rememberButton);
+        _topHud.AddChild(_rememberButton);
     }
 
     private void RefreshRememberButton()
@@ -3896,6 +3940,17 @@ public partial class GameUI : CanvasLayer
         _hud.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         AddChild(_hud);
 
+        // The upper HUD can be summoned briefly with Tab; the Bag button
+        // remains a separate child of _hud and stays visible throughout.
+        _topHud = new Control
+        {
+            Name = "TopHud",
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Modulate = new Color(1f, 1f, 1f, 0f),
+        };
+        _topHud.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _hud.AddChild(_topHud);
+
         // Objective (top-left, parchment-dark chip — translucent over the room).
         var objectivePanel = MakeHudPanel();
         objectivePanel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
@@ -3907,7 +3962,7 @@ public partial class GameUI : CanvasLayer
         _objectiveLabel = MakeLabel("", 21);
         _objectiveLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         objectivePanel.AddChild(_objectiveLabel);
-        _hud.AddChild(objectivePanel);
+        _topHud.AddChild(objectivePanel);
 
         // Integrity + clarity (top-right) — translucent over the room.
         var statusPanel = MakeHudPanel();
@@ -3959,7 +4014,7 @@ public partial class GameUI : CanvasLayer
         _shardLabel = MakeLabel("", 19);
         statusBox.AddChild(_shardLabel);
         statusPanel.AddChild(statusBox);
-        _hud.AddChild(statusPanel);
+        _topHud.AddChild(statusPanel);
 
         // Toast (top-centre, under nothing else — dialogue owns the bottom).
         // Toast text floats over bright rooms; sit it on a dark chip so hints
@@ -4012,12 +4067,12 @@ public partial class GameUI : CanvasLayer
         controlsChip.AnchorTop = 1;
         controlsChip.AnchorBottom = 1;
         controlsChip.OffsetLeft = 12;
-        // Wide enough for the whole line of keys (the panel takes its
-        // own minimum, so this only has to clear it).
-        controlsChip.OffsetRight = 956;
+        // Wide enough for the whole line of keys (including Tab's new
+        // HUD peek; the panel takes its own minimum, so clear it comfortably).
+        controlsChip.OffsetRight = 1004;
         controlsChip.OffsetTop = -40;
         controlsChip.OffsetBottom = -8;
-        var controls = MakeLabel("Tab — look      C — clarity      E/A/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
+        var controls = MakeLabel("Tab — HUD / look      C — clarity      E/A/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
             16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
         controls.MouseFilter = Control.MouseFilterEnum.Ignore;
         controlsChip.AddChild(controls);
