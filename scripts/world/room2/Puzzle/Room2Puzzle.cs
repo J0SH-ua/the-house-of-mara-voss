@@ -15,6 +15,7 @@ public partial class Room2Puzzle : Area2D
 	private LineEdit[] _letterBoxes;
 	private bool _isSolved;
 	private bool _feedbackPlaying;
+	private bool _drawerOpen;
 	private Vector2 _padlockHome;
 
 	// Typed letters survive stepping back to the room mid-word (statics live
@@ -44,10 +45,38 @@ public partial class Room2Puzzle : Area2D
 	public override void _Ready()
 	{
 		_padlock = GetNodeOrNull<Node2D>("Padlock");
+		GetNodeOrNull<Sprite2D>("Wall")?.SetDeferred("visible", false);
+		GetNodeOrNull<AnimatedSprite2D>("Drawer")?.SetDeferred("visible", false);
+		QueueRedraw();
 		if (_padlock != null)
 		{
 			_padlock.Visible = true;
 			_padlockHome = _padlock.Position;
+		}
+
+		FontFile inputFont = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
+		var inputStyle = new StyleBoxFlat
+		{
+			BgColor = new Color(0.9f, 0.82f, 0.65f, 0.98f),
+			BorderColor = new Color(0.42f, 0.28f, 0.14f, 0.96f),
+		};
+		inputStyle.SetBorderWidthAll(2);
+		inputStyle.SetCornerRadiusAll(3);
+		inputStyle.SetContentMarginAll(5);
+		var focusStyle = new StyleBoxFlat
+		{
+			BgColor = new Color(0.96f, 0.88f, 0.7f, 1f),
+			BorderColor = new Color(0.79f, 0.57f, 0.27f, 1f),
+		};
+		focusStyle.SetBorderWidthAll(3);
+		focusStyle.SetCornerRadiusAll(3);
+		focusStyle.SetContentMarginAll(4);
+		var title = GetNodeOrNull<Label>("Padlock/Title");
+		if (title != null && inputFont != null)
+		{
+			title.AddThemeFontOverride("font", inputFont);
+			title.AddThemeFontSizeOverride("font_size", 24);
+			title.AddThemeColorOverride("font_color", new Color(0.96f, 0.87f, 0.69f));
 		}
 
 		_letterBoxes = new LineEdit[4];
@@ -62,6 +91,12 @@ public partial class Room2Puzzle : Area2D
 
 			box.MaxLength = 1;
 			box.Alignment = HorizontalAlignment.Center;
+			if (inputFont != null)
+				box.AddThemeFontOverride("font", inputFont);
+			box.AddThemeFontSizeOverride("font_size", 42);
+			box.AddThemeColorOverride("font_color", new Color(0.16f, 0.1f, 0.055f));
+			box.AddThemeStyleboxOverride("normal", inputStyle);
+			box.AddThemeStyleboxOverride("focus", focusStyle);
 
 			// Restore before subscribing so TextChanged doesn't fire for it.
 			if (_savedLetters[i] != '\0')
@@ -402,15 +437,67 @@ public partial class Room2Puzzle : Area2D
 
 	private async System.Threading.Tasks.Task PlayDrawerAnimation()
 	{
-		var drawer = GetNodeOrNull<AnimatedSprite2D>("Drawer");
-		if (drawer == null)
-			return;
-
 		AudioManager.Play(Sfx.DrawerOpen, -5f);
-		drawer.Play("DrawerOpen");
-		await ToSignal(GetTree().CreateTimer(0.35f), SceneTreeTimer.SignalName.Timeout);
-		drawer.Stop();
-		drawer.Frame = 1;
+		if (!Settings.ReduceMotionOrDefault())
+			await ToSignal(GetTree().CreateTimer(0.35f), SceneTreeTimer.SignalName.Timeout);
+		_drawerOpen = true;
+		QueueRedraw();
+	}
+
+	public override void _Draw()
+	{
+		// The sitting room's desk drawer is painted for this close-up rather
+		// than borrowing the kitchen cabinet's atlas art.
+		DrawRect(new Rect2(0, 0, 1152, 648), new Color(0.035f, 0.027f, 0.024f), true);
+		for (int y = 0; y < 648; y += 34)
+		{
+			DrawRect(new Rect2(0, y, 1152, 2), new Color(0.11f, 0.075f, 0.049f, 0.72f), true);
+			DrawRect(new Rect2(0, y + 27, 1152, 1), new Color(0.18f, 0.12f, 0.073f, 0.42f), true);
+		}
+
+		var silhouette = new Rect2(178, 82, 796, 492);
+		DrawRect(silhouette.Grow(14f), new Color(0.012f, 0.009f, 0.008f, 0.82f), true);
+		DrawRect(new Rect2(166, 74, 820, 55), new Color(0.24f, 0.15f, 0.085f), true);
+		DrawRect(new Rect2(154, 70, 844, 13), new Color(0.54f, 0.36f, 0.18f), true);
+		DrawRect(new Rect2(166, 124, 820, 15), new Color(0.09f, 0.055f, 0.03f), true);
+
+		if (!_drawerOpen)
+		{
+			DrawRect(silhouette, new Color(0.29f, 0.19f, 0.105f), true);
+			DrawRect(silhouette, new Color(0.59f, 0.4f, 0.2f, 0.92f), false, 4f);
+			var front = new Rect2(226, 145, 700, 234);
+			DrawRect(front, new Color(0.34f, 0.22f, 0.12f), true);
+			DrawRect(front.Grow(-13f), new Color(0.27f, 0.17f, 0.095f), true);
+			DrawRect(front.Grow(-20f), new Color(0.36f, 0.235f, 0.12f), false, 2f);
+			DrawRect(new Rect2(242, 157, 5, 210), new Color(0.69f, 0.46f, 0.23f, 0.62f), true);
+			DrawRect(new Rect2(905, 157, 5, 210), new Color(0.12f, 0.07f, 0.035f, 0.88f), true);
+			for (int i = 0; i < 4; i++)
+				DrawRect(new Rect2(270 + i * 150, 166, 2, 196),
+					new Color(0.48f, 0.31f, 0.16f, 0.55f), true);
+			DrawRect(new Rect2(226, 387, 700, 16), new Color(0.12f, 0.075f, 0.04f), true);
+			DrawRect(new Rect2(256, 412, 280, 128), new Color(0.22f, 0.14f, 0.075f), true);
+			DrawRect(new Rect2(616, 412, 280, 128), new Color(0.22f, 0.14f, 0.075f), true);
+			DrawRect(new Rect2(268, 422, 256, 108), new Color(0.29f, 0.18f, 0.095f), false, 3f);
+			DrawRect(new Rect2(628, 422, 256, 108), new Color(0.29f, 0.18f, 0.095f), false, 3f);
+			DrawRect(new Rect2(557, 330, 38, 7), new Color(0.7f, 0.51f, 0.26f), true);
+			DrawCircle(new Vector2(576, 334), 4f, new Color(0.86f, 0.69f, 0.39f));
+		}
+		else
+		{
+			var cavity = new Rect2(244, 145, 664, 236);
+			DrawRect(silhouette, new Color(0.24f, 0.15f, 0.08f), true);
+			DrawRect(cavity, new Color(0.035f, 0.025f, 0.018f), true);
+			DrawRect(cavity, new Color(0.61f, 0.41f, 0.2f), false, 5f);
+			DrawRect(new Rect2(268, 176, 616, 11), new Color(0.42f, 0.28f, 0.14f), true);
+			DrawRect(new Rect2(268, 340, 616, 16), new Color(0.39f, 0.25f, 0.12f), true);
+			var loweredDrawer = new Rect2(254, 389, 644, 111);
+			DrawRect(loweredDrawer, new Color(0.3f, 0.19f, 0.1f), true);
+			DrawRect(loweredDrawer, new Color(0.62f, 0.42f, 0.21f), false, 4f);
+			DrawRect(new Rect2(280, 405, 590, 78), new Color(0.25f, 0.16f, 0.085f), false, 2f);
+		}
+
+		DrawRect(new Rect2(178, 554, 796, 20), new Color(0.1f, 0.06f, 0.032f), true);
+		DrawRect(new Rect2(178, 554, 796, 4), new Color(0.53f, 0.35f, 0.17f, 0.82f), true);
 	}
 
 	private LineEdit GetBox(int index)

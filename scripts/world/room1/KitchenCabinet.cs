@@ -1,4 +1,3 @@
-using System;
 using System.Threading.Tasks;
 using Godot;
 
@@ -308,17 +307,34 @@ public partial class KitchenCabinet : Node2D
             DrawRect(new Rect2(i * 148f, 0, 3, 648), new Color(0.03f, 0.025f, 0.02f, 0.8f), true);
 
         // Counter top, running over the cabinet like a tide line.
-        DrawRect(new Rect2(250, 178, 652, 26), new Color(0.3f, 0.23f, 0.15f), true);
-        DrawRect(new Rect2(250, 178, 652, 6), new Color(0.45f, 0.34f, 0.2f), true);
-        DrawRect(new Rect2(250, 204, 652, 8), new Color(0.16f, 0.12f, 0.08f), true);
+        DrawRect(new Rect2(238, 168, 676, 34), new Color(0.28f, 0.205f, 0.13f), true);
+        DrawRect(new Rect2(238, 168, 676, 7), new Color(0.48f, 0.355f, 0.21f), true);
+        DrawRect(new Rect2(238, 202, 676, 11), new Color(0.12f, 0.085f, 0.052f), true);
 
-        // Under-counter unit: two narrow drawer fronts, the cabinet
-        // door between them, kick plate below.
-        DrawRect(new Rect2(250, 212, 652, 318), new Color(0.19f, 0.14f, 0.09f), true);
-        DrawRect(new Rect2(266, 228, 112, 286), new Color(0.15f, 0.11f, 0.07f), true);
-        DrawRect(new Rect2(774, 228, 112, 286), new Color(0.15f, 0.11f, 0.07f), true);
-        DrawRect(new Rect2(250, 530, 652, 18), new Color(0.1f, 0.075f, 0.05f), true);
-        DrawCircle(new Vector2(576, 362), 210f, new Color(1f, 0.85f, 0.55f, 0.04f));
+        // A deeper, older under-counter cabinet: framed stiles, inset
+        // drawer fronts, a broad center cupboard, and a shadowed plinth.
+        var cabinetBody = new Rect2(238, 213, 676, 320);
+        DrawRect(cabinetBody, new Color(0.22f, 0.15f, 0.09f), true);
+        DrawRect(cabinetBody, new Color(0.46f, 0.33f, 0.19f, 0.85f), false, 4f);
+        DrawRect(new Rect2(252, 224, 648, 18), new Color(0.29f, 0.205f, 0.12f), true);
+        DrawRect(new Rect2(252, 507, 648, 16), new Color(0.12f, 0.085f, 0.05f), true);
+        DrawRect(new Rect2(266, 242, 118, 262), new Color(0.15f, 0.105f, 0.065f), true);
+        DrawRect(new Rect2(768, 242, 118, 262), new Color(0.15f, 0.105f, 0.065f), true);
+        for (int i = 0; i < 3; i++)
+        {
+            float y = 250f + i * 82f;
+            var drawer = new Rect2(271, y, 108, 72);
+            DrawRect(drawer, new Color(0.25f, 0.175f, 0.1f), true);
+            DrawRect(drawer.Grow(-7f), new Color(0.2f, 0.135f, 0.08f), true);
+            DrawRect(drawer, new Color(0.5f, 0.36f, 0.2f, 0.72f), false, 2f);
+            DrawRect(new Rect2(319, y + 30, 13, 7), new Color(0.67f, 0.5f, 0.26f), true);
+            DrawCircle(new Vector2(325.5f, y + 33.5f), 2f, new Color(0.92f, 0.75f, 0.42f));
+        }
+        var sideDoor = new Rect2(774, 244, 106, 255);
+        DrawRect(sideDoor, new Color(0.23f, 0.16f, 0.095f), true);
+        DrawRect(sideDoor.Grow(-10f), new Color(0.19f, 0.13f, 0.075f), true);
+        DrawRect(sideDoor, new Color(0.49f, 0.35f, 0.2f, 0.76f), false, 2f);
+        DrawRect(new Rect2(811, 363, 7, 28), new Color(0.68f, 0.51f, 0.27f), true);
 
         DrawCabinetInterior();
         DrawCabinetDoor();
@@ -345,11 +361,6 @@ public partial class KitchenCabinet : Node2D
 
         if (!FlashlightTaken && _flashlightTexture != null)
         {
-            float pulse = Settings.ReduceMotionOrDefault()
-                ? 0.75f
-                : 0.62f + 0.22f * (float)Math.Sin(Time.GetTicksMsec() / 240.0);
-            DrawArc(FlashlightRect.GetCenter(), 76f, 0f, Mathf.Tau, 48,
-                new Color(1f, 0.85f, 0.5f, pulse * 0.55f), 2f, true);
             DrawTextureRect(_flashlightTexture, FlashlightRect, false);
         }
         else
@@ -395,23 +406,34 @@ public partial class KitchenCabinet : Node2D
         var door = new Rect2(CabinetRect.Position + new Vector2(shiftX, swing * 6f),
             new Vector2(frontWidth, CabinetRect.Size.Y - swing * 12f));
 
-        var wood = new Color(0.26f, 0.19f, 0.11f, 1f);
-        var woodEdge = new Color(0.5f, 0.38f, 0.22f, 1f);
-        DrawRect(door, wood, true);
+        var wood = new Color(0.25f, 0.17f, 0.095f, 1f);
+        var woodEdge = new Color(0.52f, 0.37f, 0.20f, 1f);
+        DrawRect(door, new Color(0.08f, 0.055f, 0.035f, 0.85f), true);
+        DrawRect(new Rect2(door.Position + new Vector2(5, 4), door.Size - new Vector2(10, 8)), wood, true);
         DrawRect(door, woodEdge, false, 3f);
         if (swing < 0.6f)
         {
-            var panel = door.Grow(-22f);
-            DrawRect(panel, new Color(0.21f, 0.155f, 0.09f, 1f), true);
-            DrawRect(panel, new Color(0.42f, 0.31f, 0.17f, 0.9f), false, 2f);
-            // The knob, at finding-height on the right stile.
-            Vector2 knob = new(door.End.X - 32f, door.GetCenter().Y);
-            DrawCircle(knob + new Vector2(2, 3), 9f, new Color(0, 0, 0, 0.45f));
-            DrawCircle(knob, 9f, new Color(0.72f, 0.55f, 0.25f, 1f));
-            DrawCircle(knob + new Vector2(-3, -3), 3f, new Color(0.95f, 0.8f, 0.45f, 1f));
+            var panel = door.Grow(-34f);
+            DrawRect(panel, new Color(0.21f, 0.14f, 0.075f, 1f), true);
+            DrawRect(panel.Grow(-7f), new Color(0.27f, 0.185f, 0.105f, 1f), false, 2f);
+            DrawRect(new Rect2(door.Position.X + 11, door.Position.Y + 12, 5, door.Size.Y - 24),
+                new Color(0.66f, 0.48f, 0.25f, 0.58f), true);
+            DrawRect(new Rect2(door.End.X - 16, door.Position.Y + 12, 5, door.Size.Y - 24),
+                new Color(0.08f, 0.055f, 0.035f, 0.7f), true);
+            // Hinge straps and a low, aged brass pull.
+            for (int i = 0; i < 2; i++)
+            {
+                float y = door.Position.Y + 58f + i * (door.Size.Y - 116f);
+                DrawRect(new Rect2(door.Position.X + 5, y, 25, 8), new Color(0.57f, 0.42f, 0.23f));
+                DrawCircle(new Vector2(door.Position.X + 12, y + 4), 2f, new Color(0.85f, 0.69f, 0.39f));
+            }
+            Vector2 knob = new(door.End.X - 33f, door.GetCenter().Y);
+            DrawCircle(knob + new Vector2(2, 3), 10f, new Color(0, 0, 0, 0.48f));
+            DrawCircle(knob, 9f, new Color(0.64f, 0.47f, 0.23f, 1f));
+            DrawCircle(knob + new Vector2(-3, -3), 3f, new Color(0.84f, 0.67f, 0.36f, 0.9f));
             bool hover = !_doorOpen && InputFree() && CabinetRect.HasPoint(GetGlobalMousePosition());
             if (hover)
-                DrawRect(CabinetRect, new Color(1f, 0.86f, 0.52f, 0.5f), false, 2f);
+                DrawRect(CabinetRect, new Color(0.92f, 0.79f, 0.56f, 0.22f), false, 2f);
         }
     }
 

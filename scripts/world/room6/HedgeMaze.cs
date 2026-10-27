@@ -1963,21 +1963,16 @@ public partial class HedgeMaze : Node2D
 
     private void DrawTorchRings()
     {
-        if (!_hasFlashlight || !_flashlightOn)
-        {
-            var gs = GameState.Instance;
-            if (gs != null && gs.DevToolsEnabled && gs.DevMouseCamera)
-                DrawCircle(new Vector2(ScreenWidth * 0.5f, ScreenHeight * 0.5f),
-                    3f, new Color(1f, 0.92f, 0.68f, 0.62f));
+        // The flashlight circle is already the clear patch left by the
+        // darkness pass. Keep only the developer reticle when the torch is off;
+        // no extra warm rings or item glows sit inside the beam.
+        if (_hasFlashlight && _flashlightOn)
             return;
-        }
 
-        float radius = BeamRadiusNow();
-        DrawArc(_beamPosition, radius * 0.97f, 0f, Mathf.Tau, 56,
-            new Color(1f, 0.83f, 0.45f, 0.09f), 13f, true);
-        DrawArc(_beamPosition, radius * 0.68f, 0f, Mathf.Tau, 48,
-            new Color(1f, 0.88f, 0.55f, 0.05f), 20f, true);
-        DrawCircle(_beamPosition, 4f, new Color(1f, 0.9f, 0.62f, 0.28f));
+        var gs = GameState.Instance;
+        if (gs != null && gs.DevToolsEnabled && gs.DevMouseCamera)
+            DrawCircle(new Vector2(ScreenWidth * 0.5f, ScreenHeight * 0.5f),
+                3f, new Color(1f, 0.92f, 0.68f, 0.62f));
     }
 
     /// <summary>The dark, laid down everywhere except inside the

@@ -402,7 +402,6 @@ public partial class BreakerBox : Node2D
                 DrawRect(new Rect2(x, y, 3, 96), new Color(0.025f, 0.025f, 0.03f, 0.7f), true);
             }
         }
-        DrawCircle(new Vector2(576, 330), 330f, new Color(1f, 0.85f, 0.55f, 0.05f));
 
         // The box, its door swung toward the viewer-left, hinges right.
         DrawRect(PanelRect, new Color(0.2f, 0.21f, 0.22f, 1f), true);

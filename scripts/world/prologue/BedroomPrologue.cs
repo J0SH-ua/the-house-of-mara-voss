@@ -11,7 +11,8 @@ using Godot;
 /// ceiling she has not seen in twenty years. The bedroom is also the live
 /// tutorial: all five ordinary things must be examined before Mara will
 /// open the door. Beyond it she expects the hallway; the house gives her
-/// the kitchen instead. Room 1 then offers the existing tutorial cards.
+/// the kitchen instead. The how-to-play cards and HUD tour are offered here,
+/// after Mara has woken, never on kitchen entry.
 ///
 /// The house moved the hallway the first time — but it relents for one
 /// small reason: Mum's bent hairpin sleeps in the nightstand's little
@@ -722,6 +723,7 @@ public partial class BedroomPrologue : MemoryRoomBase
 
             GameState.Instance?.SetFlag(AwakeFlag);
             GameState.Instance?.Toast("Click each object to examine it. Hold Tab to reveal what still waits; the objective keeps count.");
+            GameUI.Instance?.TryStartPrologueTutorial();
         }
         finally
         {

@@ -444,11 +444,6 @@ public partial class VentCrawl : Node2D
         }
         DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.004f, 0.004f, 0.006f, 0.62f));
         DrawDarkOutside(beam, radius, new Color(0.003f, 0.003f, 0.005f, 0.78f));
-        // Warm falloff, kept to square pixel rings rather than a shader.
-        DrawArc(beam, radius * 0.96f, 0f, Mathf.Tau, 56,
-            new Color(1f, 0.84f, 0.48f, 0.08f), 12f, true);
-        DrawArc(beam, radius * 0.72f, 0f, Mathf.Tau, 48,
-            new Color(1f, 0.88f, 0.56f, 0.045f), 18f, true);
     }
 
     private void DrawDarkOutside(Vector2 beam, float radius, Color dark)

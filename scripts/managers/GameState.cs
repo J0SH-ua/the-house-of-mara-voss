@@ -1182,6 +1182,21 @@ public partial class GameState : Node
         string file = FileNameOf(path);
         string room = CurrentRoomName();
 
+        // The Tab objective is a room landmark, not a narrative recap.
+        // Keep it stable while the player is orienting themselves.
+        switch (file)
+        {
+            case "bedroom_prologue.tscn": return "The door";
+            case "room_1.tscn": return "The cabinet";
+            case "room_2.tscn": return "The cabinet";
+            case "room_3.tscn": return "The jars";
+            case "room_4.tscn": return "The door";
+            case "room_5.tscn": return "The drawer";
+            case "room_6.tscn":
+            case "room_7.tscn":
+            case "hedge_maze.tscn": return string.Empty;
+        }
+
         if (file == "lockpick_rewind.tscn")
             return "Back through every place she crossed — until the kitchen cabinet, and the hand that knew it.";
 

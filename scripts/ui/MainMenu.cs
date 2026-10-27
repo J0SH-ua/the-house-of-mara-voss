@@ -162,7 +162,15 @@ public partial class MainMenu : Control
 
 	private void ApplyMenuUiScale()
 	{
-		ApplyCenteredScale(GetNodeOrNull<Control>("SubViewportContainer/SubViewport/Center"));
+		var menuCenter = GetNodeOrNull<Control>("SubViewportContainer/SubViewport/Center");
+		if (menuCenter != null)
+		{
+			// Keep the button column on the left side of the artwork rather
+			// than centering the whole group across the viewport.
+			menuCenter.OffsetLeft = -64f;
+			menuCenter.OffsetRight = -64f;
+			ApplyCenteredScale(menuCenter);
+		}
 		ApplyCenteredScale(_fullStoryModal?.GetNodeOrNull<Control>("Panel"));
 		ApplyCenteredScale(_aboutModal?.GetNodeOrNull<Control>("Panel"));
 	}

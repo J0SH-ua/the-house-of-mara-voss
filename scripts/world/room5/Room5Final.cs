@@ -1276,15 +1276,8 @@ public partial class Room5Final : MemoryRoomBase
                 Colors.White);
         }
 
-        Vector2[] spill =
-        [
-            new Vector2(984, 546), new Vector2(1106, 546),
-            new Vector2(1146, 632), new Vector2(944, 632),
-        ];
-        DrawColoredPolygon(spill, new Color(1f, 0.85f, 0.5f, 0.07f + 0.05f * pulse));
-
-        DrawRect(WardrobePortalRect, new Color(1f, 0.88f, 0.55f, 0.3f + 0.3f * pulse), false, 2f);
-        DrawRect(WardrobePortalRect.Grow(-6f), new Color(1f, 0.88f, 0.55f, 0.14f), false, 1f);
+        DrawRect(WardrobePortalRect, new Color(0.72f, 0.67f, 0.55f, 0.24f + 0.18f * pulse), false, 2f);
+        DrawRect(WardrobePortalRect.Grow(-6f), new Color(0.72f, 0.67f, 0.55f, 0.1f), false, 1f);
     }
 
     /// <summary>The vent was not in the Room 5 painting, so it is drawn

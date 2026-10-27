@@ -34,6 +34,8 @@ public partial class GameUI : CanvasLayer
     private Control _objectivePanel;
     private Control _statusPanel;
     private TextureRect _gameplayTorchHand;
+    private float _torchHandWalkTime;
+    private Vector2 _torchHandSway;
     private Label _controlsLabel;
     private Button _mazeJournalButton;
     private float _topHudHoldTimer;
@@ -133,11 +135,13 @@ public partial class GameUI : CanvasLayer
 
     // Memory Verb bar (Echo / Anchor / Trace / Release)
     private PanelContainer _verbPanel;
+    private Tween _memoryBarTween;
+    private float _memoryBarTargetWidth = -1f;
     private Button _verbToggleButton;
     private Label _memoryEmptyLabel;
     private bool _memoryVerbBarExpanded;
 
-    // First-time, click-through HUD callouts for Room 1 and the maze.
+    // First-time, click-through HUD callouts for the prologue and the maze.
     private Control _hudTourLayer;
     private Control _hudTourShade;
     private Line2D _hudTourLeader;
@@ -759,13 +763,16 @@ public partial class GameUI : CanvasLayer
         bool canShow = _context == UiContext.Game &&
             (!GetTree().Paused || _hudTourShowing) &&
             !Dialogue.IsShowing && (!AnyPanelOpen() || _hudTourShowing) && !FocusIsTextEditing();
-        if (canShow && Input.IsActionPressed(InputSetup.RevealObjective))
+        bool fullscreen = Settings.Instance?.Fullscreen == true ||
+            DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen;
+        bool keepObjectiveVisible = _context == UiContext.Game && fullscreen && !SceneManager.IsChanging;
+        if (keepObjectiveVisible || (canShow && Input.IsActionPressed(InputSetup.RevealObjective)))
             _topHudHoldTimer = TopHudHoldSeconds;
         else if (!canShow)
             _topHudHoldTimer = 0f;
 
         _topHudHoldTimer = Mathf.Max(0f, _topHudHoldTimer - delta);
-        if (_hudTourShowing)
+        if (_hudTourShowing || keepObjectiveVisible)
             _topHudHoldTimer = TopHudHoldSeconds;
         float target = _topHudHoldTimer > 0f ? 1f : 0f;
         float fadeSpeed = target > _topHudAlpha
@@ -780,7 +787,9 @@ public partial class GameUI : CanvasLayer
             (!AnyPanelOpen() || _hudTourShowing) && !FocusIsTextEditing();
         if (_controlsChip != null)
         {
-            _controlsChip.Visible = canShowControls && (!inMaze || _topHudAlpha > 0.02f);
+            // The room-wide shortcut strip was redundant with contextual
+            // prompts; only the enlarged maze control card remains.
+            _controlsChip.Visible = inMaze && canShowControls && _topHudAlpha > 0.02f;
             _controlsChip.Modulate = inMaze
                 ? new Color(1f, 1f, 1f, _topHudAlpha)
                 : Colors.White;
@@ -829,7 +838,7 @@ public partial class GameUI : CanvasLayer
         }
 
         UpdateTopHud((float)delta);
-        UpdateGameplayFlashlightHand();
+        UpdateGameplayFlashlightHand((float)delta);
         RefreshBackButton();
         RefreshForwardButton();
         RefreshRememberButton();
@@ -888,13 +897,14 @@ public partial class GameUI : CanvasLayer
     /// without moving their anchored edges; menu panels are scaled separately.</summary>
     private void ApplyGameplayHudScale()
     {
-        SetHudScale(_objectivePanel, new Vector2(0f, 0f));
+        SetHudScale(_objectivePanel, new Vector2(0f, 0f), 0.86f);
         SetHudScale(_statusPanel, new Vector2(1f, 0f));
         SetHudScale(_rememberButton, new Vector2(1f, 0f));
-        SetHudScale(_bagButton, new Vector2(1f, 1f));
+        SetHudScale(_bagButton, new Vector2(1f, 1f), GameplayHudScale * 1.1f);
         SetHudScale(_verbPanel, new Vector2(0.5f, 1f));
         SetHudScale(_controlsChip, _controlsChip != null && _controlsChip.AnchorLeft > 0.5f
-            ? new Vector2(1f, 1f) : new Vector2(0f, 1f));
+            ? new Vector2(1f, 1f) : new Vector2(0f, 1f),
+            _controlsChip != null && _controlsChip.AnchorLeft > 0.5f ? 0.92f : GameplayHudScale);
         SetHudScale(_backButton, new Vector2(0f, 1f));
         SetHudScale(_forwardButton, new Vector2(1f, 1f));
         SetHudScale(_toastPanel, new Vector2(0.5f, 0f));
@@ -902,12 +912,12 @@ public partial class GameUI : CanvasLayer
         SetHudScale(_maraAsideLabel, new Vector2(0.5f, 1f));
     }
 
-    private static void SetHudScale(Control control, Vector2 pivot)
+    private static void SetHudScale(Control control, Vector2 pivot, float scale = GameplayHudScale)
     {
         if (control == null)
             return;
         control.PivotOffset = new Vector2(control.Size.X * pivot.X, control.Size.Y * pivot.Y);
-        control.Scale = Vector2.One * GameplayHudScale;
+        control.Scale = Vector2.One * scale;
     }
 
     private void RegisterMenuCenter(Control center)
@@ -1050,7 +1060,7 @@ public partial class GameUI : CanvasLayer
         _hudTourLayer.AddChild(_hudTourCallout);
     }
 
-    /// <summary>Called once when Room 1's ordinary tutorial is complete.</summary>
+    /// <summary>Starts the house HUD tour from the prologue's first-run teaching.</summary>
     private void TryStartHouseHudTour() => TryStartHudTour(isMaze: false);
 
     /// <summary>HedgeMaze calls this after its first-entry dialogue ends.</summary>
@@ -1752,10 +1762,11 @@ public partial class GameUI : CanvasLayer
         _verbPanel.AnchorRight = 0.5f;
         _verbPanel.AnchorTop = 1f;
         _verbPanel.AnchorBottom = 1f;
-        _verbPanel.OffsetLeft = -350;
-        _verbPanel.OffsetRight = 350;
-        _verbPanel.OffsetTop = -104;
-        _verbPanel.OffsetBottom = -48;
+        _verbPanel.OffsetLeft = -78;
+        _verbPanel.OffsetRight = 78;
+        _verbPanel.OffsetTop = -76;
+        _verbPanel.OffsetBottom = -20;
+        _verbPanel.ClipContents = true;
 
         var row = new HBoxContainer
         {
@@ -1866,17 +1877,7 @@ public partial class GameUI : CanvasLayer
         }
 
         // The Memory tab stays centered along the bottom in every gameplay
-        // room, collapsed or expanded. Room 1 and the maze can therefore teach
-        // it at the same stable screen position.
-        _verbPanel.AnchorLeft = 0.5f;
-        _verbPanel.AnchorRight = 0.5f;
-        _verbPanel.AnchorTop = 1f;
-        _verbPanel.AnchorBottom = 1f;
-        _verbPanel.OffsetLeft = -430f;
-        _verbPanel.OffsetRight = 430f;
-        _verbPanel.OffsetTop = -76f;
-        _verbPanel.OffsetBottom = -20f;
-
+        // room; only its width changes as the verbs unfold or tuck away.
         bool ordinaryBarVisible = _context == UiContext.Game &&
             (!GetTree().Paused || _hudTourShowing) &&
             (!AnyPanelOpen() || _hudTourShowing) && !Dialogue.IsShowing && !SceneManager.IsChanging;
@@ -1885,7 +1886,54 @@ public partial class GameUI : CanvasLayer
             _memoryEmptyLabel.Visible = showExpanded && !anyUnlocked;
         if (_mazeJournalButton != null)
             _mazeJournalButton.Visible = inMaze && showExpanded;
-        _verbPanel.Modulate = Colors.White;
+
+        float targetWidth = 132f + 24f;
+        int visibleChildren = 1;
+        if (showExpanded)
+        {
+            foreach (var (_, button) in _verbButtons)
+            {
+                if (button.Visible)
+                {
+                    targetWidth += button.CustomMinimumSize.X;
+                    visibleChildren++;
+                }
+            }
+            if (_memoryEmptyLabel?.Visible == true)
+            {
+                targetWidth += _memoryEmptyLabel.CustomMinimumSize.X;
+                visibleChildren++;
+            }
+            if (_mazeJournalButton?.Visible == true)
+            {
+                targetWidth += _mazeJournalButton.CustomMinimumSize.X;
+                visibleChildren++;
+            }
+            targetWidth += Mathf.Max(0, visibleChildren - 1) * 6f;
+        }
+        AnimateMemoryBarWidth(targetWidth, showExpanded);
+    }
+
+    private void AnimateMemoryBarWidth(float width, bool expanded)
+    {
+        if (_verbPanel == null || Mathf.Abs(width - _memoryBarTargetWidth) < 0.5f)
+            return;
+
+        _memoryBarTargetWidth = width;
+        if (_memoryBarTween?.IsRunning() == true)
+            _memoryBarTween.Kill();
+
+        float halfWidth = width * 0.5f;
+        _verbPanel.OffsetTop = expanded ? -68f : -84f;
+        _verbPanel.Modulate = new Color(1f, 1f, 1f, 0.62f);
+        _memoryBarTween = CreateTween();
+        _memoryBarTween.SetPauseMode(Tween.TweenPauseMode.Process);
+        _memoryBarTween.SetTrans(Tween.TransitionType.Cubic);
+        _memoryBarTween.SetEase(expanded ? Tween.EaseType.Out : Tween.EaseType.In);
+        _memoryBarTween.TweenProperty(_verbPanel, "offset_left", -halfWidth, 0.2f);
+        _memoryBarTween.Parallel().TweenProperty(_verbPanel, "offset_right", halfWidth, 0.2f);
+        _memoryBarTween.Parallel().TweenProperty(_verbPanel, "offset_top", -76f, 0.2f);
+        _memoryBarTween.Parallel().TweenProperty(_verbPanel, "modulate:a", 1f, 0.2f);
     }
 
     /// <summary>Keeps the Step Back button in sync with the live scene: shown
@@ -4389,12 +4437,12 @@ public partial class GameUI : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
             Modulate = new Color(1f, 1f, 1f, 0.96f),
         };
-        _gameplayTorchHand.AnchorLeft = 0f;
-        _gameplayTorchHand.AnchorRight = 0f;
+        _gameplayTorchHand.AnchorLeft = 1f;
+        _gameplayTorchHand.AnchorRight = 1f;
         _gameplayTorchHand.AnchorTop = 1f;
         _gameplayTorchHand.AnchorBottom = 1f;
-        _gameplayTorchHand.OffsetLeft = 0f;
-        _gameplayTorchHand.OffsetRight = 320f;
+        _gameplayTorchHand.OffsetLeft = -320f;
+        _gameplayTorchHand.OffsetRight = 0f;
         _gameplayTorchHand.OffsetTop = -320f * texture.GetHeight() / Mathf.Max(texture.GetWidth(), 1f);
         _gameplayTorchHand.OffsetBottom = 0f;
         // Layer 1 puts the hand over the room's darkness, but beneath
@@ -4402,7 +4450,7 @@ public partial class GameUI : CanvasLayer
         _blackoutLayer.AddChild(_gameplayTorchHand);
     }
 
-    private void UpdateGameplayFlashlightHand()
+    private void UpdateGameplayFlashlightHand(float delta)
     {
         if (_gameplayTorchHand == null)
             return;
@@ -4428,8 +4476,23 @@ public partial class GameUI : CanvasLayer
         float width = 320f * handScale;
         float height = width * _gameplayTorchHand.Texture.GetHeight()
             / Mathf.Max(_gameplayTorchHand.Texture.GetWidth(), 1f);
-        _gameplayTorchHand.OffsetRight = width;
-        _gameplayTorchHand.OffsetTop = -height;
+        bool walking = Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.A) ||
+            Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.D) ||
+            Input.IsPhysicalKeyPressed(Key.Up) || Input.IsPhysicalKeyPressed(Key.Left) ||
+            Input.IsPhysicalKeyPressed(Key.Down) || Input.IsPhysicalKeyPressed(Key.Right);
+        if (show && walking && !Settings.ReduceMotionOrDefault())
+            _torchHandWalkTime += delta * 8.5f;
+        Vector2 targetSway = show && walking && !Settings.ReduceMotionOrDefault()
+            ? new Vector2(Mathf.Sin(_torchHandWalkTime * 0.7f) * 7f,
+                Mathf.Abs(Mathf.Sin(_torchHandWalkTime)) * 4.5f)
+            : Vector2.Zero;
+        float swayWeight = 1f - Mathf.Exp(-Mathf.Max(delta, 0f) * 10f);
+        _torchHandSway = _torchHandSway.Lerp(targetSway, swayWeight);
+
+        _gameplayTorchHand.OffsetLeft = -width + _torchHandSway.X;
+        _gameplayTorchHand.OffsetRight = _torchHandSway.X;
+        _gameplayTorchHand.OffsetTop = -height + _torchHandSway.Y;
+        _gameplayTorchHand.OffsetBottom = _torchHandSway.Y;
         _gameplayTorchHand.Visible = show;
     }
 
@@ -4478,7 +4541,7 @@ public partial class GameUI : CanvasLayer
 
         var statusBox = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         statusBox.AddThemeConstantOverride("separation", 5);
-        _integrityLabel = MakeLabel("MEMORY — INTACT", 19);
+        _integrityLabel = MakeLabel("MEMORY — INTACT", 21);
         statusBox.AddChild(_integrityLabel);
 
         _integrityBar = new ProgressBar
@@ -7769,8 +7832,6 @@ public partial class GameUI : CanvasLayer
             SetRoomFlashAmount(0f);
             _roomArrivalPlaying = false;
         }
-        if (scenePath != null && scenePath.EndsWith("/room_1.tscn"))
-            TryStartHouseHudTour();
     }
 
     private async Task PlayRandomRoomFlashAsync(string scenePath)
@@ -8083,8 +8144,8 @@ public partial class GameUI : CanvasLayer
     }
 
     /// <summary>"…The kitchen?" — Mara names the wrongness out loud, then
-    /// the opening proceeds exactly as it always has (memory cutscene,
-    /// tutorial question) by re-entering the same funnel.</summary>
+    /// the story follows its original opening flow. First-run how-to-play
+    /// and HUD teaching are offered only after the bedroom-prologue wake.</summary>
     private async void PlayKitchenConfusionThenOpening(string scenePath)
     {
         Dialogue.BeginInputBlock();
@@ -8292,8 +8353,7 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        // First visit ever: how-to-play follows the memory.
-        MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
+        // The prologue schedules the how-to-play prompt after Mara wakes.
     }
 
     /// <summary>What really happened, replayed first-person once the six
@@ -8424,12 +8484,17 @@ public partial class GameUI : CanvasLayer
         }
     }
 
-    /// <summary>First entry into Room 1: the house ASKS before it teaches.
-    /// Either answer is remembered, so the question is only ever posed once;
-    /// the cards themselves stay replayable from the pause menu forever.</summary>
+    /// <summary>The prologue asks before it teaches. The cards remain
+    /// replayable from the pause menu, but are never offered on kitchen entry.</summary>
+    public void TryStartPrologueTutorial()
+    {
+        MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
+    }
+
     private void MaybeAutoShowTutorial(string scenePath)
     {
-        if (scenePath == null || !scenePath.EndsWith("room_1.tscn"))
+        if (scenePath == null || !scenePath.EndsWith("bedroom_prologue.tscn") ||
+            GameState.Instance?.HasFlag("prologue_awake") != true)
             return;
         if (Settings.Instance == null)
             return;

@@ -543,12 +543,13 @@ public partial class Basement : MemoryRoomBase
         DrawRect(lid, new Color(0.55f, 0.43f, 0.28f, 0.95f), false, 2f);
         if (!negativesTaken)
         {
-            // The tin, catching whatever light is brave enough.
+            // The tin of negatives stays dark until the flashlight circle
+            // reaches it; avoid a separate warm shine on the item itself.
             var tin = new Rect2(976, 424, 62, 16);
-            DrawRect(tin, new Color(0.68f, 0.64f, 0.55f, 0.98f), true);
-            DrawRect(tin, new Color(0.2f, 0.18f, 0.15f, 0.95f), false, 2f);
+            DrawRect(tin, new Color(0.32f, 0.34f, 0.35f, 0.98f), true);
+            DrawRect(tin, new Color(0.12f, 0.13f, 0.14f, 0.95f), false, 2f);
             DrawRect(new Rect2(tin.Position + new Vector2(8, 4), new Vector2(34, 3)),
-                new Color(0.92f, 0.88f, 0.72f, 0.95f), true);
+                new Color(0.42f, 0.44f, 0.45f, 0.62f), true);
         }
     }
 
@@ -576,11 +577,6 @@ public partial class Basement : MemoryRoomBase
         DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.002f, 0.002f, 0.004f, 0.42f));
         DrawDarkOutside(beam, radius, new Color(0.001f, 0.001f, 0.003f, 0.74f));
 
-        DrawArc(beam, radius * 0.97f, 0f, Mathf.Tau, 56,
-            new Color(1f, 0.83f, 0.45f, 0.09f), 13f, true);
-        DrawArc(beam, radius * 0.68f, 0f, Mathf.Tau, 48,
-            new Color(1f, 0.88f, 0.55f, 0.05f), 20f, true);
-        DrawCircle(beam, 4f, new Color(1f, 0.9f, 0.62f, 0.28f));
     }
 
     private void DrawDarkOutside(Vector2 center, float radius, Color dark)

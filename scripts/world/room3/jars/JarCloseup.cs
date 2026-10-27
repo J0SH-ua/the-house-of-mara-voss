@@ -694,9 +694,6 @@ public partial class JarCloseup : Node2D
         DrawRect(new Rect2(180, 518, 792, 5), new Color(0.38f, 0.28f, 0.17f), true);
         DrawRect(new Rect2(220, 538, 26, 110), new Color(0.17f, 0.12f, 0.08f), true);
         DrawRect(new Rect2(906, 538, 26, 110), new Color(0.17f, 0.12f, 0.08f), true);
-        // A pool of attention around the jar.
-        DrawCircle(JarCenter, 230f, new Color(1f, 0.85f, 0.55f, 0.045f));
-        DrawCircle(JarCenter, 160f, new Color(1f, 0.85f, 0.55f, 0.05f));
     }
 
     private void DrawShelfSilhouettes(float y)

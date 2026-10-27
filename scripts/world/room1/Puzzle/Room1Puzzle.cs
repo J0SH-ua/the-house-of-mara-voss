@@ -39,6 +39,14 @@ public partial class Room1Puzzle : Area2D
 	public override void _Ready()
 	{
 		InputPickable = true;
+		FontFile inputFont = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
+		var title = GetNodeOrNull<Label>("Padlock/Title");
+		if (title != null && inputFont != null)
+		{
+			title.AddThemeFontOverride("font", inputFont);
+			title.AddThemeFontSizeOverride("font_size", 22);
+			title.AddThemeColorOverride("font_color", new Color(0.96f, 0.87f, 0.69f));
+		}
 		for (int i = 0; i < 5; i++)
 		{
 			var spinbox = GetNode<SpinBox>($"Padlock/padlock-{i}");
@@ -47,6 +55,10 @@ public partial class Room1Puzzle : Area2D
 				spinbox.MinValue = 0;
 				spinbox.MaxValue = 9;
 				spinbox.Step = 1;
+				if (inputFont != null)
+					spinbox.AddThemeFontOverride("font", inputFont);
+				spinbox.AddThemeFontSizeOverride("font_size", 48);
+				spinbox.AddThemeColorOverride("font_color", new Color(0.16f, 0.1f, 0.055f));
 				spinbox.SetValueNoSignal(_savedDialValues[i]);
 				int dialIndex = i;
 				spinbox.ValueChanged += (double value) =>
