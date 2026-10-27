@@ -8,9 +8,9 @@ using Godot;
 ///  * HUD — current objective, clarity pips, memory-integrity meter, shards.
 ///  * Corruption screen overlay (shader) driven by GameState corruption.
 ///  * Pause menu, Settings panel, Memory Journal (fragments + echoes), toasts.
-///  * Global input: pause/journal/hint/clarity keys, Tab-revealed upper HUD,
-///    held-Tab hotspot reveal,
-///    and dialogue advance forwarding (Dialogue lives in a SubViewport whose
+///  * Global input: pause/journal/hint/clarity keys, a Tab-revealed current
+///    objective, guided first-time HUD callouts, and dialogue advance forwarding
+///    (Dialogue lives in a SubViewport whose
 ///    _Input is not guaranteed to receive root input, so we forward clicks).
 /// Everything is built in code so no .tscn surgery was needed. Context-aware:
 /// HUD only inside the GameManager scene, a lone Settings button on the main
@@ -30,13 +30,16 @@ public partial class GameUI : CanvasLayer
     // HUD
     private Control _hud;
     private Control _topHud;
+    private Control _objectivePanel;
+    private Control _statusPanel;
     private TextureRect _gameplayTorchHand;
     private Label _controlsLabel;
     private Button _mazeJournalButton;
     private float _topHudHoldTimer;
     private float _topHudAlpha;
-    private const float TopHudHoldSeconds = 3.5f;
-    private const float TopHudFadeSeconds = 0.7f;
+    private const float TopHudHoldSeconds = 2.4f;
+    private const float TopHudFadeInSeconds = 0.16f;
+    private const float TopHudFadeOutSeconds = 0.22f;
     private Label _objectiveLabel;
     private Label _integrityLabel;
     private ProgressBar _integrityBar;
@@ -128,7 +131,21 @@ public partial class GameUI : CanvasLayer
     // Memory Verb bar (Echo / Anchor / Trace / Release)
     private PanelContainer _verbPanel;
     private Button _verbToggleButton;
-    private bool _memoryVerbBarExpanded = true;
+    private Label _memoryEmptyLabel;
+    private bool _memoryVerbBarExpanded;
+
+    // First-time, click-through HUD callouts for Room 1 and the maze.
+    private Control _hudTourLayer;
+    private Control _hudTourShade;
+    private Line2D _hudTourLeader;
+    private ColorRect[] _hudTourFrame = Array.Empty<ColorRect>();
+    private PanelContainer _hudTourCallout;
+    private Label _hudTourTitle;
+    private Label _hudTourBody;
+    private Label _hudTourContinue;
+    private int _hudTourStep;
+    private bool _hudTourShowing;
+    private bool _hudTourIsMaze;
     private MemoryVerb _lastActiveMemoryVerb = MemoryVerb.None;
     private readonly System.Collections.Generic.Dictionary<MemoryVerb, Button> _verbButtons = new();
 
@@ -673,6 +690,7 @@ public partial class GameUI : CanvasLayer
         BuildShatterOverlay();
         BuildConfirmPanel();
         BuildMaraAside();
+        BuildHudTourOverlay();
 
         if (GameState.Instance != null)
         {
@@ -703,6 +721,7 @@ public partial class GameUI : CanvasLayer
         {
             MemoryVerbSystem.Cancel(silent: true);
             _lastActiveMemoryVerb = MemoryVerb.None;
+            CancelHudTour();
             // Room 5's painted photographs live along the bottom edge;
             // arrive there with only the slim Memory tab showing.
             if (scenePath != null && scenePath.EndsWith("/room_5.tscn"))
@@ -734,31 +753,28 @@ public partial class GameUI : CanvasLayer
         if (_topHud == null)
             return;
 
-        bool canShow = _context == UiContext.Game && !GetTree().Paused &&
-            !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing();
-        if (canShow && Input.IsActionPressed(InputSetup.RevealHotspots))
+        bool canShow = _context == UiContext.Game &&
+            (!GetTree().Paused || _hudTourShowing) &&
+            !Dialogue.IsShowing && (!AnyPanelOpen() || _hudTourShowing) && !FocusIsTextEditing();
+        if (canShow && Input.IsActionPressed(InputSetup.RevealObjective))
             _topHudHoldTimer = TopHudHoldSeconds;
         else if (!canShow)
             _topHudHoldTimer = 0f;
 
         _topHudHoldTimer = Mathf.Max(0f, _topHudHoldTimer - delta);
+        if (_hudTourShowing)
+            _topHudHoldTimer = TopHudHoldSeconds;
         float target = _topHudHoldTimer > 0f ? 1f : 0f;
         float fadeSpeed = target > _topHudAlpha
-            ? 1f / 0.18f
-            : 1f / TopHudFadeSeconds;
+            ? 1f / TopHudFadeInSeconds
+            : 1f / TopHudFadeOutSeconds;
         _topHudAlpha = Mathf.MoveToward(_topHudAlpha, target, delta * fadeSpeed);
         _topHud.Modulate = new Color(1f, 1f, 1f, _topHudAlpha);
 
-        // The Remember button must not keep catching room clicks while
-        // its parent HUD is fully faded away.
-        if (_rememberButton != null)
-            _rememberButton.MouseFilter = _topHudAlpha > 0.02f
-                ? Control.MouseFilterEnum.Stop
-                : Control.MouseFilterEnum.Ignore;
-
         bool inMaze = SceneManager.Instance?.CurrentScene is HedgeMaze;
-        bool canShowControls = _context == UiContext.Game && !GetTree().Paused &&
-            !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing();
+        bool canShowControls = _context == UiContext.Game &&
+            (!GetTree().Paused || _hudTourShowing) && !Dialogue.IsShowing &&
+            (!AnyPanelOpen() || _hudTourShowing) && !FocusIsTextEditing();
         if (_controlsChip != null)
         {
             _controlsChip.Visible = canShowControls && (!inMaze || _topHudAlpha > 0.02f);
@@ -767,21 +783,33 @@ public partial class GameUI : CanvasLayer
                 : Colors.White;
             if (inMaze)
             {
-                _controlsChip.OffsetLeft = 332f;
-                _controlsChip.OffsetRight = 1140f;
+                _controlsChip.AnchorLeft = 1f;
+                _controlsChip.AnchorRight = 1f;
+                _controlsChip.AnchorTop = 1f;
+                _controlsChip.AnchorBottom = 1f;
+                _controlsChip.OffsetLeft = -492f;
+                _controlsChip.OffsetRight = -16f;
+                _controlsChip.OffsetTop = -260f;
+                _controlsChip.OffsetBottom = -176f;
                 if (_controlsLabel != null)
                 {
-                    _controlsLabel.Text = "A/D strafe · ←/→ turn · E/G/T/R memory · J Journal · F use · L torch · C crouch · Space jump · Tab hides";
-                    _controlsLabel.AddThemeFontSizeOverride("font_size", 14);
+                    _controlsLabel.Text = "W/S move · A/D strafe · ←/→ turn · Page Up/Down look\nShift run · C crouch · Space jump · L torch · F use\nHold Caps Lock to look back · Tab shows this help";
+                    _controlsLabel.AddThemeFontSizeOverride("font_size", 16);
                 }
             }
             else
             {
+                _controlsChip.AnchorLeft = 0f;
+                _controlsChip.AnchorRight = 0f;
+                _controlsChip.AnchorTop = 1f;
+                _controlsChip.AnchorBottom = 1f;
                 _controlsChip.OffsetLeft = 12f;
                 _controlsChip.OffsetRight = 1004f;
+                _controlsChip.OffsetTop = -40f;
+                _controlsChip.OffsetBottom = -8f;
                 if (_controlsLabel != null)
                 {
-                    _controlsLabel.Text = "Tab — HUD / hotspots      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause";
+                    _controlsLabel.Text = "Tab — main objective      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause";
                     _controlsLabel.AddThemeFontSizeOverride("font_size", 16);
                 }
             }
@@ -803,6 +831,9 @@ public partial class GameUI : CanvasLayer
         RefreshForwardButton();
         RefreshRememberButton();
         RefreshMemoryVerbBar();
+        ApplyGameplayHudScale();
+        UpdateHudTourLayout();
+        SyncMazeMouseMode();
         UpdateCollapsePulse();
         UpdateMemoryWarning();
         UpdateMaraAsides(delta);
@@ -833,23 +864,328 @@ public partial class GameUI : CanvasLayer
                 _corruptionMaterial.SetShaderParameter("intensity", next);
         }
 
-        // Held-Tab hotspot reveal.
-        bool wantHotspots = _context == UiContext.Game
-                            && !GetTree().Paused
-                            && !Dialogue.IsShowing
-                            && Settings.HotspotHintsOrDefault()
-                            && Input.IsActionPressed(InputSetup.RevealHotspots)
-                            && !FocusIsTextEditing();
-        if (!_roomFlashPlaying && wantHotspots && !_hotspotsHeld)
-            Hotspots.RevealAll();
-        else if (!_roomFlashPlaying && !wantHotspots && _hotspotsHeld)
+        // Tab is deliberately not a room-wide hotspot cheat: it reveals
+        // only the current main objective. Keep clue rings under player
+        // control (or their own authored scenes), and never expose every
+        // hidden thing just because Tab was tapped.
+        if (!_roomFlashPlaying && _hotspotsHeld)
+        {
             Hotspots.HideAll();
-        if (!_roomFlashPlaying)
-            _hotspotsHeld = wantHotspots;
+            _hotspotsHeld = false;
+        }
         Hotspots.ValidateScene();
 
         if (_toastLabel.Visible && Time.GetTicksMsec() > (ulong)_toastUntilMsec)
             FadeToastOut();
+    }
+
+
+    /// <summary>The gameplay HUD was drawn for a much larger on-screen
+    /// footprint. Render the key overlay controls at half size without
+    /// moving their anchored edges; modal panels remain full-size for reading.</summary>
+    private void ApplyGameplayHudScale()
+    {
+        SetHudScale(_objectivePanel, new Vector2(0f, 0f));
+        SetHudScale(_statusPanel, new Vector2(1f, 0f));
+        SetHudScale(_rememberButton, new Vector2(1f, 0f));
+        SetHudScale(_bagButton, new Vector2(1f, 1f));
+        SetHudScale(_verbPanel, new Vector2(0.5f, 1f));
+        SetHudScale(_controlsChip, _controlsChip != null && _controlsChip.AnchorLeft > 0.5f
+            ? new Vector2(1f, 1f) : new Vector2(0f, 1f));
+        SetHudScale(_backButton, new Vector2(0f, 1f));
+        SetHudScale(_forwardButton, new Vector2(1f, 1f));
+        SetHudScale(_toastPanel, new Vector2(0.5f, 0f));
+        SetHudScale(_toastLabel, new Vector2(0.5f, 0f));
+        SetHudScale(_maraAsideLabel, new Vector2(0.5f, 1f));
+    }
+
+    private static void SetHudScale(Control control, Vector2 pivot)
+    {
+        if (control == null)
+            return;
+        control.PivotOffset = new Vector2(control.Size.X * pivot.X, control.Size.Y * pivot.Y);
+        control.Scale = new Vector2(0.5f, 0.5f);
+    }
+
+    /// <summary>Use a first-person pointer mode only while Mara is actively
+    /// exploring the hedge maze. Mouse-look captures relative motion, so the
+    /// camera never stalls at a window edge; overlays restore a visible cursor.</summary>
+    private void SyncMazeMouseMode()
+    {
+        bool inMaze = SceneManager.Instance?.CurrentScene is HedgeMaze;
+        bool activeMazePlay = inMaze && _context == UiContext.Game &&
+            !GetTree().Paused && !AnyPanelOpen() && !SceneManager.IsChanging;
+
+        if (!activeMazePlay)
+        {
+            if (Input.MouseMode != Input.MouseModeEnum.Visible)
+            {
+                Input.MouseMode = Input.MouseModeEnum.Visible;
+                CursorHelper.ResetCursor();
+            }
+            return;
+        }
+
+        var gs = GameState.Instance;
+        bool mouseLook = gs != null && gs.DevToolsEnabled && gs.DevMouseCamera;
+        Input.MouseModeEnum wantedMode = mouseLook
+            ? Input.MouseModeEnum.Captured
+            : Input.MouseModeEnum.Hidden;
+        if (Input.MouseMode != wantedMode)
+            Input.MouseMode = wantedMode;
+    }
+
+    private void BuildHudTourOverlay()
+    {
+        _hudTourLayer = new Control
+        {
+            Name = "HudCalloutTour",
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ProcessMode = ProcessModeEnum.Always,
+            ZIndex = 110,
+        };
+        _hudTourLayer.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        AddChild(_hudTourLayer);
+
+        _hudTourShade = new ColorRect
+        {
+            Color = new Color(0.008f, 0.007f, 0.006f, 0.24f),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _hudTourShade.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _hudTourLayer.AddChild(_hudTourShade);
+
+        _hudTourLeader = new Line2D
+        {
+            Width = 2f,
+            DefaultColor = new Color(1f, 0.79f, 0.42f, 0.98f),
+            Antialiased = true,
+            ZIndex = 2,
+        };
+        _hudTourLayer.AddChild(_hudTourLeader);
+
+        _hudTourFrame = new ColorRect[4];
+        for (int i = 0; i < _hudTourFrame.Length; i++)
+        {
+            _hudTourFrame[i] = new ColorRect
+            {
+                Color = new Color(1f, 0.79f, 0.42f, 0.98f),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                ZIndex = 3,
+            };
+            _hudTourLayer.AddChild(_hudTourFrame[i]);
+        }
+
+        _hudTourCallout = new PanelContainer
+        {
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = 4,
+            CustomMinimumSize = new Vector2(420f, 142f),
+        };
+        var card = new StyleBoxFlat
+        {
+            BgColor = new Color(0.035f, 0.03f, 0.025f, 0.96f),
+            BorderColor = new Color(1f, 0.79f, 0.42f, 0.92f),
+        };
+        card.SetBorderWidthAll(2);
+        card.SetCornerRadiusAll(5);
+        card.ContentMarginLeft = 15;
+        card.ContentMarginRight = 15;
+        card.ContentMarginTop = 10;
+        card.ContentMarginBottom = 9;
+        _hudTourCallout.AddThemeStyleboxOverride("panel", card);
+        var column = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        column.AddThemeConstantOverride("separation", 4);
+        _hudTourCallout.AddChild(column);
+        _hudTourTitle = MakeLabel(string.Empty, 19, new Color(1f, 0.86f, 0.61f));
+        _hudTourBody = MakeLabel(string.Empty, 15);
+        _hudTourBody.AutowrapMode = TextServer.AutowrapMode.Word;
+        _hudTourBody.CustomMinimumSize = new Vector2(386f, 58f);
+        _hudTourContinue = MakeLabel("Click anywhere to continue", 12,
+            new Color(0.77f, 0.71f, 0.6f, 0.9f));
+        _hudTourContinue.HorizontalAlignment = HorizontalAlignment.Right;
+        column.AddChild(_hudTourTitle);
+        column.AddChild(_hudTourBody);
+        column.AddChild(_hudTourContinue);
+        _hudTourLayer.AddChild(_hudTourCallout);
+    }
+
+    /// <summary>Called once when Room 1's ordinary tutorial is complete.</summary>
+    private void TryStartHouseHudTour() => TryStartHudTour(isMaze: false);
+
+    /// <summary>HedgeMaze calls this after its first-entry dialogue ends.</summary>
+    public void TryStartMazeHudTour() => TryStartHudTour(isMaze: true);
+
+    private async void TryStartHudTour(bool isMaze)
+    {
+        if (_hudTourShowing || _context != UiContext.Game || Settings.Instance == null ||
+            GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked || AnyPanelOpen() ||
+            SceneManager.IsChanging || _cutscenePlaying || _roomFlashPlaying)
+            return;
+
+        if (isMaze ? Settings.Instance.MazeHudTourSeen : Settings.Instance.HouseHudTourSeen)
+            return;
+
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        if (_hudTourShowing || _context != UiContext.Game || GetTree().Paused ||
+            Dialogue.IsShowing || AnyPanelOpen() || SceneManager.IsChanging)
+            return;
+
+        _hudTourIsMaze = isMaze;
+        _hudTourStep = 0;
+        _hudTourShowing = true;
+        _hudTourLayer.Visible = true;
+        _topHudHoldTimer = TopHudHoldSeconds;
+        GetTree().Paused = true;
+        UpdateHudTourStep();
+        AudioManager.Play(Sfx.PageTurn, -7f);
+    }
+
+    private void UpdateHudTourStep()
+    {
+        if (!_hudTourShowing)
+            return;
+
+        string title;
+        string body;
+        switch (_hudTourStep)
+        {
+            case 0:
+                title = "TAB — the main objective";
+                body = _hudTourIsMaze
+                    ? "Hold Tab for the one thing Mara needs next and the movement reminder at the lower-right. MEMORY and Clarity stay visible."
+                    : "Hold Tab to show the one current objective — for example, the locked cabinet. It does not reveal every hidden clue.";
+                break;
+            case 1:
+                title = "THE MEMORY TAB";
+                body = _hudTourIsMaze
+                    ? "This tab stays at the bottom. Click MEMORY to expand or collapse the learned verbs and Journal; E, G, T and R are their shortcuts."
+                    : "This tab stays at the bottom. Click MEMORY to expand or collapse it; new memory verbs appear here as Mara learns them.";
+                break;
+            default:
+                title = "THE BAG — B";
+                body = "The satchel lives at the bottom-right. Press B to open Mara's bag; press B or Esc to close it.";
+                break;
+        }
+
+        _hudTourTitle.Text = $"{_hudTourStep + 1} / 3  ·  {title}";
+        _hudTourBody.Text = body;
+        _hudTourContinue.Text = _hudTourStep == 2
+            ? "Click anywhere to begin"
+            : "Click anywhere for the next tip";
+        UpdateHudTourLayout();
+    }
+
+    private void CancelHudTour()
+    {
+        if (!_hudTourShowing)
+            return;
+        _hudTourShowing = false;
+        if (_hudTourLayer != null)
+            _hudTourLayer.Visible = false;
+        if (GetTree().Paused)
+            GetTree().Paused = false;
+    }
+
+    private void AdvanceHudTour()
+    {
+        if (!_hudTourShowing)
+            return;
+        _hudTourStep++;
+        if (_hudTourStep >= 3)
+        {
+            if (Settings.Instance != null)
+            {
+                if (_hudTourIsMaze)
+                    Settings.Instance.MazeHudTourSeen = true;
+                else
+                    Settings.Instance.HouseHudTourSeen = true;
+                Settings.Instance.Save();
+            }
+            _hudTourShowing = false;
+            _hudTourLayer.Visible = false;
+            GetTree().Paused = false;
+            _topHudHoldTimer = TopHudHoldSeconds;
+            AudioManager.Play(Sfx.UiBack, -6f);
+            return;
+        }
+
+        AudioManager.Play(Sfx.PageTurn, -8f);
+        UpdateHudTourStep();
+    }
+
+    private Control HudTourTarget()
+    {
+        return _hudTourStep switch
+        {
+            0 => _objectivePanel,
+            1 => _verbToggleButton,
+            _ => _bagButton,
+        };
+    }
+
+    private void UpdateHudTourLayout()
+    {
+        if (!_hudTourShowing || _hudTourLayer == null || _hudTourCallout == null)
+            return;
+
+        Control target = HudTourTarget();
+        if (target == null || !target.IsInsideTree())
+            return;
+
+        Rect2 targetRect = GetControlCanvasRect(target).Grow(8f);
+        float frame = 3f;
+        _hudTourFrame[0].Position = targetRect.Position;
+        _hudTourFrame[0].Size = new Vector2(targetRect.Size.X, frame);
+        _hudTourFrame[1].Position = new Vector2(targetRect.Position.X, targetRect.End.Y - frame);
+        _hudTourFrame[1].Size = new Vector2(targetRect.Size.X, frame);
+        _hudTourFrame[2].Position = targetRect.Position;
+        _hudTourFrame[2].Size = new Vector2(frame, targetRect.Size.Y);
+        _hudTourFrame[3].Position = new Vector2(targetRect.End.X - frame, targetRect.Position.Y);
+        _hudTourFrame[3].Size = new Vector2(frame, targetRect.Size.Y);
+
+        Vector2 viewSize = GetViewport().GetVisibleRect().Size;
+        float calloutWidth = Mathf.Min(420f, viewSize.X - 32f);
+        float calloutHeight = 142f;
+        bool targetNearTop = targetRect.GetCenter().Y < viewSize.Y * 0.5f;
+        float calloutX = targetRect.GetCenter().X < viewSize.X * 0.5f
+            ? viewSize.X - calloutWidth - 22f
+            : 22f;
+        float calloutY = targetNearTop ? viewSize.Y * 0.58f : viewSize.Y * 0.12f;
+        calloutX = Mathf.Clamp(calloutX, 12f, Mathf.Max(12f, viewSize.X - calloutWidth - 12f));
+        calloutY = Mathf.Clamp(calloutY, 12f, Mathf.Max(12f, viewSize.Y - calloutHeight - 12f));
+        _hudTourCallout.Position = new Vector2(calloutX, calloutY);
+        _hudTourCallout.Size = new Vector2(calloutWidth, calloutHeight);
+
+        Vector2 targetPoint = targetRect.GetCenter();
+        Vector2 calloutPoint = _hudTourCallout.Position + _hudTourCallout.Size *
+            (targetNearTop ? new Vector2(0.08f, 0f) : new Vector2(0.92f, 1f));
+        _hudTourLeader.Points = new[] { targetPoint, calloutPoint };
+    }
+
+    private static Rect2 GetControlCanvasRect(Control control)
+    {
+        Transform2D transform = control.GetGlobalTransform();
+        Vector2[] corners =
+        [
+            transform * Vector2.Zero,
+            transform * new Vector2(control.Size.X, 0f),
+            transform * control.Size,
+            transform * new Vector2(0f, control.Size.Y),
+        ];
+        float left = corners[0].X;
+        float right = corners[0].X;
+        float top = corners[0].Y;
+        float bottom = corners[0].Y;
+        foreach (Vector2 corner in corners)
+        {
+            left = Mathf.Min(left, corner.X);
+            right = Mathf.Max(right, corner.X);
+            top = Mathf.Min(top, corner.Y);
+            bottom = Mathf.Max(bottom, corner.Y);
+        }
+        return new Rect2(left, top, right - left, bottom - top);
     }
 
     private float TargetCorruptionIntensity()
@@ -907,9 +1243,18 @@ public partial class GameUI : CanvasLayer
 
     public override void _Input(InputEvent @event)
     {
-        // Tab is also a quick peek at the upper HUD. The existing held
-        // action still reveals room hotspots; neither use blocks play.
-        if (@event.IsActionPressed(InputSetup.RevealHotspots) &&
+        if (_hudTourShowing)
+        {
+            if (@event is InputEventMouseButton tourClick && tourClick.Pressed &&
+                tourClick.ButtonIndex == MouseButton.Left)
+                AdvanceHudTour();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        // Tab is a quick peek at the current main objective. In the maze
+        // it also reveals the movement hint; it never reveals hidden items.
+        if (@event.IsActionPressed(InputSetup.RevealObjective) &&
             _context == UiContext.Game && !GetTree().Paused &&
             !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing())
             _topHudHoldTimer = TopHudHoldSeconds;
@@ -1266,7 +1611,8 @@ public partial class GameUI : CanvasLayer
                || (_shatterRoot?.Visible ?? false)
                || (_recollectionPanel?.Visible ?? false)
                || (_photoPanel?.Visible ?? false)
-               || (_confirmPanel?.Visible ?? false);
+               || (_confirmPanel?.Visible ?? false)
+               || _hudTourShowing;
     }
 
     private void RequestHint()
@@ -1397,6 +1743,14 @@ public partial class GameUI : CanvasLayer
             row.AddChild(button);
         }
 
+        _memoryEmptyLabel = MakeLabel("New verbs appear here as she learns", 12,
+            new Color(0.76f, 0.72f, 0.64f, 0.86f));
+        _memoryEmptyLabel.CustomMinimumSize = new Vector2(205f, 36f);
+        _memoryEmptyLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _memoryEmptyLabel.VerticalAlignment = VerticalAlignment.Center;
+        _memoryEmptyLabel.Visible = false;
+        row.AddChild(_memoryEmptyLabel);
+
         _mazeJournalButton = MakeButton("J — Journal", 16);
         _mazeJournalButton.Name = "MazeJournalButton";
         _mazeJournalButton.CustomMinimumSize = new Vector2(132, 36);
@@ -1425,10 +1779,7 @@ public partial class GameUI : CanvasLayer
         }
 
         bool inMaze = SceneManager.Instance?.CurrentScene is HedgeMaze;
-        bool mazePeek = inMaze && _context == UiContext.Game && _topHudAlpha > 0.02f
-            && !AnyPanelOpen() && !Dialogue.IsShowing && !GetTree().Paused && !SceneManager.IsChanging;
-        bool showExpanded = _memoryVerbBarExpanded || mazePeek;
-
+        bool showExpanded = _memoryVerbBarExpanded;
         bool anyUnlocked = false;
         foreach (var (verb, button) in _verbButtons)
         {
@@ -1444,9 +1795,10 @@ public partial class GameUI : CanvasLayer
                 : new Color(0.93f, 0.89f, 0.82f));
         }
 
+        bool keepTabVisible = _context == UiContext.Game;
         if (_verbToggleButton != null)
         {
-            _verbToggleButton.Visible = anyUnlocked;
+            _verbToggleButton.Visible = anyUnlocked || keepTabVisible;
             _verbToggleButton.Text = showExpanded
                 ? "MEMORY  −"
                 : activeVerb != MemoryVerb.None
@@ -1462,52 +1814,27 @@ public partial class GameUI : CanvasLayer
                 : new Color(0.88f, 0.78f, 0.60f));
         }
 
-        // The maze's temporary Tab controls sit below the objective/status
-        // chips rather than over the prompt, flashlight hand, or interaction dot.
-        if (inMaze && mazePeek)
-        {
-            _verbPanel.AnchorLeft = 0.5f;
-            _verbPanel.AnchorRight = 0.5f;
-            _verbPanel.AnchorTop = 0f;
-            _verbPanel.AnchorBottom = 0f;
-            _verbPanel.OffsetLeft = -430f;
-            _verbPanel.OffsetRight = 430f;
-            _verbPanel.OffsetTop = 212f;
-            _verbPanel.OffsetBottom = 268f;
-        }
-        else if (showExpanded)
-        {
-            _verbPanel.AnchorLeft = 0.5f;
-            _verbPanel.AnchorRight = 0.5f;
-            _verbPanel.AnchorTop = 1f;
-            _verbPanel.AnchorBottom = 1f;
-            _verbPanel.OffsetLeft = -355f;
-            _verbPanel.OffsetRight = 355f;
-            _verbPanel.OffsetTop = -104f;
-            _verbPanel.OffsetBottom = -48f;
-        }
-        else
-        {
-            _verbPanel.AnchorLeft = 0f;
-            _verbPanel.AnchorRight = 0f;
-            _verbPanel.AnchorTop = 1f;
-            _verbPanel.AnchorBottom = 1f;
-            _verbPanel.OffsetLeft = 284f;
-            _verbPanel.OffsetRight = 456f;
-            _verbPanel.OffsetTop = -88f;
-            _verbPanel.OffsetBottom = -48f;
-        }
+        // The Memory tab stays centered along the bottom in every gameplay
+        // room, collapsed or expanded. Room 1 and the maze can therefore teach
+        // it at the same stable screen position.
+        _verbPanel.AnchorLeft = 0.5f;
+        _verbPanel.AnchorRight = 0.5f;
+        _verbPanel.AnchorTop = 1f;
+        _verbPanel.AnchorBottom = 1f;
+        _verbPanel.OffsetLeft = -430f;
+        _verbPanel.OffsetRight = 430f;
+        _verbPanel.OffsetTop = -76f;
+        _verbPanel.OffsetBottom = -20f;
 
+        bool ordinaryBarVisible = _context == UiContext.Game &&
+            (!GetTree().Paused || _hudTourShowing) &&
+            (!AnyPanelOpen() || _hudTourShowing) && !Dialogue.IsShowing && !SceneManager.IsChanging;
+        _verbPanel.Visible = ordinaryBarVisible && (anyUnlocked || keepTabVisible);
+        if (_memoryEmptyLabel != null)
+            _memoryEmptyLabel.Visible = showExpanded && !anyUnlocked;
         if (_mazeJournalButton != null)
-            _mazeJournalButton.Visible = mazePeek;
-
-        bool ordinaryBarVisible = _context == UiContext.Game && !AnyPanelOpen()
-            && !Dialogue.IsShowing && !GetTree().Paused && !SceneManager.IsChanging;
-        _verbPanel.Visible = ordinaryBarVisible && (anyUnlocked || mazePeek)
-            && (!inMaze || mazePeek);
-        _verbPanel.Modulate = inMaze
-            ? new Color(1f, 1f, 1f, _topHudAlpha)
-            : Colors.White;
+            _mazeJournalButton.Visible = inMaze && showExpanded;
+        _verbPanel.Modulate = Colors.White;
     }
 
     /// <summary>Keeps the Step Back button in sync with the live scene: shown
@@ -1597,8 +1924,8 @@ public partial class GameUI : CanvasLayer
         _forwardButton.AnchorBottom = 1;
         _forwardButton.OffsetLeft = -268;
         _forwardButton.OffsetRight = -16;
-        _forwardButton.OffsetTop = -88;
-        _forwardButton.OffsetBottom = -44;
+        _forwardButton.OffsetTop = -136;
+        _forwardButton.OffsetBottom = -92;
         _forwardButton.TooltipText = "Leave this room — walked, like everywhere in this house";
         _forwardButton.FocusMode = Control.FocusModeEnum.None;
         _forwardButton.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -9f);
@@ -1715,8 +2042,8 @@ public partial class GameUI : CanvasLayer
     }
 
     /// <summary>"Remember it all" as a standing HUD affordance: while a
-    /// Recollection is available it sits beside the bag, in gold, instead of
-    /// depending on the player arming Clarity at the lucky moment.</summary>
+    /// Recollection is available it sits just below the persistent status chip,
+    /// in gold, instead of depending on the player arming Clarity at the lucky moment.</summary>
     private void BuildRememberButton()
     {
         _rememberButton = new Button { Name = "RememberItAllButton", Text = "\u2726 Remember it all", Visible = false };
@@ -1747,7 +2074,7 @@ public partial class GameUI : CanvasLayer
         _rememberButton.AddThemeStyleboxOverride("pressed", hover);
         _rememberButton.AddThemeStyleboxOverride("focus", hover);
 
-        // Under the top-right status chip, just left of the bag icon.
+        // Just below the persistent top-right status chip.
         _rememberButton.AnchorLeft = 1;
         _rememberButton.AnchorRight = 1;
         _rememberButton.AnchorTop = 0;
@@ -1764,7 +2091,7 @@ public partial class GameUI : CanvasLayer
             _recollectionOfferedThisArming = true;
             MaybeOfferRecollection();
         };
-        _topHud.AddChild(_rememberButton);
+        _hud.AddChild(_rememberButton);
     }
 
     private void RefreshRememberButton()
@@ -2878,9 +3205,8 @@ public partial class GameUI : CanvasLayer
 
     private void BuildBagButton()
     {
-        // Icon only — a worn satchel, no words. It lives under the top-right
-        // status panel (MEMORY / Clarity pips), clear of the room's own
-        // clarity eye at the bottom and of every world hotspot strip.
+        // Icon only — a worn satchel, no words. Keep it at the lower-right
+        // edge so the always-visible MEMORY / Clarity chip stays clear.
         _bagButton = new Button { Name = "BagButton", Text = string.Empty };
         _bagButton.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
         var icon = GD.Load<Texture2D>("res://assets/images/core/ui/bag_icon.png");
@@ -2900,12 +3226,13 @@ public partial class GameUI : CanvasLayer
 
         _bagButton.AnchorLeft = 1;
         _bagButton.AnchorRight = 1;
-        _bagButton.AnchorTop = 0;
-        _bagButton.AnchorBottom = 0;
+        _bagButton.AnchorTop = 1;
+        _bagButton.AnchorBottom = 1;
         _bagButton.OffsetLeft = -76;
         _bagButton.OffsetRight = -16;
-        _bagButton.OffsetTop = 142;
-        _bagButton.OffsetBottom = 202;
+        _bagButton.OffsetTop = -78;
+        _bagButton.OffsetBottom = -18;
+        _bagButton.CustomMinimumSize = new Vector2(60f, 60f);
         _bagButton.FocusMode = Control.FocusModeEnum.None;
 
         var normal = new StyleBoxFlat
@@ -3691,9 +4018,9 @@ public partial class GameUI : CanvasLayer
         if (objectivePanel.Visible)
         {
             // The objective chip fits its text rather than clipping line two.
-            float objectiveH = MeasureHudTextHeight(_objectiveLabel.Text, 516f, 21);
+            float objectiveH = MeasureHudTextHeight(_objectiveLabel.Text, 258f, 11);
             objectivePanel.OffsetBottom = objectivePanel.OffsetTop
-                + Mathf.Max(objectiveH, 26f) + 24f;
+                + Mathf.Max(objectiveH, 13f) + 12f;
         }
 
         // Clarity pips (ColorRects — no font-glyph roulette).
@@ -4060,8 +4387,8 @@ public partial class GameUI : CanvasLayer
         AddChild(_hud);
         BuildGameplayTorchHand();
 
-        // The upper HUD can be summoned briefly with Tab; the Bag button
-        // remains a separate child of _hud and stays visible throughout.
+        // Tab briefly reveals only the current main objective. The status
+        // chip, Bag, and Memory tab are persistent gameplay HUD elements.
         _topHud = new Control
         {
             Name = "TopHud",
@@ -4072,7 +4399,8 @@ public partial class GameUI : CanvasLayer
         _hud.AddChild(_topHud);
 
         // Objective (top-left, parchment-dark chip — translucent over the room).
-        var objectivePanel = MakeHudPanel();
+        _objectivePanel = MakeHudPanel();
+        var objectivePanel = _objectivePanel;
         objectivePanel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
         objectivePanel.OffsetLeft = 16;
         objectivePanel.OffsetTop = 14;
@@ -4085,7 +4413,8 @@ public partial class GameUI : CanvasLayer
         _topHud.AddChild(objectivePanel);
 
         // Integrity + clarity (top-right) — translucent over the room.
-        var statusPanel = MakeHudPanel();
+        _statusPanel = MakeHudPanel();
+        var statusPanel = _statusPanel;
         statusPanel.AnchorLeft = 1;
         statusPanel.AnchorRight = 1;
         statusPanel.OffsetLeft = -316;
@@ -4134,7 +4463,7 @@ public partial class GameUI : CanvasLayer
         _shardLabel = MakeLabel("", 19);
         statusBox.AddChild(_shardLabel);
         statusPanel.AddChild(statusBox);
-        _topHud.AddChild(statusPanel);
+        _hud.AddChild(statusPanel);
 
         // Toast (top-centre, under nothing else — dialogue owns the bottom).
         // Toast text floats over bright rooms; sit it on a dark chip so hints
@@ -4192,7 +4521,7 @@ public partial class GameUI : CanvasLayer
         controlsChip.OffsetRight = 1004;
         controlsChip.OffsetTop = -40;
         controlsChip.OffsetBottom = -8;
-        _controlsLabel = MakeLabel("Tab — HUD / hotspots      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
+        _controlsLabel = MakeLabel("Tab — main objective      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
             16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
         _controlsLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
         controlsChip.AddChild(_controlsLabel);
@@ -4325,10 +4654,6 @@ public partial class GameUI : CanvasLayer
             () => Settings.Instance.CorruptionIntensity,
             v => Settings.Instance.CorruptionIntensity = v,
             v => $"{(int)(v * 100)}%");
-        AddToggle(vbox, "Hotspot reveal (hold Tab)",
-            () => Settings.Instance.HotspotHints,
-            v => Settings.Instance.HotspotHints = v);
-
         vbox.AddChild(new HSeparator());
         var close = MakeButton("Done");
         close.Pressed += () => CloseSettings(backToPause: _openedSettingsFromPause);
@@ -4904,6 +5229,7 @@ public partial class GameUI : CanvasLayer
 
     private void CloseTutorial()
     {
+        bool wasFromPause = _tutorialFromPause;
         _tutorialPanel.Visible = false;
         AudioManager.Play(Sfx.UiBack, -6f);
 
@@ -4922,6 +5248,9 @@ public partial class GameUI : CanvasLayer
         {
             GetTree().Paused = false;
         }
+
+        if (!wasFromPause && _context == UiContext.Game)
+            TryStartHouseHudTour();
     }
 
     private void ShowTutorialPage(int index)
@@ -5004,7 +5333,7 @@ public partial class GameUI : CanvasLayer
                 var col = TutorialColumn();
                 col.AddChild(TutorialChip("CLICK — look closer", gold));
                 col.AddChild(TutorialChip("look again — deeper, at a cost", gold));
-                col.AddChild(TutorialChip("Tab — what still waits", gold));
+                col.AddChild(TutorialChip("Tab — current objective", gold));
                 _tutorialVisual.AddChild(col);
                 break;
             }
@@ -5061,7 +5390,7 @@ public partial class GameUI : CanvasLayer
                 var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
                 row.AddThemeConstantOverride("separation", 10);
                 row.AddChild(TutorialChip("E · Echo\nlisten", gold));
-                row.AddChild(TutorialChip("A · Anchor\nhold still", gold));
+                row.AddChild(TutorialChip("G · Anchor\nhold still", gold));
                 row.AddChild(TutorialChip("T · Trace\njoin", gold));
                 row.AddChild(TutorialChip("R · Release\ndecide", gold));
                 col.AddChild(row);
@@ -5077,7 +5406,7 @@ public partial class GameUI : CanvasLayer
             {
                 _tutorialVisual.AddChild(TutorialImage("res://assets/images/core/ui/bag_icon.png", new Vector2(150, 150), cover: false));
                 var col = TutorialColumn();
-                col.AddChild(TutorialChip("Tab — what still waits    ·    H — a nudge", gold));
+                col.AddChild(TutorialChip("Tab — current objective    ·    H — a nudge", gold));
                 col.AddChild(TutorialChip("B — Mara's bag    ·    J — her journal", gold));
                 col.AddChild(TutorialChip("Q — step back    ·    Return \u2192 — the new room", gold));
                 col.AddChild(TutorialChip("click — dialogue    ·    Esc — pause", gold));
@@ -7381,6 +7710,8 @@ public partial class GameUI : CanvasLayer
             SetRoomFlashAmount(0f);
             _roomArrivalPlaying = false;
         }
+        if (scenePath != null && scenePath.EndsWith("/room_1.tscn"))
+            TryStartHouseHudTour();
     }
 
     private async Task PlayRandomRoomFlashAsync(string scenePath)
@@ -8039,9 +8370,16 @@ public partial class GameUI : CanvasLayer
     /// the cards themselves stay replayable from the pause menu forever.</summary>
     private void MaybeAutoShowTutorial(string scenePath)
     {
-        if (_tutorialAutoShown || Settings.Instance == null || Settings.Instance.TutorialSeen)
-            return;
         if (scenePath == null || !scenePath.EndsWith("room_1.tscn"))
+            return;
+        if (Settings.Instance == null)
+            return;
+        if (Settings.Instance.TutorialSeen)
+        {
+            TryStartHouseHudTour();
+            return;
+        }
+        if (_tutorialAutoShown)
             return;
 
         _tutorialAutoShown = true;
@@ -8060,6 +8398,7 @@ public partial class GameUI : CanvasLayer
                 }
                 GetTree().Paused = false;
                 ShowToast("As you were, then. How to Play waits in the pause menu (Esc) if the house gets strange.");
+                TryStartHouseHudTour();
             });
     }
 }
