@@ -33,6 +33,17 @@ public partial class BlackoutOverlay : Control
 
     private Vector2 _beamPosition = new(576, 324);
     private bool _beamReady;
+
+    public Vector2 FlashlightBeamPosition => _beamPosition;
+    public float FlashlightBeamRadius
+    {
+        get
+        {
+            var gs = GameState.Instance;
+            float radius = gs?.HasFlag("basement_battery_taken") == true ? 198f : 152f;
+            return gs?.DevToolsEnabled == true ? radius * gs.DevFlashlightScale : radius;
+        }
+    }
     private float _darkAlpha;
     private float _flickerLevel = 0.8f;
     private float _flickerTimer;
@@ -151,9 +162,6 @@ public partial class BlackoutOverlay : Control
             new Color(0.002f, 0.002f, 0.004f, 0.62f * _darkAlpha));
         DrawDarkOutside(_beamPosition, radius,
             new Color(0.001f, 0.001f, 0.003f, 0.72f * _darkAlpha));
-        DrawArc(_beamPosition, radius * 0.97f, 0f, Mathf.Tau, 56,
-            new Color(1f, 0.83f, 0.45f, 0.08f * _darkAlpha), 13f, true);
-        DrawCircle(_beamPosition, 4f, new Color(1f, 0.9f, 0.62f, 0.24f * _darkAlpha));
     }
 
     private void DrawDarkOutside(Vector2 center, float radius, Color dark)

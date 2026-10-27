@@ -55,6 +55,17 @@ public partial class VentCrawl : Node2D
     private bool _beamReady;
     private bool _crawlMoving;
 
+    public Vector2 FlashlightBeamPosition => _beamPosition;
+    public float FlashlightBeamRadius
+    {
+        get
+        {
+            var gs = GameState.Instance;
+            float radius = gs?.HasFlag("basement_battery_taken") == true ? 205f : 172f;
+            return gs?.DevToolsEnabled == true ? radius * gs.DevFlashlightScale : radius;
+        }
+    }
+
     private readonly RandomNumberGenerator _rng = new();
     private int _kicksLanded;
     private float _ringRadius = 168f;

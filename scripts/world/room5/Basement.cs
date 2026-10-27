@@ -31,6 +31,17 @@ public partial class Basement : MemoryRoomBase
     private Vector2 _beamPosition = new(576, 324);
     private bool _beamReady;
 
+    public Vector2 FlashlightBeamPosition => _beamPosition;
+    public float FlashlightBeamRadius
+    {
+        get
+        {
+            var gs = GameState.Instance;
+            float radius = gs?.HasFlag("basement_battery_taken") == true ? 208f : 158f;
+            return gs?.DevToolsEnabled == true ? radius * gs.DevFlashlightScale : radius;
+        }
+    }
+
     protected override string RoomName => "Basement";
     protected override string BackgroundPath => "res://assets/images/bgs/Basement_BG.png";
 

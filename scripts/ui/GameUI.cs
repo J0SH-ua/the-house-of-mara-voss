@@ -148,6 +148,8 @@ public partial class GameUI : CanvasLayer
     private Control _hudTourLayer;
     private Control _hudTourShade;
     private Line2D _hudTourLeader;
+    private Line2D _hudTourArrowUpper;
+    private Line2D _hudTourArrowLower;
     private ColorRect[] _hudTourFrame = Array.Empty<ColorRect>();
     private PanelContainer _hudTourCallout;
     private Label _hudTourTitle;
@@ -575,6 +577,7 @@ public partial class GameUI : CanvasLayer
     private Control _settingsPanel;
     private Control _journalPanel;
     private Control _menuSettingsButton;
+    private Control _menuHowToButton;
     private Control _devPanel;
     private Label _devStatusLabel;
     private Button _devPauseButton;
@@ -949,6 +952,7 @@ public partial class GameUI : CanvasLayer
         }
 
         SetMenuCornerScale(_menuSettingsButton, new Vector2(1f, 1f));
+        SetMenuCornerScale(_menuHowToButton, new Vector2(1f, 1f));
     }
 
     private static void SetMenuCornerScale(Control control, Vector2 pivot)
@@ -1016,6 +1020,22 @@ public partial class GameUI : CanvasLayer
             ZIndex = 2,
         };
         _hudTourLayer.AddChild(_hudTourLeader);
+        _hudTourArrowUpper = new Line2D
+        {
+            Width = 2f,
+            DefaultColor = new Color(1f, 0.79f, 0.42f, 0.98f),
+            Antialiased = true,
+            ZIndex = 2,
+        };
+        _hudTourLayer.AddChild(_hudTourArrowUpper);
+        _hudTourArrowLower = new Line2D
+        {
+            Width = 2f,
+            DefaultColor = new Color(1f, 0.79f, 0.42f, 0.98f),
+            Antialiased = true,
+            ZIndex = 2,
+        };
+        _hudTourLayer.AddChild(_hudTourArrowLower);
 
         _hudTourFrame = new ColorRect[4];
         for (int i = 0; i < _hudTourFrame.Length; i++)
@@ -1244,7 +1264,12 @@ public partial class GameUI : CanvasLayer
         Vector2 targetPoint = targetRect.GetCenter();
         Vector2 calloutPoint = _hudTourCallout.Position + _hudTourCallout.Size *
             (targetNearTop ? new Vector2(0.08f, 0f) : new Vector2(0.92f, 1f));
-        _hudTourLeader.Points = new[] { targetPoint, calloutPoint };
+        _hudTourLeader.Points = new[] { calloutPoint, targetPoint };
+        Vector2 toTarget = (targetPoint - calloutPoint).Normalized();
+        Vector2 arrowBase = targetPoint - toTarget * 12f;
+        Vector2 arrowSide = new Vector2(-toTarget.Y, toTarget.X) * 6f;
+        _hudTourArrowUpper.Points = new[] { targetPoint, arrowBase + arrowSide };
+        _hudTourArrowLower.Points = new[] { targetPoint, arrowBase - arrowSide };
     }
 
     private static Rect2 GetControlCanvasRect(Control control)
@@ -2270,6 +2295,7 @@ public partial class GameUI : CanvasLayer
         _hud.Visible = next == UiContext.Game;
         _corruptionRect.Visible = next == UiContext.Game;
         _menuSettingsButton.Visible = next == UiContext.Menu;
+        _menuHowToButton.Visible = next == UiContext.Menu;
         if (next == UiContext.Game && _tutorialPanel.Visible)
             GetTree().Paused = true;
 
@@ -4562,8 +4588,9 @@ public partial class GameUI : CanvasLayer
              Input.IsPhysicalKeyPressed(Key.Up) || Input.IsPhysicalKeyPressed(Key.Left) ||
              Input.IsPhysicalKeyPressed(Key.Down) || Input.IsPhysicalKeyPressed(Key.Right));
         bool reducedMotion = Settings.ReduceMotionOrDefault();
-        // The vent crawl is deliberately slower than her ordinary walk.
-        float stepSeconds = sceneFile == "vent_crawl.tscn" ? 1.25f : 0.92f;
+        // Keep the first-person hand's footfall gentle; the vent crawl is
+        // slower still than Mara's ordinary house walk.
+        float stepSeconds = sceneFile == "vent_crawl.tscn" ? 1.6f : 1.35f;
         if (walking && !reducedMotion)
             _torchHandWalkTime += delta * Mathf.Tau / stepSeconds;
 
@@ -4593,13 +4620,24 @@ public partial class GameUI : CanvasLayer
         _gameplayTorchHand.OffsetTop = -height - bottomInset + _torchHandSway.Y;
         _gameplayTorchHand.OffsetBottom = -bottomInset + _torchHandSway.Y;
 
-        float beamRadius = gs?.HasFlag("basement_battery_taken") == true ? 208f : 158f;
-        if (gs != null && gs.DevToolsEnabled)
-            beamRadius *= gs.DevFlashlightScale;
+        Node activeRoom = SceneManager.Instance?.CurrentScene;
+        Vector2 beamCenter = _blackoutOverlay?.FlashlightBeamPosition ?? mouse;
+        float beamRadius = _blackoutOverlay?.FlashlightBeamRadius ??
+            (gs?.HasFlag("basement_battery_taken") == true ? 198f : 152f);
+        if (activeRoom is Basement basement)
+        {
+            beamCenter = basement.FlashlightBeamPosition;
+            beamRadius = basement.FlashlightBeamRadius;
+        }
+        else if (activeRoom is VentCrawl vent)
+        {
+            beamCenter = vent.FlashlightBeamPosition;
+            beamRadius = vent.FlashlightBeamRadius;
+        }
         Vector2 lightPoint = new(
             viewSize.X - width * 0.34f + _torchHandSway.X,
             viewSize.Y - height * 0.25f + _torchHandSway.Y);
-        float distance = mouse.DistanceTo(lightPoint);
+        float distance = beamCenter.DistanceTo(lightPoint);
         float beamFalloff = 1f - Mathf.Clamp(
             (distance - beamRadius * 0.35f) / Mathf.Max(beamRadius * 0.65f, 1f), 0f, 1f);
         float lightLevel = Mathf.Lerp(0.16f, 1f, beamFalloff);
@@ -5327,6 +5365,19 @@ public partial class GameUI : CanvasLayer
         _menuSettingsButton = b;
         AddChild(b);
 
+        var howTo = MakeButton("How to Play", 22);
+        howTo.AnchorLeft = 1f;
+        howTo.AnchorTop = 1f;
+        howTo.AnchorRight = 1f;
+        howTo.AnchorBottom = 1f;
+        howTo.OffsetLeft = -170f;
+        howTo.OffsetTop = -108f;
+        howTo.OffsetRight = -26f;
+        howTo.OffsetBottom = -68f;
+        howTo.Visible = false;
+        howTo.Pressed += () => OpenTutorial();
+        _menuHowToButton = howTo;
+        AddChild(howTo);
     }
 
     // ================================================================ tutorial
@@ -5436,18 +5487,17 @@ public partial class GameUI : CanvasLayer
 
     public void OpenTutorial(bool fromPause = false, bool fromPrologueAuto = false)
     {
+        _tutorialFromPause = fromPause;
+        _tutorialFromPrologueAuto = fromPrologueAuto;
         if (fromPause)
-        {
-            StartHudTourFromPause();
-            return;
-        }
+            _pausePanel.Visible = false;
+        else if (_context == UiContext.Game)
+            GetTree().Paused = true;
 
-        if (_context == UiContext.Game)
-        {
-            if (GetTree().Paused)
-                GetTree().Paused = false;
-            TryStartHouseHudTour();
-        }
+        _tutorialPanel.Visible = true;
+        AudioManager.Play(Sfx.PageTurn, -7f);
+        ShowTutorialPage(0);
+        _tutorialNextButton.GrabFocus();
     }
 
     private void CloseTutorial()
@@ -8590,8 +8640,8 @@ public partial class GameUI : CanvasLayer
         }
     }
 
-    /// <summary>The prologue asks before it teaches. The cards remain
-    /// replayable from the pause menu, but are never offered on kitchen entry.</summary>
+    /// <summary>The prologue starts the pointed HUD callouts after Mara
+    /// wakes. They can be replayed any time from the pause menu.</summary>
     public void TryStartPrologueTutorial()
     {
         MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
@@ -8600,42 +8650,20 @@ public partial class GameUI : CanvasLayer
     private void MaybeAutoShowTutorial(string scenePath)
     {
         if (scenePath == null || !scenePath.EndsWith("bedroom_prologue.tscn") ||
-            GameState.Instance?.HasFlag("prologue_awake") != true)
-            return;
-        if (Settings.Instance == null)
-            return;
-        // Keep this gate independent of the legacy general tutorial flag:
-        // earlier builds could mark that flag in Room 1, before this prologue flow existed.
-        if (Settings.Instance.PrologueTutorialSeen)
-        {
-            TryStartHouseHudTour();
-            return;
-        }
-        if (_tutorialAutoShown)
+            GameState.Instance?.HasFlag("prologue_awake") != true || Settings.Instance == null)
             return;
 
+        if (_tutorialAutoShown)
+            return;
         _tutorialAutoShown = true;
-        GetTree().Paused = true;
-        ShowConfirm(
-            "Would you like a quick HUD tour? Four highlighted callouts explain Mara's narrative line, the memory and clarity meters, shortcut keys, and where collected things live.",
-            () =>
-            {
-                GetTree().Paused = false;
-                TryStartHouseHudTour(force: true);
-            },
-            "Show me",
-            "Not now",
-            () =>
-            {
-                if (Settings.Instance != null)
-                {
-                    Settings.Instance.TutorialSeen = true;
-                    Settings.Instance.PrologueTutorialSeen = true;
-                    Settings.Instance.HouseHudTourSeen = true;
-                    Settings.Instance.Save();
-                }
-                GetTree().Paused = false;
-            });
+
+        // The new tutorial is the actual on-screen HUD tour, not another
+        // confirmation or a menu of pages. Keep its first-run gate separate
+        // from the legacy How to Play booklet in the main menu.
+        if (Settings.Instance.PrologueTutorialSeen)
+            TryStartHouseHudTour();
+        else
+            TryStartHouseHudTour(force: true);
     }
 }
 
