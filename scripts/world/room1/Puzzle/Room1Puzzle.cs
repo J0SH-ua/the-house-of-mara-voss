@@ -169,7 +169,7 @@ public partial class Room1Puzzle : Area2D
 		if (!clicked && !useKey)
 			return;
 
-		if (IsClickInsidePuzzle(mouseEvent.Position))
+		if (IsClickInsidePuzzle(GetGlobalMousePosition()))
 		{
 			OnPuzzleClicked();
 			GetViewport().SetInputAsHandled();

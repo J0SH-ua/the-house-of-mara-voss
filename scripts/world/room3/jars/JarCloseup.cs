@@ -349,16 +349,13 @@ public partial class JarCloseup : Node2D
         // A click, or F: the house's hand, for the thing under the
         // cursor. Same reach, same rules, either way.
         bool clicked = @event is InputEventMouseButton mouseButton &&
-            mouseButton.ButtonIndex == MouseButton.Left;
+            mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed;
         bool useKey = @event is InputEventKey keyEvent && keyEvent.Pressed &&
             !keyEvent.Echo && keyEvent.PhysicalKeycode == Key.F;
         if (!clicked && !useKey)
             return;
 
         Vector2 pos = GetGlobalMousePosition();
-
-        if (clicked && !mouseButton.Pressed)
-            return;
 
         if (!InputFree())
             return;
