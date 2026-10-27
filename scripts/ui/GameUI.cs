@@ -4606,14 +4606,19 @@ public partial class GameUI : CanvasLayer
             Visible = false,
             MouseFilter = Control.MouseFilterEnum.Ignore,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            Rotation = Mathf.DegToRad(32f),
         };
+        // Tint the whole glass lens while the flashlight is on, rather than
+        // relying on a tiny specular dot that disappears at gameplay scale.
         var lensStyle = new StyleBoxFlat
         {
-            BgColor = new Color(1f, 0.97f, 0.82f, 0.96f),
-            BorderColor = new Color(1f, 0.84f, 0.48f, 0.9f),
+            BgColor = new Color(1f, 0.72f, 0.035f, 0.68f),
+            BorderColor = new Color(1f, 0.94f, 0.32f, 0.98f),
+            ShadowColor = new Color(1f, 0.72f, 0.06f, 0.55f),
+            ShadowSize = 8,
         };
-        lensStyle.SetBorderWidthAll(1);
-        lensStyle.SetCornerRadiusAll(8);
+        lensStyle.SetBorderWidthAll(2);
+        lensStyle.SetCornerRadiusAll(20);
         _gameplayTorchLensIndicator.AddThemeStyleboxOverride("panel", lensStyle);
         // Keep the lit lens as a sibling, not a child, so the hand's
         // beam-based dimming cannot wash out the on-state indicator.
@@ -4690,9 +4695,9 @@ public partial class GameUI : CanvasLayer
         _gameplayTorchHand.OffsetBottom = -bottomInset + _torchHandSway.Y;
         if (_gameplayTorchLensIndicator != null)
         {
-            const float lensX = 0.16f;
-            const float lensY = 0.15f;
-            _gameplayTorchLensIndicator.Size = new Vector2(12f, 12f) * handScale;
+            const float lensX = 0.145f;
+            const float lensY = 0.17f;
+            _gameplayTorchLensIndicator.Size = new Vector2(48f, 36f) * handScale;
             Vector2 handTopLeft = new(
                 viewSize.X - width - rightInset + _torchHandSway.X,
                 viewSize.Y - height - bottomInset + _torchHandSway.Y);
