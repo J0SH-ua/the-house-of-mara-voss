@@ -2505,6 +2505,9 @@ public partial class GameState : Node
     private bool _devFreeFlashlight;
     private bool _devNoClip;
     private bool _devShowMap;
+    private bool _devMouseCamera;
+    private bool _devMouseLight;
+    private float _devFlashlightScale = 1f;
 
     public event Action DeveloperToolsChanged;
 
@@ -2514,6 +2517,9 @@ public partial class GameState : Node
     public bool DevFreeFlashlight => _devFreeFlashlight;
     public bool DevNoClip => _devNoClip;
     public bool DevShowMap => _devShowMap;
+    public bool DevMouseCamera => _devMouseCamera;
+    public bool DevMouseLight => _devMouseLight;
+    public float DevFlashlightScale => _devFlashlightScale;
 
     /// <summary>Turn the whole toolset on or off. Everything the
     /// maze reads is gated on this, so one switch puts everything
@@ -2531,6 +2537,19 @@ public partial class GameState : Node
     public void SetDevFreeFlashlight(bool value) => SetDevFlag(ref _devFreeFlashlight, value);
     public void SetDevNoClip(bool value) => SetDevFlag(ref _devNoClip, value);
     public void SetDevShowMap(bool value) => SetDevFlag(ref _devShowMap, value);
+    public void SetDevMouseCamera(bool value) => SetDevFlag(ref _devMouseCamera, value);
+    public void SetDevMouseLight(bool value) => SetDevFlag(ref _devMouseLight, value);
+
+    /// <summary>How big the torch's circle of light is, for a
+    /// developer who wants to see the whole hedge at once.</summary>
+    public void SetDevFlashlightScale(float value)
+    {
+        float clamped = Mathf.Clamp(value, 1f, 3f);
+        if (Mathf.IsEqualApprox(clamped, _devFlashlightScale))
+            return;
+        _devFlashlightScale = clamped;
+        DeveloperToolsChanged?.Invoke();
+    }
 
     private void SetDevFlag(ref bool field, bool value)
     {
