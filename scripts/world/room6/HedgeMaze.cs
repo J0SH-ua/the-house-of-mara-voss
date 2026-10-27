@@ -73,6 +73,7 @@ public partial class HedgeMaze : Node2D
     private const string WateringCanTexturePath = "res://assets/images/hedge/props/watering_can.png";
     private const string SpareBatteryTexturePath = "res://assets/images/hedge/props/spare_battery.png";
     private const string SpareBatteryFlag = "hedge_spare_battery";
+    private const string LampOnFlag = "hedge_lamp_on";
     private const string Room7ScenePath = "res://scenes/world/room_7.tscn";
 
     public const string IntroPendingFlag = "hedge_maze_intro_pending";
@@ -149,6 +150,11 @@ public partial class HedgeMaze : Node2D
     // battery from older saves widens it the same way).
     private const float BeamRadius = 158f;
     private const float StrongBeamRadius = 208f;
+
+    // The garden lamp is a machine of her own: when it is switched
+    // on it throws its own warm light, this far across the path.
+    private const float LampLightRadius = 2.9f;
+    private const float LampPoolRadius = 1.9f;
 
     // The torch she carries in here is one sprite: both hands round
     // the cloth-bound head of it, with the sleeve of her jumper
@@ -233,6 +239,7 @@ public partial class HedgeMaze : Node2D
     private bool _freeCamera;
     private bool _devMapOverlay;
     private float _wheelDelta;
+    private readonly List<Vector2> _litSpans = new();
     private float _lastMouseX;
     private float _mouseDeltaX;
     private Label _devLabel;
@@ -356,16 +363,16 @@ public partial class HedgeMaze : Node2D
         _props.Clear();
         AddProp(PropKind.Lamp, new Vector2(4.5f, 1.5f), "Garden lamp",
             "A lamp on a post, wired to nothing I can see. The glass is cold. Somebody meant to light this garden once.",
-            LampPostTexturePath, 1.45f);
+            LampPostTexturePath, 1.18f);
         AddProp(PropKind.Wheelbarrow, new Vector2(10.5f, 1.5f), "Wheelbarrow",
             "A barrow with last year's leaves in it and one wheel that will never be true again. Whoever cut this hedge did it by hand, in a bad winter.",
-            WheelbarrowTexturePath, 0.52f);
+            WheelbarrowTexturePath, 0.42f);
         AddProp(PropKind.WateringCan, new Vector2(12.5f, 9.5f), "Watering can",
             "Green underneath, orange where the sun got at it. The fountain has been dry for years and this is still here, waiting for a garden.",
-            WateringCanTexturePath, 0.34f);
+            WateringCanTexturePath, 0.3f);
         AddProp(PropKind.Battery, new Vector2(11.5f, 17.5f), "Spare battery",
             "A spare cell, wrapped in a scrap of cloth. Dad's idea of a reserve: never the thing you need, until the moment you do.",
-            SpareBatteryTexturePath, 0.24f);
+            SpareBatteryTexturePath, 0.2f);
     }
 
     private void AddProp(PropKind kind, Vector2 position, string name, string examine,
@@ -383,6 +390,8 @@ public partial class HedgeMaze : Node2D
             Examine = examine,
             Texture = GD.Load<Texture2D>(texturePath),
             HeightUnits = heightUnits,
+            // A lamp she has already switched on stays on.
+            SwitchedOn = kind == PropKind.Lamp && (gs?.HasFlag(LampOnFlag) ?? false),
         });
     }
 
@@ -1227,7 +1236,14 @@ public partial class HedgeMaze : Node2D
         Vector2 south = new(_southExitCell.X + 0.5f, _southExitCell.Y + 0.5f);
         Vector2 north = new(_northExitCell.X + 0.5f, _northExitCell.Y + 0.5f);
         string text = string.Empty;
-        if (_playerPosition.DistanceTo(south) < 2.25f)
+        MazeProp looked = PropUnderMouse();
+        if (looked != null)
+        {
+            // The thing she is looking at comes first: it is the
+            // only one of these she can act on.
+            text = $"F — {looked.Name}";
+        }
+        else if (_playerPosition.DistanceTo(south) < 2.25f)
             text = "The opening by the waking place — back toward the bridge";
         else if (_playerPosition.DistanceTo(north) < 2.45f)
             text = "A break in the hedge — the far side";
@@ -1237,12 +1253,6 @@ public partial class HedgeMaze : Node2D
             text = "Crouching";
         else if (_hasFlashlight && !_flashlightOn)
             text = "The torch is off — L to switch it on";
-        else
-        {
-            MazeProp looked = PropUnderMouse();
-            if (looked != null)
-                text = $"F — {looked.Name}";
-        }
 
         if (text != _exitHintCache)
         {
@@ -1366,6 +1376,20 @@ public partial class HedgeMaze : Node2D
         return radius;
     }
 
+    /// <summary>A patch of the screen that keeps its light, because
+    /// something in the world is lighting it.</summary>
+    private readonly struct LightHole
+    {
+        public readonly Vector2 Centre;
+        public readonly float Radius;
+
+        public LightHole(Vector2 centre, float radius)
+        {
+            Centre = centre;
+            Radius = radius;
+        }
+    }
+
     /// <summary>How much of Father's torch reaches something at this
     /// depth. The circle itself decides where on screen it lands.</summary>
     private float TorchReach(float depth)
@@ -1385,6 +1409,12 @@ public partial class HedgeMaze : Node2D
     /// rooms are.</summary>
     private float SurfaceLight(float depth) =>
         Posterize(Mathf.Clamp(0.12f + 0.95f * TorchReach(depth), 0.06f, 1.05f));
+
+    /// <summary>The same light, for a place in the world rather than
+    /// a distance away: the torch by depth, the garden lamp by how
+    /// far it is from her feet.</summary>
+    private float SurfaceLight(float depth, Vector2 worldPoint) =>
+        Posterize(Mathf.Clamp(0.12f + 0.95f * TorchReach(depth) + LampLightAt(worldPoint), 0.06f, 1.05f));
 
     /// <summary>Round a light level onto the house's five steps of
     /// paint.</summary>
@@ -1478,8 +1508,13 @@ public partial class HedgeMaze : Node2D
                 Norm(new Vector2(nearRight.X * GrassTexScale, nearRight.Y * GrassTexScale), textureSize),
                 Norm(new Vector2(nearLeft.X * GrassTexScale, nearLeft.Y * GrassTexScale), textureSize),
             };
-            float lightFar = SurfaceLight(depthFar);
-            float lightNear = SurfaceLight(depthNear);
+            // The lamp lights the grass it stands on as well as the
+            // hedges; the band is judged from the point of it directly
+            // in front of her.
+            Vector2 farPoint = _cameraPosition + dir * depthFar;
+            Vector2 nearPoint = _cameraPosition + dir * depthNear;
+            float lightFar = SurfaceLight(depthFar, farPoint);
+            float lightNear = SurfaceLight(depthNear, nearPoint);
             var colors = new Color[]
             {
                 ScaleColor(Colors.White, lightFar),
@@ -1569,7 +1604,21 @@ public partial class HedgeMaze : Node2D
         float bottom = Horizon + groundLineHeight * _eyeHeight;
         float top = bottom - groundLineHeight * (wallTop - _eyeHeight) * 1.06f;
 
-        float light = SurfaceLight(depth) * (hit.Side == 0 ? 1f : 0.84f);
+        // The rays down this column: the left edge, the middle and
+        // the right edge of it.
+        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
+        float phiLeft = Mathf.Atan((2f * screenX / ScreenWidth - 1f) * tanHalfFov);
+        float phiRight = Mathf.Atan((2f * (screenX + ColumnWidth) / ScreenWidth - 1f) * tanHalfFov);
+        float phiCentre = Mathf.Atan((2f * (screenX + ColumnWidth * 0.5f) / ScreenWidth - 1f) * tanHalfFov);
+        Vector2 dirLeft = new(Mathf.Cos(_drawViewYaw + phiLeft), Mathf.Sin(_drawViewYaw + phiLeft));
+        Vector2 dirRight = new(Mathf.Cos(_drawViewYaw + phiRight), Mathf.Sin(_drawViewYaw + phiRight));
+        Vector2 dirCentre = new(Mathf.Cos(_drawViewYaw + phiCentre), Mathf.Sin(_drawViewYaw + phiCentre));
+
+        // The wall's own place in the world, so the garden lamp can
+        // reach the hedge it stands beside.
+        Vector2 wallPoint = _cameraPosition + dirCentre * hit.Distance;
+        float light = SurfaceLight(depth, wallPoint) * (hit.Side == 0 ? 1f : 0.84f);
+
         Texture2D texture = WallTextureFor(hit.Tile);
         if (texture == null)
         {
@@ -1586,13 +1635,6 @@ public partial class HedgeMaze : Node2D
         // of the column would meet the face, so neighbouring columns
         // show one unbroken stretch of hedge instead of eight little
         // pictures of one.
-        float tanHalfFov = Mathf.Tan(FieldOfView * 0.5f);
-        float phiLeft = Mathf.Atan((2f * screenX / ScreenWidth - 1f) * tanHalfFov);
-        float phiRight = Mathf.Atan((2f * (screenX + ColumnWidth) / ScreenWidth - 1f) * tanHalfFov);
-        float phiCentre = Mathf.Atan((2f * (screenX + ColumnWidth * 0.5f) / ScreenWidth - 1f) * tanHalfFov);
-        Vector2 dirLeft = new(Mathf.Cos(_drawViewYaw + phiLeft), Mathf.Sin(_drawViewYaw + phiLeft));
-        Vector2 dirRight = new(Mathf.Cos(_drawViewYaw + phiRight), Mathf.Sin(_drawViewYaw + phiRight));
-        Vector2 dirCentre = new(Mathf.Cos(_drawViewYaw + phiCentre), Mathf.Sin(_drawViewYaw + phiCentre));
 
         float uLeft;
         float uRight;
@@ -1791,7 +1833,7 @@ public partial class HedgeMaze : Node2D
 
                     float hash = Hash01(cx * 3 + k, cy * 5 - k, 71);
                     float size = Mathf.Clamp(9f / depth, 2f, 12f);
-                    float light = SurfaceLight(depth);
+                    float light = SurfaceLight(depth, world);
                     Color color = hash > 0.86f
                         ? ScaleColor(new Color(0.34f, 0.32f, 0.27f), light)
                         : ScaleColor(new Color(0.11f, 0.33f, 0.11f), light);
@@ -1806,17 +1848,35 @@ public partial class HedgeMaze : Node2D
     /// draws it: two square-edged darkness passes in chunky strips.</summary>
     private void DrawTorchDarkness()
     {
+        // The lamp is a light of its own: the torch's dark is kept
+        // out of it, or the garden would go out again the moment
+        // she turned the torch off.
+        bool lampOn = LampLightCircle(out Vector2 lampCentre, out float lampRadius);
+
         if (!_hasFlashlight || !_flashlightOn)
         {
             // Moonlit silhouettes only.
-            DrawRect(new Rect2(0, 0, ScreenWidth, ScreenHeight),
-                new Color(0.002f, 0.002f, 0.005f, 0.8f), true);
+            if (!lampOn)
+            {
+                DrawRect(new Rect2(0, 0, ScreenWidth, ScreenHeight),
+                    new Color(0.002f, 0.002f, 0.005f, 0.8f), true);
+                return;
+            }
+            DrawDarkOutsideHoles(new Color(0.002f, 0.002f, 0.005f, 0.8f),
+                new List<LightHole> { new LightHole(lampCentre, lampRadius) });
             return;
         }
 
         float radius = BeamRadiusNow();
-        DrawDarkOutside(_beamPosition, radius + 58f, new Color(0.002f, 0.002f, 0.004f, 0.42f));
-        DrawDarkOutside(_beamPosition, radius, new Color(0.001f, 0.001f, 0.003f, 0.74f));
+        var lampHoles = lampOn
+            ? new List<LightHole> { new LightHole(lampCentre, lampRadius) }
+            : new List<LightHole>();
+
+        var softHoles = new List<LightHole>(lampHoles) { new LightHole(_beamPosition, radius + 58f) };
+        var hardHoles = new List<LightHole>(lampHoles) { new LightHole(_beamPosition, radius) };
+
+        DrawDarkOutsideHoles(new Color(0.002f, 0.002f, 0.004f, 0.42f), softHoles);
+        DrawDarkOutsideHoles(new Color(0.001f, 0.001f, 0.003f, 0.74f), hardHoles);
     }
 
     private void DrawTorchRings()
@@ -1832,29 +1892,120 @@ public partial class HedgeMaze : Node2D
         DrawCircle(_beamPosition, 4f, new Color(1f, 0.9f, 0.62f, 0.28f));
     }
 
-    private void DrawDarkOutside(Vector2 center, float radius, Color dark)
+    /// <summary>The dark, laid down everywhere except inside the
+    /// patches of light. It is drawn in horizontal strips, the way
+    /// the rest of the house lays its shadow down, so the edges of
+    /// a circle of light stay soft and stepped rather than smooth.</summary>
+    private void DrawDarkOutsideHoles(Color dark, List<LightHole> holes)
     {
-        float top = Mathf.Clamp(center.Y - radius, 0f, ScreenHeight);
-        float bottom = Mathf.Clamp(center.Y + radius, 0f, ScreenHeight);
-        if (top > 0f)
-            DrawRect(new Rect2(0, 0, ScreenWidth, top), dark, true);
-        if (bottom < ScreenHeight)
-            DrawRect(new Rect2(0, bottom, ScreenWidth, ScreenHeight - bottom), dark, true);
-
         const float stripHeight = 9f;
-        for (float y = top; y < bottom; y += stripHeight)
+        float fullFrom = 0f;
+        bool fullRun = false;
+
+        for (float y = 0f; y < ScreenHeight; y += stripHeight)
         {
-            float height = Mathf.Min(stripHeight + 1f, bottom - y);
+            float height = Mathf.Min(stripHeight + 1f, ScreenHeight - y);
             float centreY = y + height * 0.5f;
-            float dy = centreY - center.Y;
-            float half = Mathf.Sqrt(Mathf.Max(0f, radius * radius - dy * dy));
-            float leftEdge = Mathf.Clamp(center.X - half, 0f, ScreenWidth);
-            float rightEdge = Mathf.Clamp(center.X + half, 0f, ScreenWidth);
-            if (leftEdge > 0f)
-                DrawRect(new Rect2(0, y, leftEdge, height), dark, true);
-            if (rightEdge < ScreenWidth)
-                DrawRect(new Rect2(rightEdge, y, ScreenWidth - rightEdge, height), dark, true);
+
+            // What this strip of the screen keeps: the widths of
+            // every circle of light that reaches it.
+            _litSpans.Clear();
+            foreach (LightHole hole in holes)
+            {
+                float dy = centreY - hole.Centre.Y;
+                if (Mathf.Abs(dy) >= hole.Radius)
+                    continue;
+                float half = Mathf.Sqrt(Mathf.Max(0f, hole.Radius * hole.Radius - dy * dy));
+                float left = Mathf.Clamp(hole.Centre.X - half, 0f, ScreenWidth);
+                float right = Mathf.Clamp(hole.Centre.X + half, 0f, ScreenWidth);
+                if (right > left)
+                    _litSpans.Add(new Vector2(left, right));
+            }
+
+            if (_litSpans.Count == 0)
+            {
+                // Nothing lit here: let the dark run on rather than
+                // laying it down a strip at a time.
+                if (!fullRun)
+                {
+                    fullRun = true;
+                    fullFrom = y;
+                }
+                continue;
+            }
+
+            if (fullRun)
+            {
+                fullRun = false;
+                DrawRect(new Rect2(0, fullFrom, ScreenWidth, y - fullFrom), dark, true);
+            }
+
+            _litSpans.Sort((a, b) => a.X.CompareTo(b.X));
+            float cursor = 0f;
+            foreach (Vector2 span in _litSpans)
+            {
+                if (span.X > cursor)
+                    DrawRect(new Rect2(cursor, y, span.X - cursor, height), dark, true);
+                cursor = Mathf.Max(cursor, span.Y);
+            }
+            if (cursor < ScreenWidth)
+                DrawRect(new Rect2(cursor, y, ScreenWidth - cursor, height), dark, true);
         }
+
+        if (fullRun)
+            DrawRect(new Rect2(0, fullFrom, ScreenWidth, ScreenHeight - fullFrom), dark, true);
+    }
+
+    /// <summary>How much of the garden lamp's own light reaches a
+    /// place in the world. It is a second light, not the torch: it
+    /// does not move, it does not flicker, and it stays on.</summary>
+    private float LampLightAt(Vector2 worldPoint)
+    {
+        float best = 0f;
+        foreach (MazeProp prop in _props)
+        {
+            if (prop.Taken || prop.Kind != PropKind.Lamp || !prop.SwitchedOn)
+                continue;
+            float reach = Mathf.Clamp(1f - worldPoint.DistanceTo(prop.Position) / LampLightRadius, 0f, 1f);
+            if (reach > best)
+                best = reach;
+        }
+        return best * 0.9f;
+    }
+
+    /// <summary>Where the lit lamp's light falls on screen, and how
+    /// far it spreads, for the torch's dark to be kept out of. This
+    /// is the light rather than the lamp: it spills round a corner
+    /// and over a hedge, so it is found by its place in the world and
+    /// not by whether the post itself can be seen.</summary>
+    private bool LampLightCircle(out Vector2 centre, out float radius)
+    {
+        centre = Vector2.Zero;
+        radius = 0f;
+        foreach (MazeProp prop in _props)
+        {
+            if (prop.Taken || prop.Kind != PropKind.Lamp || !prop.SwitchedOn)
+                continue;
+
+            Vector2 dir = new(Mathf.Cos(_cameraYaw), Mathf.Sin(_cameraYaw));
+            Vector2 right = new(-dir.Y, dir.X);
+            Vector2 rel = prop.Position - _cameraPosition;
+            float depth = rel.Dot(dir);
+            if (depth < 0.4f)
+                continue; // it is behind her
+
+            float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * FocalLength;
+            float groundY = Horizon + ProjectionScale * _eyeHeight / depth;
+            float heightPx = prop.HeightUnits * ProjectionScale / depth;
+            centre = new Vector2(screenX, groundY - heightPx * 0.82f);
+
+            // It grows as she comes up to it, but it is a patch of
+            // light standing in the dark, not the end of the dark:
+            // it never grows past a circle the torch could match.
+            radius = Mathf.Min(LampLightRadius * ProjectionScale / depth * 0.55f, 300f);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>The torch lights hedges, not the sky. After the dark
@@ -2203,6 +2354,7 @@ public partial class HedgeMaze : Node2D
     /// of on the glass.</summary>
     private void DrawProps()
     {
+        MazeProp hovered = PropUnderMouse();
         foreach (MazeProp prop in _props)
         {
             if (prop.Taken || prop.Texture == null)
@@ -2210,14 +2362,74 @@ public partial class HedgeMaze : Node2D
             if (!PropRect(prop, out Rect2 rect, out float depth))
                 continue;
 
-            float light = SurfaceLight(depth);
+            // A hedge in front of a thing hides it. The walls are
+            // drawn first, so all that is left is to cut the thing
+            // down to the columns the wall is not standing in.
+            Rect2 visible = VisiblePartOfRect(rect, depth);
+            if (visible.Size.X <= 0.5f)
+                continue;
+
+            float light = SurfaceLight(depth, prop.Position);
+            bool isHovered = ReferenceEquals(hovered, prop);
+            if (isHovered)
+                light = Mathf.Min(1.1f, light * 1.35f + 0.12f);
             var tint = new Color(light, light * 0.97f, light * 0.88f, 1f);
-            DrawTextureRect(prop.Texture, rect, false, tint);
+
+            // Only the part of the sprite that the hedge is not
+            // standing in front of is drawn, and it is drawn where
+            // it belongs rather than squeezed into the gap.
+            float textureWidth = prop.Texture.GetWidth();
+            float textureHeight = prop.Texture.GetHeight();
+            float sliceStart = (visible.Position.X - rect.Position.X) / Mathf.Max(rect.Size.X, 0.001f);
+            float sliceWidth = visible.Size.X / Mathf.Max(rect.Size.X, 0.001f);
+            var source = new Rect2(textureWidth * sliceStart, 0f,
+                textureWidth * sliceWidth, textureHeight);
+            DrawTextureRectRegion(prop.Texture, visible, source, tint);
+
+            // A thin warm line around the thing she is looking at,
+            // so she knows F will reach it.
+            if (isHovered)
+            {
+                var edge = new Color(1f, 0.9f, 0.62f, 0.5f);
+                DrawRect(new Rect2(visible.Position.X - 1f, visible.Position.Y - 1f,
+                    visible.Size.X + 2f, visible.Size.Y + 2f), edge, false, 1.5f);
+            }
         }
     }
 
+    /// <summary>The part of a thing on screen that a hedge is not
+    /// standing in front of. It is cut column by column, the way
+    /// the hedges themselves are drawn, so a lamp behind a corner
+    /// of box hedge shows one shoulder of itself and no more.</summary>
+    private Rect2 VisiblePartOfRect(Rect2 rect, float depth)
+    {
+        int firstColumn = Mathf.Clamp(Mathf.FloorToInt(rect.Position.X / ColumnWidth), 0, ColumnCount - 1);
+        int lastColumn = Mathf.Clamp(Mathf.FloorToInt((rect.End.X - 0.5f) / ColumnWidth), 0, ColumnCount - 1);
+
+        int visibleFirst = -1;
+        int visibleLast = -1;
+        for (int column = firstColumn; column <= lastColumn; column++)
+        {
+            if (_depthByColumn[column] <= depth || _shortDepthByColumn[column] <= depth)
+                continue;
+            if (visibleFirst < 0)
+                visibleFirst = column;
+            visibleLast = column;
+        }
+
+        if (visibleFirst < 0)
+            return new Rect2(0, 0, 0, 0);
+
+        float left = Mathf.Max(rect.Position.X, visibleFirst * ColumnWidth);
+        float right = Mathf.Min(rect.End.X, (visibleLast + 1) * ColumnWidth);
+        if (right <= left)
+            return new Rect2(0, 0, 0, 0);
+        return new Rect2(left, rect.Position.Y, right - left, rect.Size.Y);
+    }
+
     /// <summary>The lamp's own light, drawn after the torch's dark so
-    /// that it really does shine.</summary>
+    /// that it really does shine: a warm pool on the grass beneath
+    /// it and the glass at the top of the post alight.</summary>
     private void DrawPropGlows()
     {
         foreach (MazeProp prop in _props)
@@ -2226,12 +2438,29 @@ public partial class HedgeMaze : Node2D
                 continue;
             if (!PropRect(prop, out Rect2 rect, out float depth))
                 continue;
+            if (VisiblePartOfRect(rect, depth).Size.X <= 0.5f)
+                continue;
 
             float x = rect.Position.X + rect.Size.X * 0.5f;
-            float y = rect.Position.Y + rect.Size.Y * 0.22f;
-            float radius = Mathf.Max(rect.Size.Y * 0.34f, 4f);
-            DrawCircle(new Vector2(x, y), radius, new Color(1f, 0.85f, 0.48f, 0.16f));
-            DrawCircle(new Vector2(x, y), radius * 0.5f, new Color(1f, 0.93f, 0.68f, 0.34f));
+            float glassY = rect.Position.Y + rect.Size.Y * 0.16f;
+            float groundY = rect.End.Y;
+
+            // The pool it throws on the grass: squashed, the way a
+            // light on the ground is seen from standing height.
+            // Bounded, so the pool never washes across the whole
+            // frame when she stands right beside the lamp.
+            float poolRadius = Mathf.Min(LampPoolRadius * ProjectionScale / depth, ScreenWidth * 0.42f);
+            DrawSetTransform(new Vector2(x, groundY), 0f, new Vector2(1f, 0.34f));
+            DrawCircle(Vector2.Zero, poolRadius, new Color(1f, 0.86f, 0.5f, 0.09f));
+            DrawCircle(Vector2.Zero, poolRadius * 0.66f, new Color(1f, 0.9f, 0.58f, 0.11f));
+            DrawCircle(Vector2.Zero, poolRadius * 0.36f, new Color(1f, 0.95f, 0.72f, 0.13f));
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+
+            // And the glass at the top of the post.
+            float radius = Mathf.Max(rect.Size.Y * 0.09f, 3f);
+            DrawCircle(new Vector2(x, glassY), radius * 3.2f, new Color(1f, 0.84f, 0.46f, 0.12f));
+            DrawCircle(new Vector2(x, glassY), radius * 1.7f, new Color(1f, 0.9f, 0.58f, 0.24f));
+            DrawCircle(new Vector2(x, glassY), radius, new Color(1f, 0.97f, 0.8f, 0.72f));
         }
     }
 
@@ -2257,7 +2486,11 @@ public partial class HedgeMaze : Node2D
         float aspect = (float)prop.Texture.GetWidth() / Mathf.Max(prop.Texture.GetHeight(), 1);
         float widthPx = heightPx * aspect;
         rect = new Rect2(screenX - widthPx * 0.5f, groundY - heightPx, widthPx, heightPx);
-        return true;
+
+        // A thing off the side of the frame is not there to be
+        // looked at, and its column would be the wrong one to
+        // measure the hedges against.
+        return rect.End.X >= 0f && rect.Position.X <= ScreenWidth;
     }
 
     /// <summary>The thing she is looking at, if she is looking at
@@ -2273,7 +2506,10 @@ public partial class HedgeMaze : Node2D
                 continue;
             if (!PropRect(prop, out Rect2 rect, out float depth))
                 continue;
-            if (!rect.HasPoint(mouse) || depth >= bestDepth)
+            Rect2 visible = VisiblePartOfRect(rect, depth);
+            if (visible.Size.X <= 0.5f)
+                continue; // a hedge is in front of it
+            if (!visible.HasPoint(mouse) || depth >= bestDepth)
                 continue;
             best = prop;
             bestDepth = depth;
@@ -2288,10 +2524,23 @@ public partial class HedgeMaze : Node2D
         if (prop.Taken)
             return;
 
+        // The house's own ripple, where her hand went out.
+        if (PropRect(prop, out Rect2 reach, out _))
+            Hotspots.SpawnRipple(reach.Position + reach.Size * 0.5f, new Color(1f, 0.9f, 0.62f));
+
         if (prop.Kind == PropKind.Lamp)
         {
             prop.SwitchedOn = !prop.SwitchedOn;
             AudioManager.Play(Sfx.FlashlightClick, -9f, prop.SwitchedOn ? 1.12f : 0.84f);
+            var gs = GameState.Instance;
+            if (gs != null)
+            {
+                if (prop.SwitchedOn)
+                    gs.SetFlag(LampOnFlag, save: false);
+                else
+                    gs.ClearFlag(LampOnFlag, save: false);
+                gs.SaveGame(prop.SwitchedOn ? "the garden lamp is on" : "the garden lamp is off");
+            }
             await Say(prop.SwitchedOn
                 ? "The switch still works. A yellow circle on the wet leaves, and every spider in the hedge stops moving at once."
                 : "The glass goes out. The dark comes back in, the way water fills a footprint.");
@@ -2309,6 +2558,7 @@ public partial class HedgeMaze : Node2D
             if (!StillHere() || gs == null)
                 return;
             gs.SetFlag(SpareBatteryFlag, save: false);
+            gs.SaveGame("spare battery taken");
             gs.Toast("Spare battery — kept in Mara's bag (B). Fitted to the torch, its circle of light reaches much further.");
             prop.Taken = true;
             QueueRedraw();

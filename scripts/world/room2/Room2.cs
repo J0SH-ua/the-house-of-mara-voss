@@ -326,8 +326,11 @@ public partial class Room2 : ExamineHandler
         // long before the root is reached. If it ever doesn't, the
         // examine layers have yielded the key's rectangle (see
         // ShouldYieldToDoorKey), so the click still lands here.
-        if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
-            mouseEvent.ButtonIndex == MouseButton.Left &&
+        bool clicked = @event is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
+            mouseEvent.ButtonIndex == MouseButton.Left;
+        bool useKey = @event is InputEventKey keyEvent && keyEvent.Pressed &&
+            !keyEvent.Echo && keyEvent.PhysicalKeycode == Key.F;
+        if ((clicked || useKey) &&
             _doorKeyPickup != null &&
             _doorKeyPickup.ContainsGlobalPoint(GetGlobalMousePosition()) &&
             TryBeginDoorKeyPickup())

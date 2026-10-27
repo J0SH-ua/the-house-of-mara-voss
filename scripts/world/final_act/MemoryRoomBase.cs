@@ -185,8 +185,13 @@ public abstract partial class MemoryRoomBase : Node2D
 
     public override void _Input(InputEvent @event)
     {
-        if (@event is not InputEventMouseButton mouse || !mouse.Pressed ||
-            mouse.ButtonIndex != MouseButton.Left)
+        // A click, or F: the house's hand, for the thing under the
+        // cursor. Same reach, same rules, either way.
+        bool clicked = @event is InputEventMouseButton mouse && mouse.Pressed &&
+            mouse.ButtonIndex == MouseButton.Left;
+        bool useKey = @event is InputEventKey key && key.Pressed &&
+            !key.Echo && key.PhysicalKeycode == Key.F;
+        if (!clicked && !useKey)
             return;
 
         if (Busy || Dialogue.IsInputBlocked || Dialogue.IsShowing ||
