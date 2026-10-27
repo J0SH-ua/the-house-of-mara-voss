@@ -359,6 +359,147 @@ def measure_anchors(im):
     return lens, grip
 
 
+# ------------------------------------------------------------------ the props
+#
+# The hedge maze is where interaction gets tested, so it needs things
+# to walk up to: a lamp on a post, a wheelbarrow, a watering can and a
+# spare battery. There is no painted reference for them, so they are
+# drawn here in the house's own pixel grammar - the same chunky
+# blocks as the garden tiles, a small fixed palette, and a black
+# outline, the way the fragments in assets/images/core/shards/ are
+# drawn.
+
+PROP_PALETTE = {
+    ".": None,
+    "k": (18, 18, 22),      # the outline
+    "d": (56, 60, 66),      # dark metal
+    "m": (104, 108, 112),   # metal
+    "M": (162, 166, 170),   # light metal
+    "b": (92, 62, 36),      # wood
+    "B": (134, 96, 56),     # light wood
+    "g": (44, 74, 44),      # dark green
+    "G": (78, 112, 56),     # green
+    "r": (126, 30, 48),     # painted red
+    "y": (188, 146, 64),    # brass
+    "c": (176, 104, 56),    # copper
+    "w": (255, 206, 122),   # lamp glass
+    "W": (255, 244, 208),   # the lit glass
+}
+
+LAMP_POST = [
+    "........kkkk........",
+    ".......kkkkkk.......",
+    ".......kwwwwk.......",
+    "......kwwWWwwk......",
+    "......kwwWWwwk......",
+    "......kwwWWwwk......",
+    "......kwwwwwwk......",
+    "......kwwwwwwk......",
+    "......kkkkkkkk......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    "........kdddk.......",
+    ".......kdddkddk.....",
+    "......kddk..kddk....",
+    ".....kddk....kddk...",
+    "....kkkk......kkkk..",
+]
+
+WHEELBARROW = [
+    "........................",
+    "......kkkkkkkkkk........",
+    ".....kMMMMMMMMMMk.......",
+    "....kMmmmmmmmmmmMk......",
+    "...kMmgggGGGGgggMMk.....",
+    "...kMmgggGGGGgggMMk.....",
+    "...kMmmmmmmmmmmMMk......",
+    "....kMMMMMMMMMMk........",
+    ".....kkkkkkkkkk.........",
+    ".kddk..........kkkk.....",
+    "kddddk.........kdddk... ",
+    "kddddk.........kdddk... ",
+    ".kddk..........kddk.... ",
+    "..kk............kkk.....",
+    "........................",
+]
+
+WATERING_CAN = [
+    ".....kkkkk...........",
+    "....kMMMMMk..........",
+    "...kMMMMMMk..........",
+    "..kkrrrrrrkk.........",
+    ".krrrrrrrrrrk........",
+    ".krrrrrrrrrrk........",
+    "krrkrrrrrrrrk........",
+    "kk.krrrrrrrrk........",
+    "...krrrrrrrrk........",
+    "...krrrrrrrrk........",
+    "...krrrrrrrrk........",
+    "...krrrrrrrrk........",
+    "...krrrrrrrrk........",
+    "....krrrrrrk.........",
+    "....kkkkkkkk.........",
+]
+
+SPARE_BATTERY = [
+    "....kkkk....",
+    "...kccck....",
+    "..kkcckk....",
+    "..kggggk....",
+    "..kggggk....",
+    "..kggggk....",
+    "..kggggk....",
+    "..kyyyyk....",
+    "..kggggk....",
+    "..kggggk....",
+    "..kggggk....",
+    "..kyyyyk....",
+    "..kggggk....",
+    "..kggggk....",
+    "..kggggk....",
+    "..kkkkkkkk..",
+]
+
+
+def draw_prop(rows, block=BLOCK):
+    """Draw one of the props in the house's chunky pixel grammar."""
+    height = len(rows)
+    width = len(rows[0])
+    for row in rows:
+        if len(row) != width:
+            raise SystemExit("prop rows must all be the same width")
+    im = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    px = im.load()
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            color = PROP_PALETTE.get(ch)
+            if color is None:
+                continue
+            px[x, y] = (color[0], color[1], color[2], 255)
+    return im.resize((width * block, height * block), Image.NEAREST)
+
+
+def item_icon(im, canvas=512):
+    """Lay a prop out on the 512x512 card the house's Bag uses."""
+    out = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    out.alpha_composite(im, ((canvas - im.size[0]) // 2, (canvas - im.size[1]) // 2))
+    return out
+
+
 def save(im, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     im.save(path, optimize=True)
@@ -400,6 +541,19 @@ def main():
 
     stone = pixelate(load("stone"), block=BLOCK, colors=40)
     save(mirror_tile(stone), os.path.join(HEDGE_DIR, "stone_tiles.png"))
+
+    # ------------------------------------------------- the things to walk up to
+    props_dir = os.path.join(HEDGE_DIR, "props")
+    lamp = draw_prop(LAMP_POST)
+    barrow = draw_prop(WHEELBARROW)
+    can = draw_prop(WATERING_CAN)
+    battery = draw_prop(SPARE_BATTERY)
+    save(lamp, os.path.join(props_dir, "lamp_post.png"))
+    save(barrow, os.path.join(props_dir, "wheelbarrow.png"))
+    save(can, os.path.join(props_dir, "watering_can.png"))
+    save(battery, os.path.join(props_dir, "spare_battery.png"))
+    # the same battery on the card the Bag shows its things on
+    save(item_icon(battery), os.path.join(CORE_DIR, "items", "spare_battery.png"))
 
 
 if __name__ == "__main__":

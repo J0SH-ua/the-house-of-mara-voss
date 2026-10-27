@@ -443,6 +443,9 @@ public partial class GameUI : CanvasLayer
         new("item_iron_cellar_key", "Iron cellar key",
             "res://assets/images/core/items/iron_key.png",
             "Cold from the earth under the gate stone. Dad trusted hiding places more than hooks."),
+        new("hedge_spare_battery", "Spare battery",
+            "res://assets/images/core/items/spare_battery.png",
+            "A cell, wrapped in a scrap of cloth. Dad never went anywhere without a second of himself in his pocket."),
         new("basement_negatives_taken", "Photograph negatives",
             "res://assets/images/core/items/negatives.png",
             "Faces reversed. Grass burning white. Some things were kept unprinted because looking straight was too much that year."),
@@ -4230,12 +4233,21 @@ public partial class GameUI : CanvasLayer
             v => GameState.Instance?.SetDevShowCoordinates(v));
         AddDevToggle(toolsLeft, "Free roam (walk through hedges)", () => GameState.Instance?.DevNoClip ?? false,
             v => GameState.Instance?.SetDevNoClip(v));
+        AddDevToggle(toolsLeft, "Camera follows the mouse", () => GameState.Instance?.DevMouseCamera ?? false,
+            v => GameState.Instance?.SetDevMouseCamera(v));
         AddDevToggle(toolsRight, "Free camera", () => GameState.Instance?.DevFreeCamera ?? false,
             v => GameState.Instance?.SetDevFreeCamera(v));
+        AddDevToggle(toolsRight, "Light circle follows the mouse", () => GameState.Instance?.DevMouseLight ?? false,
+            v => GameState.Instance?.SetDevMouseLight(v));
         AddDevToggle(toolsRight, "Flashlight always on", () => GameState.Instance?.DevFreeFlashlight ?? false,
             v => GameState.Instance?.SetDevFreeFlashlight(v));
         AddDevToggle(toolsRight, "Map overlay", () => GameState.Instance?.DevShowMap ?? false,
             v => GameState.Instance?.SetDevShowMap(v));
+
+        AddDevSlider(toolsLeft, "Flashlight size", 1, 3, 0.1,
+            () => GameState.Instance?.DevFlashlightScale ?? 1f,
+            v => GameState.Instance?.SetDevFlashlightScale((float)v),
+            v => $"{v:0.0}×");
 
         inner.AddChild(new HSeparator());
 
@@ -4313,6 +4325,42 @@ public partial class GameUI : CanvasLayer
         };
         _devToolToggles.Add((check, get, isMaster));
         parent.AddChild(check);
+    }
+
+    /// <summary>One of the developer tools, on a slider: a number the
+    /// place being tested can read.</summary>
+    private void AddDevSlider(Container parent, string label, double min, double max, double step,
+        Func<float> get, Action<float> set, Func<double, string> format)
+    {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 10);
+        parent.AddChild(row);
+
+        var l = MakeLabel(label, 19);
+        l.CustomMinimumSize = new Vector2(200, 0);
+        row.AddChild(l);
+
+        var slider = new HSlider
+        {
+            MinValue = min,
+            MaxValue = max,
+            Step = step,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        slider.CustomMinimumSize = new Vector2(150, 0);
+        var valueLabel = MakeLabel("", 18);
+        valueLabel.CustomMinimumSize = new Vector2(60, 0);
+
+        slider.Value = get();
+        valueLabel.Text = format(slider.Value);
+
+        slider.ValueChanged += v =>
+        {
+            set((float)v);
+            valueLabel.Text = format(v);
+        };
+        row.AddChild(slider);
+        row.AddChild(valueLabel);
     }
 
     /// <summary>Keep the developer-tool switches in step with the

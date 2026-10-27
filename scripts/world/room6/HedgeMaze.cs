@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Godot;
 
@@ -64,6 +65,14 @@ public partial class HedgeMaze : Node2D
     private const string GrassTexturePath = "res://assets/images/hedge/grass_ground.png";
     private const string StoneTexturePath = "res://assets/images/hedge/stone_tiles.png";
     private const string BridgeScenePath = "res://scenes/world/bridge_repair.tscn";
+    // The things she can walk up to and use, and the one she can
+    // pick up. Their art is built by tools/build_hedge_art.py in the
+    // same chunky blocks as the garden itself.
+    private const string LampPostTexturePath = "res://assets/images/hedge/props/lamp_post.png";
+    private const string WheelbarrowTexturePath = "res://assets/images/hedge/props/wheelbarrow.png";
+    private const string WateringCanTexturePath = "res://assets/images/hedge/props/watering_can.png";
+    private const string SpareBatteryTexturePath = "res://assets/images/hedge/props/spare_battery.png";
+    private const string SpareBatteryFlag = "hedge_spare_battery";
     private const string Room7ScenePath = "res://scenes/world/room_7.tscn";
 
     public const string IntroPendingFlag = "hedge_maze_intro_pending";
@@ -148,11 +157,14 @@ public partial class HedgeMaze : Node2D
     // inside that sprite (measured by tools/build_hedge_art.py).
     // It is drawn as big as the house draws its held hand elsewhere,
     // and it does not turn: it slides along the bottom of the frame,
-    // left and right, with where she is pointing.
-    private const float TorchSpriteWidth = 320f;
+    // left and right, with where she is pointing. A developer can
+    // make it bigger still.
+    private const float TorchSpriteBaseWidth = 320f;
     private const float TorchRestLeft = 0f;
     private const float TorchSlideRange = 44f;
     private const float TorchRiseDistance = 430f;
+    // How fast the view turns when a developer puts it on the mouse.
+    private const float MouseTurnScale = 0.006f;
     private static readonly Vector2 TorchSpriteGrip = new(0.4349f, 0.4884f);
     private static readonly Vector2 TorchSpriteLens = new(0.8368f, 0.1681f);
 
@@ -204,7 +216,8 @@ public partial class HedgeMaze : Node2D
     private Texture2D _skyTexture;
     private Texture2D _grassTexture;
     private Texture2D _stoneTexture;
-    private float _torchSpriteHeight = TorchSpriteWidth;
+    private float _torchSpriteWidth = TorchSpriteBaseWidth;
+    private float _torchSpriteHeight = TorchSpriteBaseWidth;
     private Label _titleLabel;
     private Label _promptLabel;
     private Label _exitLabel;
@@ -220,6 +233,8 @@ public partial class HedgeMaze : Node2D
     private bool _freeCamera;
     private bool _devMapOverlay;
     private float _wheelDelta;
+    private float _lastMouseX;
+    private float _mouseDeltaX;
     private Label _devLabel;
     private Vector2 _velocity = Vector2.Zero;
     private float _yaw = Mathf.Pi;
@@ -256,6 +271,22 @@ public partial class HedgeMaze : Node2D
     private bool _hasFlashlight;
     private bool _flashlightOn;
 
+    /// <summary>Something in the maze she can walk up to and use.</summary>
+    private enum PropKind { Lamp, Wheelbarrow, WateringCan, Battery }
+
+    private sealed class MazeProp
+    {
+        public PropKind Kind;
+        public Vector2 Position;
+        public string Name = string.Empty;
+        public string Examine = string.Empty;
+        public Texture2D Texture;
+        public float HeightUnits;
+        public bool Taken;
+        public bool SwitchedOn;
+    }
+
+    private readonly List<MazeProp> _props = new();
     private Vector2I _startCell = new(13, 17);
     private Vector2I _southExitCell = new(13, 18);
     private Vector2I _northExitCell = new(3, 0);
@@ -286,7 +317,7 @@ public partial class HedgeMaze : Node2D
 
         if (_torchHandsTexture != null && _torchHandsTexture.GetWidth() > 0)
         {
-            _torchSpriteHeight = TorchSpriteWidth *
+            _torchSpriteHeight = _torchSpriteWidth *
                 ((float)_torchHandsTexture.GetHeight() / _torchHandsTexture.GetWidth());
         }
 
@@ -295,6 +326,7 @@ public partial class HedgeMaze : Node2D
 
         FindSpecialCells();
         PlaceAtEntry(fromNorth);
+        PlaceProps();
 
         var gs = GameState.Instance;
         _playWakeIntro = gs?.HasFlag(IntroPendingFlag) ?? false;
@@ -313,6 +345,45 @@ public partial class HedgeMaze : Node2D
         BuildLabels();
         QueueRedraw();
         _ = PlayIntroAsync();
+    }
+
+    /// <summary>The things she can walk up to. The lamp is a machine
+    /// that can be switched on and off, the barrow and the can are
+    /// only there to be looked at, and the battery is a pickup that
+    /// goes into her bag like any other practical thing.</summary>
+    private void PlaceProps()
+    {
+        _props.Clear();
+        AddProp(PropKind.Lamp, new Vector2(4.5f, 1.5f), "Garden lamp",
+            "A lamp on a post, wired to nothing I can see. The glass is cold. Somebody meant to light this garden once.",
+            LampPostTexturePath, 1.45f);
+        AddProp(PropKind.Wheelbarrow, new Vector2(10.5f, 1.5f), "Wheelbarrow",
+            "A barrow with last year's leaves in it and one wheel that will never be true again. Whoever cut this hedge did it by hand, in a bad winter.",
+            WheelbarrowTexturePath, 0.52f);
+        AddProp(PropKind.WateringCan, new Vector2(12.5f, 9.5f), "Watering can",
+            "Green underneath, orange where the sun got at it. The fountain has been dry for years and this is still here, waiting for a garden.",
+            WateringCanTexturePath, 0.34f);
+        AddProp(PropKind.Battery, new Vector2(11.5f, 17.5f), "Spare battery",
+            "A spare cell, wrapped in a scrap of cloth. Dad's idea of a reserve: never the thing you need, until the moment you do.",
+            SpareBatteryTexturePath, 0.24f);
+    }
+
+    private void AddProp(PropKind kind, Vector2 position, string name, string examine,
+        string texturePath, float heightUnits)
+    {
+        var gs = GameState.Instance;
+        if (kind == PropKind.Battery && (gs?.HasFlag(SpareBatteryFlag) ?? false))
+            return; // she has already taken it
+
+        _props.Add(new MazeProp
+        {
+            Kind = kind,
+            Position = position,
+            Name = name,
+            Examine = examine,
+            Texture = GD.Load<Texture2D>(texturePath),
+            HeightUnits = heightUnits,
+        });
     }
 
     private void FindSpecialCells()
@@ -362,7 +433,7 @@ public partial class HedgeMaze : Node2D
             new Vector2(560, 530), new Vector2(568, 34), 25,
             new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Right);
         _promptLabel = MakeLabel(
-            "W/S walk · A/D turn · mouse aims the torch · F torch on/off\nSHIFT run · C crouch (tap) · SPACE jump · HOLD CAPS LOCK to look back",
+            "W/S walk · A/D turn · mouse aims the torch · L torch on/off\nSHIFT run · C crouch (tap) · SPACE jump · F use · HOLD CAPS LOCK to look back",
             new Vector2(480, 566), new Vector2(648, 56), 17,
             new Color(0.92f, 0.89f, 0.78f, 0.92f), HorizontalAlignment.Right);
 
@@ -592,6 +663,20 @@ public partial class HedgeMaze : Node2D
                 _wheelDelta -= 1f;
         }
 
+        // Clicking is using, the way it is everywhere else in the
+        // house: whatever she is looking at, she reaches for.
+        if (@event is InputEventMouseButton click &&
+            click.ButtonIndex == MouseButton.Left && click.Pressed)
+        {
+            MazeProp clicked = PropUnderMouse();
+            if (clicked != null && InputFree())
+            {
+                GetViewport().SetInputAsHandled();
+                _ = InteractWithPropAsync(clicked);
+                return;
+            }
+        }
+
         if (@event is not InputEventKey keyEvent)
             return;
 
@@ -602,7 +687,7 @@ public partial class HedgeMaze : Node2D
         bool movementKey = capsLock || shift ||
             keyEvent.PhysicalKeycode is
                 Key.W or Key.A or Key.S or Key.D or Key.C or Key.Space or
-                Key.Left or Key.Right or Key.Up or Key.Down or Key.F;
+                Key.Left or Key.Right or Key.Up or Key.Down or Key.L or Key.F;
         if (!movementKey)
             return;
 
@@ -614,13 +699,23 @@ public partial class HedgeMaze : Node2D
             _crouchToggled = !_crouchToggled;
         }
 
-        // The torch has a button of its own: tap F and the light
+        // The torch has a button of its own: tap L and the light
         // goes out, tap it again and it comes back. She keeps the
-        // torch in her hand either way.
-        if (keyEvent.PhysicalKeycode == Key.F && keyEvent.Pressed &&
+        // torch in her hand either way. (F is the house's hand -
+        // it is for using the things she is looking at.)
+        if (keyEvent.PhysicalKeycode == Key.L && keyEvent.Pressed &&
             !keyEvent.Echo && InputFree())
         {
             ToggleFlashlight();
+        }
+
+        // F is the house's hand: use whatever she is looking at.
+        if (keyEvent.PhysicalKeycode == Key.F && keyEvent.Pressed &&
+            !keyEvent.Echo && InputFree())
+        {
+            MazeProp looked = PropUnderMouse();
+            if (looked != null)
+                _ = InteractWithPropAsync(looked);
         }
 
         // Looking behind her is a hold, not a tap, so there is nothing
@@ -659,6 +754,12 @@ public partial class HedgeMaze : Node2D
     {
         float dt = Mathf.Min((float)delta, 0.05f);
         bool free = InputFree();
+
+        // How far the mouse has travelled since last frame, for a
+        // developer who wants the camera on the mouse.
+        float mouseX = GetGlobalMousePosition().X;
+        _mouseDeltaX = mouseX - _lastMouseX;
+        _lastMouseX = mouseX;
 
         UpdateBeam(dt);
         UpdateCrouch(dt, free);
@@ -733,6 +834,18 @@ public partial class HedgeMaze : Node2D
         if (tools && gs.DevFreeFlashlight)
             _flashlightOn = true;
 
+        // A developer's torch can be as big as they ask for.
+        float width = TorchSpriteBaseWidth * (tools ? gs.DevFlashlightScale : 1f);
+        if (!Mathf.IsEqualApprox(width, _torchSpriteWidth))
+        {
+            _torchSpriteWidth = width;
+            if (_torchHandsTexture != null && _torchHandsTexture.GetWidth() > 0)
+            {
+                _torchSpriteHeight = width *
+                    ((float)_torchHandsTexture.GetHeight() / _torchHandsTexture.GetWidth());
+            }
+        }
+
         UpdateDevReadout(wantCoordinates);
     }
 
@@ -746,11 +859,16 @@ public partial class HedgeMaze : Node2D
         if (!free)
             return;
 
+        var gs = GameState.Instance;
+        bool mouseTurns = gs != null && gs.DevToolsEnabled && gs.DevMouseCamera;
         float turn = 0f;
-        if (Input.IsPhysicalKeyPressed(Key.A))
-            turn -= 1f;
-        if (Input.IsPhysicalKeyPressed(Key.D))
-            turn += 1f;
+        if (!mouseTurns)
+        {
+            if (Input.IsPhysicalKeyPressed(Key.A))
+                turn -= 1f;
+            if (Input.IsPhysicalKeyPressed(Key.D))
+                turn += 1f;
+        }
         if (turn != 0f)
             _cameraYaw = NormalizeAngle(_cameraYaw + turn * TurnSpeed * dt);
 
@@ -823,6 +941,12 @@ public partial class HedgeMaze : Node2D
             return;
         }
 
+        // A developer can park the circle of light where it is and
+        // walk about with it, instead of carrying it on the mouse.
+        var gs = GameState.Instance;
+        if (gs != null && gs.DevToolsEnabled && !gs.DevMouseLight)
+            return;
+
         float weight = 1f - Mathf.Exp(-20f * Mathf.Max(dt, 0f));
         _beamPosition = _beamPosition.Lerp(mouse, Mathf.Clamp(weight, 0f, 1f));
     }
@@ -886,6 +1010,21 @@ public partial class HedgeMaze : Node2D
 
     private void UpdateTurning(float dt)
     {
+        // A developer can take the camera off the keys and put it on
+        // the mouse: moving the mouse across the screen turns the
+        // view, hers or the free camera's.
+        var gs = GameState.Instance;
+        if (gs != null && gs.DevToolsEnabled && gs.DevMouseCamera)
+        {
+            if (Mathf.Abs(_mouseDeltaX) > 0.01f)
+            {
+                _yaw = NormalizeAngle(_yaw + _mouseDeltaX * MouseTurnScale);
+                if (_freeCamera)
+                    _cameraYaw = NormalizeAngle(_cameraYaw + _mouseDeltaX * MouseTurnScale);
+            }
+            return;
+        }
+
         // While the developer camera has the keys, her body keeps
         // its heading and stays where it is.
         if (_freeCamera)
@@ -1097,7 +1236,13 @@ public partial class HedgeMaze : Node2D
         else if (_crouchAmount >= 0.45f)
             text = "Crouching";
         else if (_hasFlashlight && !_flashlightOn)
-            text = "The torch is off — F to switch it on";
+            text = "The torch is off — L to switch it on";
+        else
+        {
+            MazeProp looked = PropUnderMouse();
+            if (looked != null)
+                text = $"F — {looked.Name}";
+        }
 
         if (text != _exitHintCache)
         {
@@ -1208,8 +1353,18 @@ public partial class HedgeMaze : Node2D
         ? 1f
         : 0.95f + 0.05f * Mathf.Sin(Time.GetTicksMsec() / 57f);
 
-    private float BeamRadiusNow() =>
-        GameState.Instance?.HasFlag("basement_battery_taken") == true ? StrongBeamRadius : BeamRadius;
+    private float BeamRadiusNow()
+    {
+        var gs = GameState.Instance;
+        float radius = gs?.HasFlag("basement_battery_taken") == true ? StrongBeamRadius : BeamRadius;
+        // a spare battery makes the circle reach much further
+        if (gs != null && gs.HasFlag(SpareBatteryFlag))
+            radius = StrongBeamRadius;
+        // and a developer can make the torch as big as they like
+        if (gs != null && gs.DevToolsEnabled)
+            radius *= gs.DevFlashlightScale;
+        return radius;
+    }
 
     /// <summary>How much of Father's torch reaches something at this
     /// depth. The circle itself decides where on screen it lands.</summary>
@@ -1248,10 +1403,12 @@ public partial class HedgeMaze : Node2D
         DrawGroundBase(viewYaw);
         DrawWalls(viewYaw);
         DrawGroundTufts(viewYaw);
+        DrawProps();
 
         DrawTorchDarkness();
         DrawSkyAboveWalls(viewYaw);
         DrawTorchRings();
+        DrawPropGlows();
 
         DrawBeamShaft();
         DrawHeldFlashlight();
@@ -1871,7 +2028,7 @@ public partial class HedgeMaze : Node2D
         torchAngle = 0f;
         float left = TorchRestLeft + TorchSlide() + offset.X;
         float top = ScreenHeight - _torchSpriteHeight + offset.Y;
-        Vector2 pivot = new(TorchSpriteGrip.X * TorchSpriteWidth, TorchSpriteGrip.Y * _torchSpriteHeight);
+        Vector2 pivot = new(TorchSpriteGrip.X * _torchSpriteWidth, TorchSpriteGrip.Y * _torchSpriteHeight);
         grip = new Vector2(left + pivot.X, top + pivot.Y);
         lens = grip + TorchLensOffset;
     }
@@ -1890,7 +2047,7 @@ public partial class HedgeMaze : Node2D
     /// <summary>Where the ember of the torch sits, measured from the
     /// place her hands hold it.</summary>
     private Vector2 TorchLensOffset => new(
-        (TorchSpriteLens.X - TorchSpriteGrip.X) * TorchSpriteWidth,
+        (TorchSpriteLens.X - TorchSpriteGrip.X) * _torchSpriteWidth,
         (TorchSpriteLens.Y - TorchSpriteGrip.Y) * _torchSpriteHeight);
 
 
@@ -1976,9 +2133,9 @@ public partial class HedgeMaze : Node2D
 
         DrawSetTransform(grip, torchAngle, Vector2.One);
         DrawTextureRect(_torchHandsTexture,
-            new Rect2(-TorchSpriteGrip.X * TorchSpriteWidth,
+            new Rect2(-TorchSpriteGrip.X * _torchSpriteWidth,
                 -TorchSpriteGrip.Y * _torchSpriteHeight,
-                TorchSpriteWidth, _torchSpriteHeight),
+                _torchSpriteWidth, _torchSpriteHeight),
             false, TorchTint(level));
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
@@ -2039,6 +2196,127 @@ public partial class HedgeMaze : Node2D
             DrawLine(her, cam, new Color(0.5f, 0.85f, 1f, 0.55f), 1.5f);
             DrawCircle(cam, 2.8f, new Color(0.5f, 0.85f, 1f, 0.95f));
         }
+    }
+
+    /// <summary>The things in the maze, drawn from the ground up with
+    /// the walls' own projection, so they stand in the world instead
+    /// of on the glass.</summary>
+    private void DrawProps()
+    {
+        foreach (MazeProp prop in _props)
+        {
+            if (prop.Taken || prop.Texture == null)
+                continue;
+            if (!PropRect(prop, out Rect2 rect, out float depth))
+                continue;
+
+            float light = SurfaceLight(depth);
+            var tint = new Color(light, light * 0.97f, light * 0.88f, 1f);
+            DrawTextureRect(prop.Texture, rect, false, tint);
+        }
+    }
+
+    /// <summary>The lamp's own light, drawn after the torch's dark so
+    /// that it really does shine.</summary>
+    private void DrawPropGlows()
+    {
+        foreach (MazeProp prop in _props)
+        {
+            if (prop.Taken || prop.Texture == null || !prop.SwitchedOn)
+                continue;
+            if (!PropRect(prop, out Rect2 rect, out float depth))
+                continue;
+
+            float x = rect.Position.X + rect.Size.X * 0.5f;
+            float y = rect.Position.Y + rect.Size.Y * 0.22f;
+            float radius = Mathf.Max(rect.Size.Y * 0.34f, 4f);
+            DrawCircle(new Vector2(x, y), radius, new Color(1f, 0.85f, 0.48f, 0.16f));
+            DrawCircle(new Vector2(x, y), radius * 0.5f, new Color(1f, 0.93f, 0.68f, 0.34f));
+        }
+    }
+
+    /// <summary>Where a thing in the maze lands on the screen, and
+    /// how far away it is.</summary>
+    private bool PropRect(MazeProp prop, out Rect2 rect, out float depth)
+    {
+        rect = default;
+        depth = 0f;
+        if (prop.Texture == null)
+            return false;
+
+        Vector2 dir = new(Mathf.Cos(_cameraYaw), Mathf.Sin(_cameraYaw));
+        Vector2 right = new(-dir.Y, dir.X);
+        Vector2 rel = prop.Position - _cameraPosition;
+        depth = rel.Dot(dir);
+        if (depth < 0.4f || depth > 9f)
+            return false;
+
+        float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * FocalLength;
+        float groundY = Horizon + ProjectionScale * _eyeHeight / depth;
+        float heightPx = prop.HeightUnits * ProjectionScale / depth;
+        float aspect = (float)prop.Texture.GetWidth() / Mathf.Max(prop.Texture.GetHeight(), 1);
+        float widthPx = heightPx * aspect;
+        rect = new Rect2(screenX - widthPx * 0.5f, groundY - heightPx, widthPx, heightPx);
+        return true;
+    }
+
+    /// <summary>The thing she is looking at, if she is looking at
+    /// one.</summary>
+    private MazeProp PropUnderMouse()
+    {
+        Vector2 mouse = GetGlobalMousePosition();
+        MazeProp best = null;
+        float bestDepth = float.MaxValue;
+        foreach (MazeProp prop in _props)
+        {
+            if (prop.Taken)
+                continue;
+            if (!PropRect(prop, out Rect2 rect, out float depth))
+                continue;
+            if (!rect.HasPoint(mouse) || depth >= bestDepth)
+                continue;
+            best = prop;
+            bestDepth = depth;
+        }
+        return best;
+    }
+
+    /// <summary>Using a thing: the lamp switches, the battery is
+    /// picked up, the rest are only looked at.</summary>
+    private async Task InteractWithPropAsync(MazeProp prop)
+    {
+        if (prop.Taken)
+            return;
+
+        if (prop.Kind == PropKind.Lamp)
+        {
+            prop.SwitchedOn = !prop.SwitchedOn;
+            AudioManager.Play(Sfx.FlashlightClick, -9f, prop.SwitchedOn ? 1.12f : 0.84f);
+            await Say(prop.SwitchedOn
+                ? "The switch still works. A yellow circle on the wet leaves, and every spider in the hedge stops moving at once."
+                : "The glass goes out. The dark comes back in, the way water fills a footprint.");
+            QueueRedraw();
+            return;
+        }
+
+        if (prop.Kind == PropKind.Battery)
+        {
+            var gs = GameState.Instance;
+            if (gs == null || gs.HasFlag(SpareBatteryFlag))
+                return;
+            AudioManager.Play(Sfx.PhotoPickup, -8f, 0.95f);
+            await Say(prop.Examine);
+            if (!StillHere() || gs == null)
+                return;
+            gs.SetFlag(SpareBatteryFlag, save: false);
+            gs.Toast("Spare battery — kept in Mara's bag (B). Fitted to the torch, its circle of light reaches much further.");
+            prop.Taken = true;
+            QueueRedraw();
+            return;
+        }
+
+        AudioManager.Play(Sfx.Examine, -12f);
+        await Say(prop.Examine);
     }
 
     private void DrawEyelids()
