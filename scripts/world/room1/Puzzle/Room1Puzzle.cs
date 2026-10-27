@@ -296,7 +296,7 @@ public partial class Room1Puzzle : Area2D
 		plate.StretchMode = TextureRect.StretchModeEnum.Scale;
 		plate.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 		plate.MouseFilter = Control.MouseFilterEnum.Ignore;
-		plate.MoveToBack();
+		padlock.MoveChild(plate, 0);
 
 		if (title != null)
 		{
@@ -313,7 +313,6 @@ public partial class Room1Puzzle : Area2D
 			title.AddThemeColorOverride("font_color", new Color(1f, 0.88f, 0.62f));
 			title.AddThemeColorOverride("font_outline_color", new Color(0.16f, 0.075f, 0.028f, 0.95f));
 			title.AddThemeConstantOverride("outline_size", 3);
-			title.MoveToFront();
 		}
 
 		float[] dialCenters = { 328f, 452f, 576f, 700f, 824f };
