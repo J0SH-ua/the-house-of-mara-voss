@@ -219,6 +219,7 @@ public partial class HedgeMaze : Node2D
     private float _cameraHeight = BaseEyeHeight;
     private bool _freeCamera;
     private bool _devMapOverlay;
+    private float _wheelDelta;
     private Label _devLabel;
     private Vector2 _velocity = Vector2.Zero;
     private float _yaw = Mathf.Pi;
@@ -579,6 +580,18 @@ public partial class HedgeMaze : Node2D
         if (GetTree().Paused ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()))
             return;
+
+        // The mouse wheel raises and lowers the developer camera. It
+        // comes as button presses, the way the house reads it
+        // everywhere else.
+        if (@event is InputEventMouseButton wheel && wheel.Pressed)
+        {
+            if (wheel.ButtonIndex == MouseButton.WheelUp)
+                _wheelDelta += 1f;
+            else if (wheel.ButtonIndex == MouseButton.WheelDown)
+                _wheelDelta -= 1f;
+        }
+
         if (@event is not InputEventKey keyEvent)
             return;
 
@@ -712,6 +725,7 @@ public partial class HedgeMaze : Node2D
         {
             _cameraPosition = _playerPosition;
             _cameraYaw = ViewYaw;
+            _wheelDelta = 0f;
         }
 
         // The torch can be held on for a developer, whatever the F
@@ -754,9 +768,13 @@ public partial class HedgeMaze : Node2D
         if (move.LengthSquared() > 0f)
             _cameraPosition += move.Normalized() * 6f * dt;
 
-        float wheel = Input.GetMouseWheelDelta();
-        if (wheel != 0f)
-            _cameraHeight = Mathf.Clamp(_cameraHeight + wheel * 0.6f, 0.05f, 8f);
+        // The wheel arrives as mouse button presses, not as a
+        // per-frame delta, so what it left behind is spent here.
+        if (_wheelDelta != 0f)
+        {
+            _cameraHeight = Mathf.Clamp(_cameraHeight + _wheelDelta * 0.35f, 0.05f, 8f);
+            _wheelDelta = 0f;
+        }
     }
 
     /// <summary>The readout: where she is, where the camera is, and
@@ -776,9 +794,9 @@ public partial class HedgeMaze : Node2D
 
         int cellX = Mathf.FloorToInt(_playerPosition.X);
         int cellY = Mathf.FloorToInt(_playerPosition.Y);
-        float fps = Engine.GetFramesPerSecond();
+        float fps = (float)Engine.GetFramesPerSecond();
         string line1 = $"x {_playerPosition.X:0.00}  y {_playerPosition.Y:0.00}   cell {cellX},{cellY}   " +
-            $"heading {Mathf.Round(_yaw * Mathf.RadToDeg) % 360}°";
+            $"heading {Mathf.Round(Mathf.RadToDeg(_yaw)) % 360}°";
         string line2 = $"camera x {_cameraPosition.X:0.00}  y {_cameraPosition.Y:0.00}   " +
             $"eye {_eyeHeight:0.00}   fps {fps}" +
             (_freeCamera ? "   FREE CAMERA" : string.Empty) +
