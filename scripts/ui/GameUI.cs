@@ -767,9 +767,9 @@ public partial class GameUI : CanvasLayer
         bool canShow = _context == UiContext.Game &&
             (!GetTree().Paused || _hudTourShowing) &&
             !Dialogue.IsShowing && (!AnyPanelOpen() || _hudTourShowing) && !FocusIsTextEditing();
-        bool fullscreen = Settings.Instance?.Fullscreen == true ||
-            DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen;
-        bool keepObjectiveVisible = _context == UiContext.Game && fullscreen && !SceneManager.IsChanging;
+        // The narrative chip in the top-left is part of the room's voice,
+        // not a temporary hint: keep it visible throughout active gameplay.
+        bool keepObjectiveVisible = _context == UiContext.Game && !SceneManager.IsChanging;
         if (keepObjectiveVisible || (canShow && Input.IsActionPressed(InputSetup.RevealObjective)))
             _topHudHoldTimer = TopHudHoldSeconds;
         else if (!canShow)
@@ -793,7 +793,9 @@ public partial class GameUI : CanvasLayer
         {
             // The room-wide shortcut strip was redundant with contextual
             // prompts; only the enlarged maze control card remains.
-            _controlsChip.Visible = inMaze && canShowControls && _topHudAlpha > 0.02f;
+            bool tabHeld = Input.IsActionPressed(InputSetup.RevealObjective);
+            _controlsChip.Visible = inMaze && canShowControls &&
+                (tabHeld || (_hudTourShowing && _hudTourIsMaze));
             _controlsChip.Modulate = inMaze
                 ? new Color(1f, 1f, 1f, _topHudAlpha)
                 : Colors.White;
@@ -809,7 +811,7 @@ public partial class GameUI : CanvasLayer
                 _controlsChip.OffsetBottom = -176f;
                 if (_controlsLabel != null)
                 {
-                    _controlsLabel.Text = "W/S move · A/D strafe · ←/→ turn · PgUp/PgDn look\nShift run · C crouch · Space jump · L torch · F use\nCaps hold-look back · V MEMORY tab · Tab movement help";
+                    _controlsLabel.Text = "W/S move · A/D strafe · ←/→ turn · PgUp/PgDn look\nShift run · C crouch · Space jump · L torch · F use\nCaps hold-look back · V MEMORY · Tab hold for this card";
                     _controlsLabel.AddThemeFontSizeOverride("font_size", 16);
                 }
             }
@@ -947,7 +949,6 @@ public partial class GameUI : CanvasLayer
         }
 
         SetMenuCornerScale(_menuSettingsButton, new Vector2(1f, 1f));
-        SetMenuCornerScale(_menuHowToButton, new Vector2(1f, 1f));
     }
 
     private static void SetMenuCornerScale(Control control, Vector2 pivot)
@@ -1052,7 +1053,7 @@ public partial class GameUI : CanvasLayer
         _hudTourTitle = MakeLabel(string.Empty, 19, new Color(1f, 0.86f, 0.61f));
         _hudTourBody = MakeLabel(string.Empty, 15);
         _hudTourBody.AutowrapMode = TextServer.AutowrapMode.Word;
-        _hudTourBody.CustomMinimumSize = new Vector2(386f, 58f);
+        _hudTourBody.CustomMinimumSize = new Vector2(386f, 96f);
         _hudTourContinue = MakeLabel("Click anywhere to continue", 12,
             new Color(0.77f, 0.71f, 0.6f, 0.9f));
         _hudTourContinue.HorizontalAlignment = HorizontalAlignment.Right;
@@ -1063,19 +1064,19 @@ public partial class GameUI : CanvasLayer
     }
 
     /// <summary>Starts the house HUD tour from the prologue's first-run teaching.</summary>
-    private void TryStartHouseHudTour() => TryStartHudTour(isMaze: false);
+    private void TryStartHouseHudTour(bool force = false) => TryStartHudTour(isMaze: false, force: force);
 
     /// <summary>HedgeMaze calls this after its first-entry dialogue ends.</summary>
     public void TryStartMazeHudTour() => TryStartHudTour(isMaze: true);
 
-    private async void TryStartHudTour(bool isMaze)
+    private async void TryStartHudTour(bool isMaze, bool force = false)
     {
         if (_hudTourShowing || _context != UiContext.Game || Settings.Instance == null ||
             GetTree().Paused || Dialogue.IsShowing || Dialogue.IsInputBlocked || AnyPanelOpen() ||
             SceneManager.IsChanging || _cutscenePlaying || _roomFlashPlaying)
             return;
 
-        if (isMaze ? Settings.Instance.MazeHudTourSeen : Settings.Instance.HouseHudTourSeen)
+        if (!force && (isMaze ? Settings.Instance.MazeHudTourSeen : Settings.Instance.HouseHudTourSeen))
             return;
 
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -1083,6 +1084,11 @@ public partial class GameUI : CanvasLayer
             Dialogue.IsShowing || AnyPanelOpen() || SceneManager.IsChanging)
             return;
 
+        ShowHudTour(isMaze);
+    }
+
+    private void ShowHudTour(bool isMaze)
+    {
         _hudTourIsMaze = isMaze;
         _hudTourStep = 0;
         _hudTourShowing = true;
@@ -1091,6 +1097,16 @@ public partial class GameUI : CanvasLayer
         GetTree().Paused = true;
         UpdateHudTourStep();
         AudioManager.Play(Sfx.PageTurn, -7f);
+    }
+
+    private async void StartHudTourFromPause()
+    {
+        bool isMaze = SceneManager.Instance?.CurrentScene is HedgeMaze;
+        ResumeGame();
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        if (_context != UiContext.Game || SceneManager.IsChanging || Dialogue.IsShowing || AnyPanelOpen())
+            return;
+        ShowHudTour(isMaze);
     }
 
     private void UpdateHudTourStep()
@@ -1103,26 +1119,34 @@ public partial class GameUI : CanvasLayer
         switch (_hudTourStep)
         {
             case 0:
-                title = "TAB — room focus";
+                title = _hudTourIsMaze ? "THE THREAD · MOVE" : "THE THREAD · TAB";
                 body = _hudTourIsMaze
-                    ? "In the maze, hold Tab for the movement reminder. There is no target marker here; MEMORY and Clarity stay visible."
-                    : "Hold Tab to circle this room's main interactive. It marks one chosen target, not every hotspot.";
+                    ? "This top-left line is Mara's running narrative, not a checklist. In the maze, W/S move, A/D strafe, and ←/→ turn; hold Shift to run, tap C to crouch, and press Space to jump."
+                    : "This top-left line is Mara's running narrative and current thread. Hold Tab to circle this room's chosen target; it marks one thing, not every hotspot.";
                 break;
             case 1:
-                title = "THE MEMORY TAB";
+                title = "INTEGRITY · CLARITY";
                 body = _hudTourIsMaze
-                    ? "This tab stays at the bottom. Press V or click MEMORY to expand/collapse the learned verbs and Journal; E, G, T and R are their shortcuts."
-                    : "This tab stays at the bottom. Click MEMORY to expand or collapse it; new memory verbs appear here as Mara learns them.";
+                    ? "The top-right panel tracks how intact the memory is and how much Clarity remains. Keep integrity from emptying; press C to use Clarity when a detail needs to be seen truly."
+                    : "The top-right panel tracks memory integrity and your remaining Clarity. Integrity shows how strained the memory is; press C to look through Clarity when an object needs to be seen truly.";
+                break;
+            case 2:
+                title = _hudTourIsMaze ? "MOVEMENT CARD · TAB" : "MEMORY · V / E G T R";
+                body = _hudTourIsMaze
+                    ? "The maze controls stay hidden until you hold Tab. This card is a quick reference; L toggles the torch, F uses a nearby object, and Caps Lock is held to look behind."
+                    : "The MEMORY strip holds the verbs Mara has learned. Press V or click its tab to open it; E echoes, G anchors, T traces, and R releases a memory.";
                 break;
             default:
-                title = "THE BAG — B";
-                body = "The satchel lives at the bottom-right. Press B to open Mara's bag; press B or Esc to close it.";
+                title = "THE BAG · B";
+                body = _hudTourIsMaze
+                    ? "The satchel keeps collected tools and clues. Press B to open it; J opens the journal, H asks for a hint, and Esc pauses or closes a panel."
+                    : "The satchel keeps collected tools and clues. Press B to open it; J opens the journal, H asks for a hint, F interacts, and Esc pauses or closes a panel.";
                 break;
         }
 
-        _hudTourTitle.Text = $"{_hudTourStep + 1} / 3  ·  {title}";
+        _hudTourTitle.Text = $"{_hudTourStep + 1} / 4  ·  {title}";
         _hudTourBody.Text = body;
-        _hudTourContinue.Text = _hudTourStep == 2
+        _hudTourContinue.Text = _hudTourStep == 3
             ? "Click anywhere to begin"
             : "Click anywhere for the next tip";
         UpdateHudTourLayout();
@@ -1144,14 +1168,21 @@ public partial class GameUI : CanvasLayer
         if (!_hudTourShowing)
             return;
         _hudTourStep++;
-        if (_hudTourStep >= 3)
+        if (_hudTourStep >= 4)
         {
             if (Settings.Instance != null)
             {
                 if (_hudTourIsMaze)
                     Settings.Instance.MazeHudTourSeen = true;
                 else
+                {
                     Settings.Instance.HouseHudTourSeen = true;
+                    if ((SceneManager.CurrentScenePath ?? string.Empty).EndsWith("bedroom_prologue.tscn"))
+                    {
+                        Settings.Instance.PrologueTutorialSeen = true;
+                        Settings.Instance.TutorialSeen = true;
+                    }
+                }
                 Settings.Instance.Save();
             }
             _hudTourShowing = false;
@@ -1171,7 +1202,8 @@ public partial class GameUI : CanvasLayer
         return _hudTourStep switch
         {
             0 => _objectivePanel,
-            1 => _verbToggleButton,
+            1 => _statusPanel,
+            2 => _hudTourIsMaze ? _controlsChip : _verbToggleButton,
             _ => _bagButton,
         };
     }
@@ -1198,7 +1230,7 @@ public partial class GameUI : CanvasLayer
 
         Vector2 viewSize = GetViewport().GetVisibleRect().Size;
         float calloutWidth = Mathf.Min(420f, viewSize.X - 32f);
-        float calloutHeight = 142f;
+        float calloutHeight = 180f;
         bool targetNearTop = targetRect.GetCenter().Y < viewSize.Y * 0.5f;
         float calloutX = targetRect.GetCenter().X < viewSize.X * 0.5f
             ? viewSize.X - calloutWidth - 22f
@@ -2238,7 +2270,6 @@ public partial class GameUI : CanvasLayer
         _hud.Visible = next == UiContext.Game;
         _corruptionRect.Visible = next == UiContext.Game;
         _menuSettingsButton.Visible = next == UiContext.Menu;
-        _menuHowToButton.Visible = next == UiContext.Menu;
         if (next == UiContext.Game && _tutorialPanel.Visible)
             GetTree().Paused = true;
 
@@ -4471,7 +4502,7 @@ public partial class GameUI : CanvasLayer
         if (_blackoutLayer == null)
             return;
 
-        var texture = GD.Load<Texture2D>("res://assets/images/core/hand_flashlight.png");
+        var texture = GD.Load<Texture2D>("res://assets/images/core/hand_flashlight_flipped.png");
         if (texture == null)
             return;
 
@@ -4525,23 +4556,56 @@ public partial class GameUI : CanvasLayer
         float width = 320f * handScale;
         float height = width * _gameplayTorchHand.Texture.GetHeight()
             / Mathf.Max(_gameplayTorchHand.Texture.GetWidth(), 1f);
-        bool walking = Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.A) ||
-            Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.D) ||
-            Input.IsPhysicalKeyPressed(Key.Up) || Input.IsPhysicalKeyPressed(Key.Left) ||
-            Input.IsPhysicalKeyPressed(Key.Down) || Input.IsPhysicalKeyPressed(Key.Right);
-        if (show && walking && !Settings.ReduceMotionOrDefault())
-            _torchHandWalkTime += delta * 8.5f;
-        Vector2 targetSway = show && walking && !Settings.ReduceMotionOrDefault()
-            ? new Vector2(Mathf.Sin(_torchHandWalkTime * 0.7f) * 7f,
+        bool walking = show && !GetTree().Paused && !Dialogue.IsShowing && !Dialogue.IsInputBlocked &&
+            (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.A) ||
+             Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.D) ||
+             Input.IsPhysicalKeyPressed(Key.Up) || Input.IsPhysicalKeyPressed(Key.Left) ||
+             Input.IsPhysicalKeyPressed(Key.Down) || Input.IsPhysicalKeyPressed(Key.Right));
+        bool reducedMotion = Settings.ReduceMotionOrDefault();
+        // The vent crawl is deliberately slower than her ordinary walk.
+        float stepSeconds = sceneFile == "vent_crawl.tscn" ? 1.25f : 0.92f;
+        if (walking && !reducedMotion)
+            _torchHandWalkTime += delta * Mathf.Tau / stepSeconds;
+
+        Vector2 bob = walking && !reducedMotion
+            ? new Vector2(Mathf.Sin(_torchHandWalkTime * 0.5f) * 7f,
                 Mathf.Abs(Mathf.Sin(_torchHandWalkTime)) * 4.5f)
             : Vector2.Zero;
+        Vector2 viewSize = GetViewport().GetVisibleRect().Size;
+        Vector2 mouse = GetViewport().GetMousePosition();
+        Vector2 aimSway = Vector2.Zero;
+        if (show && viewSize.X > 0f && viewSize.Y > 0f)
+        {
+            float aimX = Mathf.Clamp((mouse.X / viewSize.X - 0.5f) * 2f, -1f, 1f);
+            float aimY = Mathf.Clamp((mouse.Y / viewSize.Y - 0.5f) * 2f, -1f, 1f);
+            aimSway = new Vector2(aimX * 18f, aimY * 10f);
+        }
+        Vector2 targetSway = reducedMotion ? aimSway : bob + aimSway;
+        targetSway.X = Mathf.Clamp(targetSway.X, -18f, 18f);
+        targetSway.Y = Mathf.Clamp(targetSway.Y, -10f, 10f);
         float swayWeight = 1f - Mathf.Exp(-Mathf.Max(delta, 0f) * 10f);
         _torchHandSway = _torchHandSway.Lerp(targetSway, swayWeight);
 
-        _gameplayTorchHand.OffsetLeft = -width + _torchHandSway.X;
-        _gameplayTorchHand.OffsetRight = _torchHandSway.X;
-        _gameplayTorchHand.OffsetTop = -height + _torchHandSway.Y;
-        _gameplayTorchHand.OffsetBottom = _torchHandSway.Y;
+        const float rightInset = 24f;
+        const float bottomInset = 12f;
+        _gameplayTorchHand.OffsetLeft = -width - rightInset + _torchHandSway.X;
+        _gameplayTorchHand.OffsetRight = -rightInset + _torchHandSway.X;
+        _gameplayTorchHand.OffsetTop = -height - bottomInset + _torchHandSway.Y;
+        _gameplayTorchHand.OffsetBottom = -bottomInset + _torchHandSway.Y;
+
+        float beamRadius = gs?.HasFlag("basement_battery_taken") == true ? 208f : 158f;
+        if (gs != null && gs.DevToolsEnabled)
+            beamRadius *= gs.DevFlashlightScale;
+        Vector2 lightPoint = new(
+            viewSize.X - width * 0.34f + _torchHandSway.X,
+            viewSize.Y - height * 0.25f + _torchHandSway.Y);
+        float distance = mouse.DistanceTo(lightPoint);
+        float beamFalloff = 1f - Mathf.Clamp(
+            (distance - beamRadius * 0.35f) / Mathf.Max(beamRadius * 0.65f, 1f), 0f, 1f);
+        float lightLevel = Mathf.Lerp(0.16f, 1f, beamFalloff);
+        // No added amber glow: only the aimed circle lifts the hand out
+        // of shadow, in neutral light with a dim silhouette outside it.
+        _gameplayTorchHand.Modulate = new Color(lightLevel, lightLevel, lightLevel, 0.96f);
         _gameplayTorchHand.Visible = show;
     }
 
@@ -4732,9 +4796,9 @@ public partial class GameUI : CanvasLayer
         bag.Pressed += () => OpenBag(fromPause: true);
         vbox.AddChild(bag);
 
-        var howTo = MakeButton("How to Play");
-        howTo.Pressed += () => OpenTutorial(fromPause: true);
-        vbox.AddChild(howTo);
+        var hudTour = MakeButton("HUD Tour");
+        hudTour.Pressed += StartHudTourFromPause;
+        vbox.AddChild(hudTour);
 
         var settings = MakeButton("Settings");
         settings.Pressed += OnSettingsButtonPressed;
@@ -5263,19 +5327,6 @@ public partial class GameUI : CanvasLayer
         _menuSettingsButton = b;
         AddChild(b);
 
-        var howTo = MakeButton("How to Play", 22);
-        howTo.AnchorLeft = 1;
-        howTo.AnchorTop = 1;
-        howTo.AnchorRight = 1;
-        howTo.AnchorBottom = 1;
-        howTo.OffsetLeft = -170;
-        howTo.OffsetTop = -108;
-        howTo.OffsetRight = -26;
-        howTo.OffsetBottom = -68;
-        howTo.Visible = false;
-        howTo.Pressed += () => OpenTutorial();
-        _menuHowToButton = howTo;
-        AddChild(howTo);
     }
 
     // ================================================================ tutorial
@@ -5309,7 +5360,6 @@ public partial class GameUI : CanvasLayer
     private Label _tutorialPageLabel;
     private Button _tutorialNextButton;
     private Button _tutorialPrevButton;
-    private Control _menuHowToButton;
     private int _tutorialIndex;
     private bool _tutorialFromPause;
     private bool _tutorialFromPrologueAuto;
@@ -5386,17 +5436,18 @@ public partial class GameUI : CanvasLayer
 
     public void OpenTutorial(bool fromPause = false, bool fromPrologueAuto = false)
     {
-        _tutorialFromPause = fromPause;
-        _tutorialFromPrologueAuto = fromPrologueAuto;
         if (fromPause)
-            _pausePanel.Visible = false;
-        else if (_context == UiContext.Game)
-            GetTree().Paused = true;
+        {
+            StartHudTourFromPause();
+            return;
+        }
 
-        _tutorialPanel.Visible = true;
-        AudioManager.Play(Sfx.PageTurn, -7f);
-        ShowTutorialPage(0);
-        _tutorialNextButton.GrabFocus();
+        if (_context == UiContext.Game)
+        {
+            if (GetTree().Paused)
+                GetTree().Paused = false;
+            TryStartHouseHudTour();
+        }
     }
 
     private void CloseTutorial()
@@ -5599,8 +5650,8 @@ public partial class GameUI : CanvasLayer
         }
     }
 
-    /// <summary>First ever entry into Room 1: teach, once. Replayable any time
-    /// from the pause menu / main menu ("How to Play").</summary>
+    /// <summary>First prologue visit offers the HUD callout tour once;
+    /// the same compact tour can be replayed from the pause menu.</summary>
     // ======================================================= memory cutscene
 
     /// <summary>One still + caption. ImagePath "" = black screen, text only.
@@ -8566,21 +8617,24 @@ public partial class GameUI : CanvasLayer
         _tutorialAutoShown = true;
         GetTree().Paused = true;
         ShowConfirm(
-            "Before the house settles around you — would you like to be shown how remembering works here? Six short cards: looking, Clarity, and what it costs when the light runs out.",
-            () => OpenTutorial(fromPrologueAuto: true),
+            "Would you like a quick HUD tour? Four highlighted callouts explain Mara's narrative line, the memory and clarity meters, shortcut keys, and where collected things live.",
+            () =>
+            {
+                GetTree().Paused = false;
+                TryStartHouseHudTour(force: true);
+            },
             "Show me",
-            "I can find my way",
+            "Not now",
             () =>
             {
                 if (Settings.Instance != null)
                 {
                     Settings.Instance.TutorialSeen = true;
                     Settings.Instance.PrologueTutorialSeen = true;
+                    Settings.Instance.HouseHudTourSeen = true;
                     Settings.Instance.Save();
                 }
                 GetTree().Paused = false;
-                ShowToast("As you were, then. How to Play waits in the pause menu (Esc) if the house gets strange.");
-                TryStartHouseHudTour();
             });
     }
 }

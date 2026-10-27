@@ -54,9 +54,16 @@ public partial class MainMenu : Control
 	private BaseButton _quitButton;
 	private InfoModal _fullStoryModal;
 	private InfoModal _aboutModal;
+	private TextureRect _menuBackground;
 	private TextureRect _menuRainLeft;
 	private TextureRect _menuRainRight;
 	private TextureRect _menuSteam;
+	private readonly RandomNumberGenerator _flickerRng = new();
+	private double _flickerCountdown = 9.5;
+	private double _flickerPhaseTimer;
+	private int _flickerPulsesRemaining;
+	private bool _flickerDim;
+	private float _flickerBrightness = 1f;
 	private readonly Texture2D[] _menuRainTextures = new Texture2D[3];
 	private readonly Texture2D[] _menuSteamTextures = new Texture2D[3];
 	private double _menuFxTime;
@@ -121,6 +128,8 @@ public partial class MainMenu : Control
 			TightenMenuButton(b);
 			HookButtonSounds(b);
 		}
+		_flickerRng.Randomize();
+		_flickerCountdown = _flickerRng.RandfRange(7.5f, 14f);
 		BuildMenuAtmosphere();
 
 		if (_continueButton?.Visible == true && _startButton != null)
@@ -138,7 +147,10 @@ public partial class MainMenu : Control
 	{
 		ApplyMenuUiScale();
 		if (_menuRainLeft == null || _menuRainRight == null || _menuSteam == null)
+		{
+			UpdateMalfunctionFlicker(delta);
 			return;
+		}
 
 		if (!Settings.ReduceMotionOrDefault())
 			_menuFxTime += delta;
@@ -158,6 +170,75 @@ public partial class MainMenu : Control
 
 		float steamAlpha = 0.52f + 0.08f * Mathf.Sin((float)_menuFxTime * 1.3f);
 		_menuSteam.Modulate = new Color(1f, 1f, 1f, steamAlpha);
+		UpdateMalfunctionFlicker(delta);
+	}
+
+	/// <summary>Rare, brief, uneven dips in the room behind the menu;
+	/// the buttons stay steady so the effect reads as a failing lamp.</summary>
+	private void UpdateMalfunctionFlicker(double delta)
+	{
+		if (_menuBackground == null)
+			return;
+
+		if (Settings.ReduceMotionOrDefault())
+		{
+			_flickerPulsesRemaining = 0;
+			_flickerDim = false;
+			_flickerBrightness = 1f;
+			ApplyMenuLightLevel();
+			return;
+		}
+
+		if (_flickerPulsesRemaining <= 0)
+		{
+			_flickerCountdown -= delta;
+			if (_flickerCountdown <= 0d)
+			{
+				_flickerPulsesRemaining = _flickerRng.RandiRange(2, 3);
+				_flickerPhaseTimer = 0d;
+				_flickerCountdown = _flickerRng.RandfRange(8f, 16f);
+			}
+		}
+
+		if (_flickerPulsesRemaining > 0)
+		{
+			_flickerPhaseTimer -= delta;
+			if (_flickerPhaseTimer <= 0d)
+			{
+				if (_flickerDim)
+				{
+					_flickerBrightness = 1f;
+					_flickerDim = false;
+					_flickerPulsesRemaining--;
+					_flickerPhaseTimer = _flickerRng.RandfRange(0.045f, 0.11f);
+				}
+				else
+				{
+					_flickerBrightness = _flickerRng.RandfRange(0.42f, 0.72f);
+					_flickerDim = true;
+					_flickerPhaseTimer = _flickerRng.RandfRange(0.035f, 0.08f);
+				}
+			}
+		}
+		ApplyMenuLightLevel();
+	}
+
+	private void ApplyMenuLightLevel()
+	{
+		_menuBackground.Modulate = new Color(_flickerBrightness, _flickerBrightness,
+			_flickerBrightness, 1f);
+		SetAtmosphereBrightness(_menuRainLeft);
+		SetAtmosphereBrightness(_menuRainRight);
+		SetAtmosphereBrightness(_menuSteam);
+	}
+
+	private void SetAtmosphereBrightness(TextureRect element)
+	{
+		if (element == null)
+			return;
+		Color current = element.Modulate;
+		element.Modulate = new Color(_flickerBrightness, _flickerBrightness,
+			_flickerBrightness, current.A);
 	}
 
 	private void ApplyMenuUiScale()
@@ -192,6 +273,7 @@ public partial class MainMenu : Control
 		}
 
 		var background = GetNodeOrNull<TextureRect>("SubViewportContainer/SubViewport/Background");
+		_menuBackground = background;
 		Node parent = background?.GetParent();
 		if (background == null || parent == null)
 		{

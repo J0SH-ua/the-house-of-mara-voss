@@ -24,11 +24,11 @@ using Godot;
 /// The torch is a sprite of its own now - both hands wrapped round
 /// the cloth-bound head of it, drawn in the same pixel art as
 /// every other thing in this game (assets/images/core/
-/// hand_flashlight.png) - held low in the bottom-left corner with
-/// the sleeve of her jumper running off the edge, sliding left and
-/// right along the bottom as she points, but never turning in her
-/// hands. The world it lights is painted too: the night sky, the
-/// grass she walks on, the box-hedge walls and the stone pillars
+/// hand_flashlight_flipped.png) - held low on the bottom-right with
+/// the sleeve of her jumper visible, sliding a little left and right
+/// with the beam, but never turning in her hands. The world it
+/// lights is painted too: the night sky, the grass she walks on,
+/// the box-hedge walls and the stone pillars
 /// are all projected from the same tiles the garden outside is
 /// drawn from (assets/images/hedge/), and the torchlight falls on
 /// them in flat bands of light and shade, the way the rest of the
@@ -60,7 +60,7 @@ public partial class HedgeMaze : Node2D
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     // The torch she actually carries in here: both hands round the
     // cloth-bound head, as one sprite, in the house's own pixel art.
-    private const string TorchHandsTexturePath = "res://assets/images/core/hand_flashlight.png";
+    private const string TorchHandsTexturePath = "res://assets/images/core/hand_flashlight_flipped.png";
     private const string HedgeWallTexturePath = "res://assets/images/hedge/hedge_wall.png";
     private const string HedgeBaseTexturePath = "res://assets/images/hedge/hedge_base.png";
     private const string NightSkyTexturePath = "res://assets/images/hedge/night_sky.png";
@@ -89,13 +89,15 @@ public partial class HedgeMaze : Node2D
     // Page Down and the dev mouse-camera tilt the horizon itself.
     // Heights are in the same world units the maze grid uses.
     private const float Horizon = 324f;
-    private const float ColumnWidth = 8f;
-    private const int ColumnCount = 144;
+    // Wider pixel columns and fewer vertical wall bands keep the software-
+    // drawn first-person view responsive without changing its 1152x648 canvas.
+    private const float ColumnWidth = 12f;
+    private const int ColumnCount = 96;
     private const float FieldOfView = 1.08f;
     private static float ProjectionScale => FocalLength;
     private const float MaxProjectedVerticalAngle = 1.35f;
-    private const int WallVerticalSegments = 8;
-    private const int PropVerticalSegments = 8;
+    private const int WallVerticalSegments = 4;
+    private const int PropVerticalSegments = 4;
     private const float MaxPropInteractionDistance = 1.8f;
     private const float BaseEyeHeight = 0.37f;
     private const float CrouchEyeDrop = 0.16f;
@@ -163,7 +165,7 @@ public partial class HedgeMaze : Node2D
 
     // The torch she carries in here is one sprite: both hands round
     // the cloth-bound head of it, with the sleeve of her jumper
-    // running off the bottom-left corner of the frame. The ember of
+    // running off the bottom-right corner of the frame. The ember of
     // the torch and the place her hands hold it are fixed points
     // inside that sprite (measured by tools/build_hedge_art.py).
     // It is drawn as big as the house draws its held hand elsewhere,
@@ -172,7 +174,7 @@ public partial class HedgeMaze : Node2D
     // changes the circle only; the separate hand-size slider changes
     // only this sprite.
     private const float TorchSpriteBaseWidth = 320f;
-    private const float TorchRestLeft = 0f;
+    private const float TorchRightInset = 60f;
     private const float TorchSlideRange = 44f;
     private const float TorchRiseDistance = 430f;
     // How fast the view turns when a developer puts it on the mouse.
@@ -180,8 +182,10 @@ public partial class HedgeMaze : Node2D
     private const float MousePitchScale = 0.0015f;
     private const float LookPitchSpeed = 0.75f;
     private const float MaxLookPitch = 0.24f;
-    private static readonly Vector2 TorchSpriteGrip = new(0.4349f, 0.4884f);
-    private static readonly Vector2 TorchSpriteLens = new(0.8368f, 0.1681f);
+    // This maze-only texture is horizontally mirrored from the house sprite:
+    // grip stays in the right hand and the lens faces into the frame.
+    private static readonly Vector2 TorchSpriteGrip = new(0.5651f, 0.4884f);
+    private static readonly Vector2 TorchSpriteLens = new(0.1632f, 0.1681f);
 
     // # hedge, P stone pillar, F dry fountain, T topiary,
     // S south waking place, B bridge opening, X far opening.
@@ -247,7 +251,10 @@ public partial class HedgeMaze : Node2D
     private bool _freeCamera;
     private bool _devMapOverlay;
     private float _wheelDelta;
-    private readonly List<Vector2> _litSpans = new();
+    private readonly List<Vector2> _litSpans = new(2);
+    private readonly List<LightHole> _lampHoles = new(1);
+    private readonly List<LightHole> _softHoles = new(2);
+    private readonly List<LightHole> _hardHoles = new(2);
     private float _mouseDeltaX;
     private float _mouseDeltaY;
     private Label _devLabel;
@@ -443,14 +450,14 @@ public partial class HedgeMaze : Node2D
 
     private void BuildLabels()
     {
-        // Bottom-right: her left hand owns the bottom-left corner, and
-        // the HUD's objective and status chips own the top.
+        // Keep the exit captions at bottom-left, opposite the torch hand;
+        // the narrative and status chips own the top of the view.
         _exitLabel = MakeLabel(string.Empty,
-            new Vector2(560, 498), new Vector2(568, 30), 10,
-            new Color(0.96f, 0.9f, 0.72f, 0.95f), HorizontalAlignment.Right);
+            new Vector2(24, 498), new Vector2(520, 30), 10,
+            new Color(0.96f, 0.9f, 0.72f, 0.95f), HorizontalAlignment.Left);
         _titleLabel = MakeLabel("Inside the green walls",
-            new Vector2(560, 530), new Vector2(568, 34), 13,
-            new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Right);
+            new Vector2(24, 530), new Vector2(520, 34), 13,
+            new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Left);
         bool labelsVisible = !_playWakeIntro;
         _exitLabel.Visible = labelsVisible;
         _titleLabel.Visible = labelsVisible;
@@ -1545,8 +1552,11 @@ public partial class HedgeMaze : Node2D
         float focal = ScreenWidth * 0.5f / Mathf.Tan(FieldOfView * 0.5f);
         float halfWidth = ScreenWidth * 0.5f / focal;
         Vector2 textureSize = new(_grassTexture.GetWidth(), _grassTexture.GetHeight());
+        var points = new Vector2[4];
+        var uvs = new Vector2[4];
+        var colors = new Color[4];
 
-        const int bands = 20;
+        const int bands = 16;
         float horizon = LookHorizon;
         float bandHeight = (ScreenHeight - horizon) / bands;
         for (int band = 0; band < bands; band++)
@@ -1561,20 +1571,14 @@ public partial class HedgeMaze : Node2D
             Vector2 nearRight = _cameraPosition + dir * depthNear + right * (halfWidth * depthNear);
             Vector2 nearLeft = _cameraPosition + dir * depthNear - right * (halfWidth * depthNear);
 
-            var points = new Vector2[]
-            {
-                new Vector2(0f, y0),
-                new Vector2(ScreenWidth, y0),
-                new Vector2(ScreenWidth, y1),
-                new Vector2(0f, y1),
-            };
-            var uvs = new Vector2[]
-            {
-                Norm(new Vector2(farLeft.X * GrassTexScale, farLeft.Y * GrassTexScale), textureSize),
-                Norm(new Vector2(farRight.X * GrassTexScale, farRight.Y * GrassTexScale), textureSize),
-                Norm(new Vector2(nearRight.X * GrassTexScale, nearRight.Y * GrassTexScale), textureSize),
-                Norm(new Vector2(nearLeft.X * GrassTexScale, nearLeft.Y * GrassTexScale), textureSize),
-            };
+            points[0] = new Vector2(0f, y0);
+            points[1] = new Vector2(ScreenWidth, y0);
+            points[2] = new Vector2(ScreenWidth, y1);
+            points[3] = new Vector2(0f, y1);
+            uvs[0] = Norm(new Vector2(farLeft.X * GrassTexScale, farLeft.Y * GrassTexScale), textureSize);
+            uvs[1] = Norm(new Vector2(farRight.X * GrassTexScale, farRight.Y * GrassTexScale), textureSize);
+            uvs[2] = Norm(new Vector2(nearRight.X * GrassTexScale, nearRight.Y * GrassTexScale), textureSize);
+            uvs[3] = Norm(new Vector2(nearLeft.X * GrassTexScale, nearLeft.Y * GrassTexScale), textureSize);
             // The lamp lights the grass it stands on as well as the
             // hedges; the band is judged from the point of it directly
             // in front of her.
@@ -1582,13 +1586,8 @@ public partial class HedgeMaze : Node2D
             Vector2 nearPoint = _cameraPosition + dir * depthNear;
             float lightFar = SurfaceLight(depthFar, farPoint);
             float lightNear = SurfaceLight(depthNear, nearPoint);
-            var colors = new Color[]
-            {
-                ScaleColor(Colors.White, lightFar),
-                ScaleColor(Colors.White, lightFar),
-                ScaleColor(Colors.White, lightNear),
-                ScaleColor(Colors.White, lightNear),
-            };
+            colors[0] = colors[1] = ScaleColor(Colors.White, lightFar);
+            colors[2] = colors[3] = ScaleColor(Colors.White, lightNear);
             DrawPolygon(points, colors, uvs, _grassTexture);
         }
     }
@@ -1885,43 +1884,40 @@ public partial class HedgeMaze : Node2D
         int px = Mathf.FloorToInt(_cameraPosition.X);
         int py = Mathf.FloorToInt(_cameraPosition.Y);
 
-        for (int cy = py - 8; cy <= py + 8; cy++)
+        for (int cy = py - 6; cy <= py + 6; cy++)
         {
-            for (int cx = px - 8; cx <= px + 8; cx++)
+            for (int cx = px - 6; cx <= px + 6; cx++)
             {
                 if (IsSolid(CellAt(new Vector2I(cx, cy))))
                     continue;
 
-                for (int k = 0; k < 4; k++)
-                {
-                    var world = new Vector2(
-                        cx + 0.08f + 0.84f * Hash01(cx, cy, 11 + k * 7),
-                        cy + 0.08f + 0.84f * Hash01(cx, cy, 23 + k * 13));
-                    Vector2 rel = world - _cameraPosition;
-                    float depth = rel.Dot(dir);
-                    if (depth < 0.18f || depth > 8.5f)
-                        continue;
+                var world = new Vector2(
+                    cx + 0.08f + 0.84f * Hash01(cx, cy, 11),
+                    cy + 0.08f + 0.84f * Hash01(cx, cy, 23));
+                Vector2 rel = world - _cameraPosition;
+                float depth = rel.Dot(dir);
+                if (depth < 0.18f || depth > 6.5f)
+                    continue;
 
-                    float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * focal;
-                    if (screenX < -12f || screenX > ScreenWidth + 12f)
-                        continue;
-                    int column = Mathf.Clamp(Mathf.FloorToInt(screenX / ColumnWidth), 0, ColumnCount - 1);
-                    if (depth > _depthByColumn[column] || depth > _shortDepthByColumn[column])
-                        continue;
+                float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * focal;
+                if (screenX < -12f || screenX > ScreenWidth + 12f)
+                    continue;
+                int column = Mathf.Clamp(Mathf.FloorToInt(screenX / ColumnWidth), 0, ColumnCount - 1);
+                if (depth > _depthByColumn[column] || depth > _shortDepthByColumn[column])
+                    continue;
 
-                    float screenY = ProjectWorldY(0f, depth);
-                    if (screenY > ScreenHeight + 4f)
-                        continue;
+                float screenY = ProjectWorldY(0f, depth);
+                if (screenY > ScreenHeight + 4f)
+                    continue;
 
-                    float hash = Hash01(cx * 3 + k, cy * 5 - k, 71);
-                    float size = Mathf.Clamp(9f / depth, 2f, 12f);
-                    float light = SurfaceLight(depth, world);
-                    Color color = hash > 0.86f
-                        ? ScaleColor(new Color(0.34f, 0.32f, 0.27f), light)
-                        : ScaleColor(new Color(0.11f, 0.33f, 0.11f), light);
-                    DrawRect(new Rect2(screenX - size * 0.5f, screenY - size * 0.6f,
-                        size, Mathf.Max(2f, size * 0.6f)), color, true);
-                }
+                float hash = Hash01(cx * 3, cy * 5, 71);
+                float size = Mathf.Clamp(9f / depth, 2f, 12f);
+                float light = SurfaceLight(depth, world);
+                Color color = hash > 0.86f
+                    ? ScaleColor(new Color(0.34f, 0.32f, 0.27f), light)
+                    : ScaleColor(new Color(0.11f, 0.33f, 0.11f), light);
+                DrawRect(new Rect2(screenX - size * 0.5f, screenY - size * 0.6f,
+                    size, Mathf.Max(2f, size * 0.6f)), color, true);
             }
         }
     }
@@ -1935,6 +1931,10 @@ public partial class HedgeMaze : Node2D
         // she turned the torch off.
         bool lampOn = LampLightCircle(out Vector2 lampCentre, out float lampRadius);
 
+        _lampHoles.Clear();
+        if (lampOn)
+            _lampHoles.Add(new LightHole(lampCentre, lampRadius));
+
         if (!_hasFlashlight || !_flashlightOn)
         {
             // Moonlit silhouettes only.
@@ -1944,21 +1944,24 @@ public partial class HedgeMaze : Node2D
                     new Color(0.002f, 0.002f, 0.005f, 0.8f), true);
                 return;
             }
-            DrawDarkOutsideHoles(new Color(0.002f, 0.002f, 0.005f, 0.8f),
-                new List<LightHole> { new LightHole(lampCentre, lampRadius) });
+            DrawDarkOutsideHoles(new Color(0.002f, 0.002f, 0.005f, 0.8f), _lampHoles);
             return;
         }
 
         float radius = BeamRadiusNow();
-        var lampHoles = lampOn
-            ? new List<LightHole> { new LightHole(lampCentre, lampRadius) }
-            : new List<LightHole>();
+        _softHoles.Clear();
+        _hardHoles.Clear();
+        if (lampOn)
+        {
+            LightHole lampHole = new(lampCentre, lampRadius);
+            _softHoles.Add(lampHole);
+            _hardHoles.Add(lampHole);
+        }
+        _softHoles.Add(new LightHole(_beamPosition, radius + 58f));
+        _hardHoles.Add(new LightHole(_beamPosition, radius));
 
-        var softHoles = new List<LightHole>(lampHoles) { new LightHole(_beamPosition, radius + 58f) };
-        var hardHoles = new List<LightHole>(lampHoles) { new LightHole(_beamPosition, radius) };
-
-        DrawDarkOutsideHoles(new Color(0.002f, 0.002f, 0.004f, 0.42f), softHoles);
-        DrawDarkOutsideHoles(new Color(0.001f, 0.001f, 0.003f, 0.74f), hardHoles);
+        DrawDarkOutsideHoles(new Color(0.002f, 0.002f, 0.004f, 0.42f), _softHoles);
+        DrawDarkOutsideHoles(new Color(0.001f, 0.001f, 0.003f, 0.74f), _hardHoles);
     }
 
     private void DrawTorchRings()
@@ -1981,7 +1984,7 @@ public partial class HedgeMaze : Node2D
     /// a circle of light stay soft and stepped rather than smooth.</summary>
     private void DrawDarkOutsideHoles(Color dark, List<LightHole> holes)
     {
-        const float stripHeight = 9f;
+        const float stripHeight = 14f;
         float fullFrom = 0f;
         bool fullRun = false;
 
@@ -2023,7 +2026,12 @@ public partial class HedgeMaze : Node2D
                 DrawRect(new Rect2(0, fullFrom, ScreenWidth, y - fullFrom), dark, true);
             }
 
-            _litSpans.Sort((a, b) => a.X.CompareTo(b.X));
+            if (_litSpans.Count == 2 && _litSpans[0].X > _litSpans[1].X)
+            {
+                Vector2 first = _litSpans[0];
+                _litSpans[0] = _litSpans[1];
+                _litSpans[1] = first;
+            }
             float cursor = 0f;
             foreach (Vector2 span in _litSpans)
             {
@@ -2248,8 +2256,8 @@ public partial class HedgeMaze : Node2D
     /// the torch comes on. The camera carries the crouch and the jump
     /// now, so the hands in front of her eyes do not have to.
     ///
-    /// The torch never turns in her hands: it is held low at the
-    /// bottom-left of the frame with the sleeve running off the
+    /// The torch never turns in her hands: it is held low on the
+    /// right of the frame with the sleeve running off the
     /// corner, and it slides left and right along the bottom with
     /// where she is pointing.</summary>
     private void GetHandPose(out Vector2 grip, out float torchAngle, out Vector2 lens)
@@ -2264,10 +2272,10 @@ public partial class HedgeMaze : Node2D
         offset.Y += _handRise * TorchRiseDistance;
 
         torchAngle = 0f;
-        float left = TorchRestLeft + TorchSlide() + offset.X;
         float handScale = CurrentTorchHandScale();
         float spriteWidth = _torchSpriteWidth * handScale;
         float spriteHeight = _torchSpriteHeight * handScale;
+        float left = ScreenWidth - spriteWidth - TorchRightInset + TorchSlide() + offset.X;
         float top = ScreenHeight - spriteHeight + offset.Y;
         Vector2 pivot = new(TorchSpriteGrip.X * spriteWidth, TorchSpriteGrip.Y * spriteHeight);
         grip = new Vector2(left + pivot.X, top + pivot.Y);
@@ -2305,22 +2313,21 @@ public partial class HedgeMaze : Node2D
     }
 
 
-    /// <summary>GameUI's held-item light rule: the hand is only as
-    /// bright as the torch light actually landing near it, with a
-    /// little back-spill because this time the torch is in it. The
-    /// back-spill is generous: this is a *lit* torch, and the wool of
-    /// her sleeve has to be there to be seen at all.</summary>
+    /// <summary>The hand is only as bright as the main circle landing
+    /// on it; the torch adds no separate warm pool of light.</summary>
     private float HandLightLevel(Vector2 grip)
     {
         if (!_flashlightOn)
-            return 0.34f;
+            return 0.16f;
+        float radius = BeamRadiusNow();
         float distance = _beamPosition.DistanceTo(grip);
-        float falloff = 1f - Mathf.Clamp((distance - 110f) / 330f, 0f, 1f);
-        return Mathf.Clamp((0.72f + 0.28f * falloff) * BeamFlicker(), 0f, 1f);
+        float falloff = 1f - Mathf.Clamp(
+            (distance - radius * 0.35f) / Mathf.Max(radius * 0.65f, 1f), 0f, 1f);
+        return Mathf.Lerp(0.16f, 1f, falloff) * BeamFlicker();
     }
 
     private static Color TorchTint(float level) =>
-        new(level, level * 0.96f, level * 0.84f, 1f);
+        new(level, level, level, 1f);
 
     /// <summary>The light itself, thrown from the ember in her hand
     /// to the circle she has put on the hedges. The circle is the
@@ -2368,13 +2375,10 @@ public partial class HedgeMaze : Node2D
             }
         }
 
-        // The lamp itself, glinting in her hand.
-        DrawCircle(lens, 17f, new Color(1f, 0.94f, 0.74f, 0.4f * strength));
-        DrawCircle(lens, 8f, new Color(1f, 0.98f, 0.86f, 0.6f * strength));
     }
 
     /// <summary>Her hands round Father's torch: one sprite of its own,
-    /// held low in the bottom-left corner and swung about her grip so
+    /// held low on the right side and swung about her grip so
     /// the ember always points at the circle of light the mouse has
     /// put on the dark.</summary>
     private void DrawHeldFlashlight()
@@ -2382,7 +2386,7 @@ public partial class HedgeMaze : Node2D
         if (!_hasFlashlight || _torchHandsTexture == null || _handRise >= 0.995f)
             return;
 
-        GetHandPose(out Vector2 grip, out float torchAngle, out Vector2 lens);
+        GetHandPose(out Vector2 grip, out float torchAngle, out _);
         float level = HandLightLevel(grip);
 
         DrawSetTransform(grip, torchAngle, Vector2.One);
@@ -2396,12 +2400,6 @@ public partial class HedgeMaze : Node2D
             false, TorchTint(level));
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
-        if (_flashlightOn)
-        {
-            float flicker = BeamFlicker();
-            DrawCircle(lens, 13f, new Color(1f, 0.94f, 0.74f, 0.42f * flicker));
-            DrawCircle(lens, 6f, new Color(1f, 0.98f, 0.86f, 0.7f * flicker));
-        }
     }
 
     /// <summary>A plan of the maze for a developer: the hedges as they

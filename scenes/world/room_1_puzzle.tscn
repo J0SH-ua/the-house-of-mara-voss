@@ -1,36 +1,29 @@
 [gd_scene format=3 uid="uid://e3g1hocmh7xt"]
 
-[ext_resource type="Texture2D" uid="uid://dqnvd0hj60jfn" path="res://assets/images/tilemaps/tilemap_room_1.png" id="1_k5by6"]
 [ext_resource type="Texture2D" uid="uid://5coprka28w1g" path="res://assets/images/bgs/Wall.png" id="3_1lge1"]
 [ext_resource type="Script" uid="uid://d3icl4t7kjcac" path="res://scripts/world/room1/Puzzle/Room1Puzzle.cs" id="3_4grsi"]
 [ext_resource type="Script" uid="uid://ca5480muse6xj" path="res://scripts/world/room1/Puzzle/BrassKey1.cs" id="4_ca548"]
 [ext_resource type="Texture2D" path="res://assets/images/core/shards/brass_key.png" id="4_hxjmd"]
 [ext_resource type="Texture2D" path="res://assets/images/ui/room1_five_dial_lock.png" id="5_lock"]
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_nwhye"]
-atlas = ExtResource("1_k5by6")
-region = Rect2(590, 248, 295, 124)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_4grsi"]
-atlas = ExtResource("1_k5by6")
-region = Rect2(590, 372, 295, 124)
+[ext_resource type="Texture2D" path="res://assets/images/ui/room1_cabinet_closed.png" id="6_cabinet_closed"]
+[ext_resource type="Texture2D" path="res://assets/images/ui/room1_cabinet_open.png" id="7_cabinet_open"]
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_hxjmd"]
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_nwhye")
+"texture": ExtResource("6_cabinet_closed")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_4grsi")
+"texture": ExtResource("7_cabinet_open")
 }],
-"loop": true,
-"name": &"DrawerOpen",
+"loop": false,
+"name": &"CabinetStates",
 "speed": 5.0
 }]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_4grsi"]
-size = Vector2(122.5, 70)
+size = Vector2(150, 112)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_hxjmd"]
 size = Vector2(142.5, 44)
@@ -44,14 +37,15 @@ scale = Vector2(0.8313802, 0.725586)
 texture = ExtResource("3_1lge1")
 
 [node name="Drawer" type="AnimatedSprite2D" parent="." unique_id=2040142679]
-position = Vector2(656, 331.99997)
-scale = Vector2(5.122033, 4.104334)
+position = Vector2(576, 324)
+scale = Vector2(0.62, 0.62)
 sprite_frames = SubResource("SpriteFrames_hxjmd")
-animation = &"DrawerOpen"
-frame_progress = 0.8237113
+animation = &"CabinetStates"
+frame = 0
+frame_progress = 0.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=858551432]
-position = Vector2(555, 327)
+position = Vector2(565, 336)
 shape = SubResource("RectangleShape2D_4grsi")
 
 [node name="Padlock" type="Node2D" parent="." unique_id=283147229]

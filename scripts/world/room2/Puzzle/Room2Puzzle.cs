@@ -51,6 +51,7 @@ public partial class Room2Puzzle : Area2D
 		if (_padlock != null)
 		{
 			_padlock.Visible = true;
+			_padlock.Position += new Vector2(-72f, 0f);
 			_padlockHome = _padlock.Position;
 		}
 

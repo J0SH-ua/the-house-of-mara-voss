@@ -588,7 +588,7 @@ public partial class Room1Puzzle : Area2D
 		await ToSignal(GetTree().CreateTimer(0.1f), "timeout");
 
 		AudioManager.Play(Sfx.DrawerOpen, -5f);
-		drawer.Play("DrawerOpen");
+		drawer.Play("CabinetStates");
 
 
 		await ToSignal(GetTree().CreateTimer(0.1f), "timeout");
