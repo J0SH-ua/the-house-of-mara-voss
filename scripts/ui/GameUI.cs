@@ -20,6 +20,9 @@ public partial class GameUI : CanvasLayer
 {
     public static GameUI Instance { get; private set; }
 
+    /// <summary>The original New Game screening runs over the bedroom before Mara wakes.</summary>
+    public bool IsOpeningCutscenePlaying => _cutscenePlaying && _activeShots == null;
+
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     private const string CorruptionShaderPath = "res://assets/shaders/corruption.gdshader";
     private const string MainMenuScenePath = "res://scenes/ui/main_menu.tscn";
@@ -5309,6 +5312,7 @@ public partial class GameUI : CanvasLayer
     private Control _menuHowToButton;
     private int _tutorialIndex;
     private bool _tutorialFromPause;
+    private bool _tutorialFromPrologueAuto;
     private bool _tutorialAutoShown;
 
     private void BuildTutorialPanel()
@@ -5380,9 +5384,10 @@ public partial class GameUI : CanvasLayer
         AddChild(_tutorialPanel);
     }
 
-    public void OpenTutorial(bool fromPause = false)
+    public void OpenTutorial(bool fromPause = false, bool fromPrologueAuto = false)
     {
         _tutorialFromPause = fromPause;
+        _tutorialFromPrologueAuto = fromPrologueAuto;
         if (fromPause)
             _pausePanel.Visible = false;
         else if (_context == UiContext.Game)
@@ -5400,11 +5405,15 @@ public partial class GameUI : CanvasLayer
         _tutorialPanel.Visible = false;
         AudioManager.Play(Sfx.UiBack, -6f);
 
-        if (Settings.Instance != null && !Settings.Instance.TutorialSeen)
+        if (Settings.Instance != null)
         {
-            Settings.Instance.TutorialSeen = true;
+            if (!Settings.Instance.TutorialSeen)
+                Settings.Instance.TutorialSeen = true;
+            if (_tutorialFromPrologueAuto)
+                Settings.Instance.PrologueTutorialSeen = true;
             Settings.Instance.Save();
         }
+        _tutorialFromPrologueAuto = false;
 
         if (_tutorialFromPause)
         {
@@ -8163,7 +8172,7 @@ public partial class GameUI : CanvasLayer
 
     /// <summary>New Game → the original memory cutscene plays first, over the
     /// bedroom's first open; Mara's first-person waking follows it. The
-    /// how-to-play cards are offered later in Room 1. Continue skips this.</summary>
+    /// how-to-play cards are offered after Mara wakes in the bedroom. Continue skips this.</summary>
     private void MaybePlayCutsceneThenTutorial(string scenePath)
     {
         var gs = GameState.Instance;
@@ -8544,7 +8553,9 @@ public partial class GameUI : CanvasLayer
             return;
         if (Settings.Instance == null)
             return;
-        if (Settings.Instance.TutorialSeen)
+        // Keep this gate independent of the legacy general tutorial flag:
+        // earlier builds could mark that flag in Room 1, before this prologue flow existed.
+        if (Settings.Instance.PrologueTutorialSeen)
         {
             TryStartHouseHudTour();
             return;
@@ -8556,14 +8567,15 @@ public partial class GameUI : CanvasLayer
         GetTree().Paused = true;
         ShowConfirm(
             "Before the house settles around you — would you like to be shown how remembering works here? Six short cards: looking, Clarity, and what it costs when the light runs out.",
-            () => OpenTutorial(),
+            () => OpenTutorial(fromPrologueAuto: true),
             "Show me",
             "I can find my way",
             () =>
             {
-                if (Settings.Instance != null && !Settings.Instance.TutorialSeen)
+                if (Settings.Instance != null)
                 {
                     Settings.Instance.TutorialSeen = true;
+                    Settings.Instance.PrologueTutorialSeen = true;
                     Settings.Instance.Save();
                 }
                 GetTree().Paused = false;

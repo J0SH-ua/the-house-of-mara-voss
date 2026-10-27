@@ -92,7 +92,7 @@ public partial class BedroomPrologue : MemoryRoomBase
         BuildDrawerLabels();
         var gs = GameState.Instance;
         if (gs != null && !gs.HasFlag(AwakeFlag))
-            _ = PlayWakingAsync();
+            _ = PlayWakingAfterOpeningAsync();
     }
 
     /// <summary>The finished bedroom goes quiet like every finished
@@ -722,7 +722,7 @@ public partial class BedroomPrologue : MemoryRoomBase
                 return;
 
             GameState.Instance?.SetFlag(AwakeFlag);
-            GameState.Instance?.Toast("Click each object to examine it. Hold Tab to reveal what still waits; the objective keeps count.");
+            GameState.Instance?.Toast("Click each object to examine it. Hold Tab to circle the door; the house will let you through when it is ready.");
             GameUI.Instance?.TryStartPrologueTutorial();
         }
         finally
@@ -731,6 +731,19 @@ public partial class BedroomPrologue : MemoryRoomBase
             if (GodotObject.IsInstanceValid(this))
                 Busy = false;
         }
+    }
+
+    private async Task PlayWakingAfterOpeningAsync()
+    {
+        // _Ready runs before SceneManager raises SceneChanged. Yield once so
+        // the New Game screening can start, then let it finish before waking.
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        while (StillHere() && GameUI.Instance?.IsOpeningCutscenePlaying == true)
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+        if (!StillHere() || (GameState.Instance?.HasFlag(AwakeFlag) ?? false))
+            return;
+        await PlayWakingAsync();
     }
 
     private bool StillHere() => GodotObject.IsInstanceValid(this) && IsInsideTree();

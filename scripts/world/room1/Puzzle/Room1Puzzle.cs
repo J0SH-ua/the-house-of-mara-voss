@@ -25,6 +25,10 @@ public partial class Room1Puzzle : Area2D
 	public static bool IsUnlocked { get; private set; }
 
 	private Button _unlockButton;
+	private readonly Label[] _dialValueLabels = new Label[5];
+	private readonly Control[] _dialControls = new Control[15];
+	private Label _dialStatusLabel;
+	private int _selectedDial;
 	private bool _readyToUnlock;
 	private int _dialTicks;
 	private int _wrongUnlocks;
@@ -40,53 +44,12 @@ public partial class Room1Puzzle : Area2D
 	{
 		InputPickable = true;
 		FontFile inputFont = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
+		var padlock = GetNodeOrNull<Node2D>("Padlock");
 		var title = GetNodeOrNull<Label>("Padlock/Title");
-		if (title != null && inputFont != null)
-		{
-			title.AddThemeFontOverride("font", inputFont);
-			title.AddThemeFontSizeOverride("font_size", 22);
-			title.AddThemeColorOverride("font_color", new Color(0.96f, 0.87f, 0.69f));
-		}
-		for (int i = 0; i < 5; i++)
-		{
-			var spinbox = GetNode<SpinBox>($"Padlock/padlock-{i}");
-			if (spinbox != null)
-			{
-				spinbox.MinValue = 0;
-				spinbox.MaxValue = 9;
-				spinbox.Step = 1;
-				if (inputFont != null)
-					spinbox.AddThemeFontOverride("font", inputFont);
-				spinbox.AddThemeFontSizeOverride("font_size", 48);
-				spinbox.AddThemeColorOverride("font_color", new Color(0.16f, 0.1f, 0.055f));
-				spinbox.SetValueNoSignal(_savedDialValues[i]);
-				int dialIndex = i;
-				spinbox.ValueChanged += (double value) =>
-				{
-					_savedDialValues[dialIndex] = (int)value;
-					if (_isSolved)
-						return;
-					AudioManager.Play(Sfx.DialTick, -5f, 0.88f + (float)value * 0.035f);
-					RegisterDialAttempt();
-					CheckPadlockSolution();
-				};
-			}
-		}
+		if (padlock != null)
+			BuildPadlockInterface(padlock, title, inputFont);
 
-		// The right combination no longer springs the drawer by itself: the
-		// player does the unlocking. The Unlock button is always there and
-		// always pressable — a wrong guess rattles and points at the journal
-		// instead of hiding the way forward. (Under Padlock: Esc hides it.)
-		var firstDial = GetNodeOrNull<SpinBox>("Padlock/padlock-0");
-		var lastDial = GetNodeOrNull<SpinBox>("Padlock/padlock-4");
-		Vector2 unlockPos = new Vector2(-85, 96);
-		if (firstDial != null && lastDial != null)
-		{
-			unlockPos = new Vector2(
-				(firstDial.Position.X + lastDial.Position.X + lastDial.Size.X) / 2f - 85f,
-				lastDial.Position.Y + lastDial.Size.Y + 16f);
-		}
-		_unlockButton = BuildUnlockButton(GetNode<Node2D>("Padlock"), unlockPos);
+		_unlockButton = BuildUnlockButton(padlock ?? this, new Vector2(491, 554));
 		_unlockButton.Pressed += OnUnlockPressed;
 
 		if (IsUnlocked)
@@ -118,6 +81,54 @@ public partial class Room1Puzzle : Area2D
 			padlock.Visible = false;
 			AudioManager.Play(Sfx.UiBack, -8f);
 			GetViewport().SetInputAsHandled();
+		}
+	}
+
+	public override void _Input(InputEvent @event)
+	{
+		var padlock = GetNodeOrNull<Node2D>("Padlock");
+		if (_isSolved || padlock == null || !padlock.Visible ||
+			GetTree().Paused || Dialogue.IsInputBlocked || Dialogue.IsShowing ||
+			(GameUI.Instance?.IsBlockingOverlayOpen() ?? false))
+			return;
+
+		if (@event is InputEventKey key && key.Pressed && !key.Echo)
+		{
+			switch (key.PhysicalKeycode)
+			{
+				case Key.Left:
+					SetSelectedDial((_selectedDial + 4) % 5);
+					GetViewport().SetInputAsHandled();
+					return;
+				case Key.Right:
+					SetSelectedDial((_selectedDial + 1) % 5);
+					GetViewport().SetInputAsHandled();
+					return;
+				case Key.Up:
+					AdjustDial(_selectedDial, 1);
+					GetViewport().SetInputAsHandled();
+					return;
+				case Key.Down:
+					AdjustDial(_selectedDial, -1);
+					GetViewport().SetInputAsHandled();
+					return;
+			}
+		}
+
+		if (@event is InputEventMouseButton wheel && wheel.Pressed &&
+			(wheel.ButtonIndex == MouseButton.WheelUp || wheel.ButtonIndex == MouseButton.WheelDown))
+		{
+			Vector2 mouse = GetGlobalMousePosition();
+			for (int i = 0; i < _dialValueLabels.Length; i++)
+			{
+				var label = _dialValueLabels[i];
+				if (label != null && label.IsVisibleInTree() && label.GetGlobalRect().HasPoint(mouse))
+				{
+					AdjustDial(i, wheel.ButtonIndex == MouseButton.WheelUp ? 1 : -1);
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+			}
 		}
 	}
 
@@ -256,10 +267,10 @@ public partial class Room1Puzzle : Area2D
 
 	private bool IsMouseOverPadlock(Vector2 globalMousePosition)
 	{
-		for (int i = 0; i < 5; i++)
+		foreach (var dialControl in _dialControls)
 		{
-			var spinbox = GetNodeOrNull<Control>($"Padlock/padlock-{i}");
-			if (spinbox != null && spinbox.IsVisibleInTree() && spinbox.GetGlobalRect().HasPoint(globalMousePosition))
+			if (dialControl != null && dialControl.IsVisibleInTree() &&
+				dialControl.GetGlobalRect().HasPoint(globalMousePosition))
 				return true;
 		}
 
@@ -267,35 +278,182 @@ public partial class Room1Puzzle : Area2D
 		return title != null && title.IsVisibleInTree() && title.GetGlobalRect().HasPoint(globalMousePosition);
 	}
 
+	private void BuildPadlockInterface(Node2D padlock, Label title, FontFile inputFont)
+	{
+		var plate = padlock.GetNodeOrNull<TextureRect>("LockPlate");
+		if (plate == null)
+		{
+			plate = new TextureRect
+			{
+				Name = "LockPlate",
+				Texture = GD.Load<Texture2D>("res://assets/images/ui/room1_five_dial_lock.png"),
+			};
+			padlock.AddChild(plate);
+		}
+		plate.Position = new Vector2(161, 78);
+		plate.Size = new Vector2(830, 436);
+		plate.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		plate.StretchMode = TextureRect.StretchModeEnum.Scale;
+		plate.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
+		plate.MouseFilter = Control.MouseFilterEnum.Ignore;
+		plate.MoveToBack();
+
+		if (title != null)
+		{
+			title.Text = "Sometimes… you just need to pay attention";
+			title.Position = new Vector2(290, 112);
+			title.Size = new Vector2(580, 36);
+			title.CustomMinimumSize = Vector2.Zero;
+			title.HorizontalAlignment = HorizontalAlignment.Center;
+			title.VerticalAlignment = VerticalAlignment.Center;
+			title.MouseFilter = Control.MouseFilterEnum.Ignore;
+			if (inputFont != null)
+				title.AddThemeFontOverride("font", inputFont);
+			title.AddThemeFontSizeOverride("font_size", 21);
+			title.AddThemeColorOverride("font_color", new Color(1f, 0.88f, 0.62f));
+			title.AddThemeColorOverride("font_outline_color", new Color(0.16f, 0.075f, 0.028f, 0.95f));
+			title.AddThemeConstantOverride("outline_size", 3);
+			title.MoveToFront();
+		}
+
+		float[] dialCenters = { 328f, 452f, 576f, 700f, 824f };
+		for (int i = 0; i < 5; i++)
+		{
+			int dialIndex = i;
+			float center = dialCenters[i];
+			var up = BuildDialButton(padlock, "+", new Vector2(center - 17f, 207f),
+				() => AdjustDial(dialIndex, 1), inputFont);
+			up.Name = $"Dial{dialIndex + 1}Up";
+			var value = new Label
+			{
+				Name = $"Dial{dialIndex + 1}Value",
+				Text = _savedDialValues[i].ToString(),
+				Position = new Vector2(center - 34f, 263f),
+				Size = new Vector2(68f, 70f),
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Center,
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+			};
+			if (inputFont != null)
+				value.AddThemeFontOverride("font", inputFont);
+			value.AddThemeFontSizeOverride("font_size", 51);
+			value.AddThemeColorOverride("font_color", new Color(1f, 0.9f, 0.72f));
+			value.AddThemeColorOverride("font_outline_color", new Color(0.15f, 0.075f, 0.035f, 0.95f));
+			value.AddThemeConstantOverride("outline_size", 4);
+			value.AddThemeColorOverride("font_shadow_color", new Color(0.08f, 0.035f, 0.015f, 0.8f));
+			value.AddThemeConstantOverride("shadow_offset_x", 1);
+			value.AddThemeConstantOverride("shadow_offset_y", 2);
+			padlock.AddChild(value);
+			var down = BuildDialButton(padlock, "−", new Vector2(center - 17f, 354f),
+				() => AdjustDial(dialIndex, -1), inputFont);
+			down.Name = $"Dial{dialIndex + 1}Down";
+			_dialValueLabels[i] = value;
+			_dialControls[i * 3] = up;
+			_dialControls[i * 3 + 1] = value;
+			_dialControls[i * 3 + 2] = down;
+		}
+
+		_dialStatusLabel = new Label
+		{
+			Name = "DialInstructions",
+			Text = string.Empty,
+			Position = new Vector2(344, 518),
+			Size = new Vector2(464, 28),
+			HorizontalAlignment = HorizontalAlignment.Center,
+			VerticalAlignment = VerticalAlignment.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+		};
+		if (inputFont != null)
+			_dialStatusLabel.AddThemeFontOverride("font", inputFont);
+		_dialStatusLabel.AddThemeFontSizeOverride("font_size", 16);
+		_dialStatusLabel.AddThemeColorOverride("font_color", new Color(0.96f, 0.85f, 0.65f, 0.94f));
+		padlock.AddChild(_dialStatusLabel);
+		SetSelectedDial(0);
+	}
+
+	private Button BuildDialButton(Node parent, string text, Vector2 position, Action pressed, FontFile inputFont)
+	{
+		var button = new Button
+		{
+			Text = text,
+			Position = position,
+			Size = new Vector2(34, 32),
+			CustomMinimumSize = new Vector2(34, 32),
+			FocusMode = Control.FocusModeEnum.All,
+			MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+		};
+		if (inputFont != null)
+			button.AddThemeFontOverride("font", inputFont);
+		button.AddThemeFontSizeOverride("font_size", 25);
+		button.AddThemeColorOverride("font_color", new Color(0.95f, 0.78f, 0.48f));
+		button.AddThemeColorOverride("font_hover_color", new Color(1f, 0.95f, 0.78f));
+		var normal = new StyleBoxFlat
+		{
+			BgColor = new Color(0.18f, 0.095f, 0.035f, 0.82f),
+			BorderColor = new Color(0.66f, 0.43f, 0.19f, 0.92f),
+		};
+		normal.SetBorderWidthAll(1);
+		normal.SetCornerRadiusAll(7);
+		normal.SetContentMarginAll(1);
+		var hover = new StyleBoxFlat
+		{
+			BgColor = new Color(0.4f, 0.23f, 0.08f, 0.96f),
+			BorderColor = new Color(1f, 0.78f, 0.4f, 1f),
+		};
+		hover.SetBorderWidthAll(2);
+		hover.SetCornerRadiusAll(7);
+		hover.SetContentMarginAll(1);
+		button.AddThemeStyleboxOverride("normal", normal);
+		button.AddThemeStyleboxOverride("hover", hover);
+		button.AddThemeStyleboxOverride("pressed", hover);
+		button.AddThemeStyleboxOverride("focus", hover);
+		button.Pressed += pressed;
+		button.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -11f);
+		parent.AddChild(button);
+		return button;
+	}
+
+	private void AdjustDial(int index, int delta)
+	{
+		if (_isSolved || index < 0 || index >= _savedDialValues.Length ||
+			GetTree().Paused || Dialogue.IsInputBlocked || Dialogue.IsShowing ||
+			(GameUI.Instance?.IsBlockingOverlayOpen() ?? false))
+			return;
+		_selectedDial = index;
+		_savedDialValues[index] = (_savedDialValues[index] + delta + 10) % 10;
+		if (_dialValueLabels[index] != null)
+			_dialValueLabels[index].Text = _savedDialValues[index].ToString();
+		SetSelectedDial(index);
+		AudioManager.Play(Sfx.DialTick, -5f, 0.88f + _savedDialValues[index] * 0.035f);
+		RegisterDialAttempt();
+		CheckPadlockSolution();
+	}
+
+	private void SetSelectedDial(int index)
+	{
+		_selectedDial = (index + 5) % 5;
+		if (_dialStatusLabel != null)
+			_dialStatusLabel.Text = $"DIAL {_selectedDial + 1}/5  ·  +/− OR SCROLL  ·  ←/→ SELECT  ·  ↑/↓ TURN";
+		for (int i = 0; i < _dialValueLabels.Length; i++)
+		{
+			var label = _dialValueLabels[i];
+			if (label == null)
+				continue;
+			label.AddThemeColorOverride("font_color", i == _selectedDial
+				? new Color(1f, 0.94f, 0.75f)
+				: new Color(0.92f, 0.78f, 0.58f));
+		}
+	}
+
 	private void CheckPadlockSolution()
 	{
 		if (_isSolved)
 			return;
 
-		int[] currentValues = new int[5];
-		bool allFound = true;
-
-		for (int i = 0; i < 5; i++)
-		{
-			var spinbox = GetNode<SpinBox>($"Padlock/padlock-{i}");
-			if (spinbox != null)
-			{
-				currentValues[i] = (int)spinbox.Value;
-			}
-			else
-			{
-				allFound = false;
-				break;
-			}
-		}
-
-		if (!allFound) return;
-
-
 		bool isCorrect = true;
 		for (int i = 0; i < 5; i++)
 		{
-			if (currentValues[i] != expectedCombination[i])
+			if (_savedDialValues[i] != expectedCombination[i])
 			{
 				isCorrect = false;
 				break;

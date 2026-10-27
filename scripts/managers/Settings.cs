@@ -35,6 +35,8 @@ public partial class Settings : Node
     public float CorruptionIntensity { get; set; } = 1.0f;
     /// <summary>Suppress the auto-opening tutorial after it has been seen once.</summary>
     public bool TutorialSeen { get; set; } = false;
+    /// <summary>Whether the bedroom-prologue tutorial prompt has been completed or declined.</summary>
+    public bool PrologueTutorialSeen { get; set; } = false;
     /// <summary>Whether the first-room HUD callout tour has been completed.</summary>
     public bool HouseHudTourSeen { get; set; } = false;
     /// <summary>Whether the first-entry maze HUD callout tour has been completed.</summary>
@@ -78,6 +80,7 @@ public partial class Settings : Node
         ReduceMotion = cfg.GetValue("accessibility", "reduce_motion", ReduceMotion).AsBool();
         CorruptionIntensity = (float)cfg.GetValue("accessibility", "corruption_intensity", CorruptionIntensity).AsDouble();
         TutorialSeen = cfg.GetValue("gameplay", "tutorial_seen", TutorialSeen).AsBool();
+        PrologueTutorialSeen = cfg.GetValue("gameplay", "prologue_tutorial_seen", PrologueTutorialSeen).AsBool();
         HouseHudTourSeen = cfg.GetValue("gameplay", "house_hud_tour_seen", HouseHudTourSeen).AsBool();
         MazeHudTourSeen = cfg.GetValue("gameplay", "maze_hud_tour_seen", MazeHudTourSeen).AsBool();
         EndingsSeen = cfg.GetValue("gameplay", "endings_seen", EndingsSeen).AsString();
@@ -98,6 +101,7 @@ public partial class Settings : Node
         cfg.SetValue("accessibility", "reduce_motion", ReduceMotion);
         cfg.SetValue("accessibility", "corruption_intensity", CorruptionIntensity);
         cfg.SetValue("gameplay", "tutorial_seen", TutorialSeen);
+        cfg.SetValue("gameplay", "prologue_tutorial_seen", PrologueTutorialSeen);
         cfg.SetValue("gameplay", "house_hud_tour_seen", HouseHudTourSeen);
         cfg.SetValue("gameplay", "maze_hud_tour_seen", MazeHudTourSeen);
         cfg.SetValue("gameplay", "endings_seen", EndingsSeen);
