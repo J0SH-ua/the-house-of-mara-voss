@@ -415,6 +415,7 @@ public partial class GameUI : CanvasLayer
 
     private Control _heldRoot;
     private ColorRect _heldDim;
+    private ColorRect _heldBeamOverlay;
     private ShaderMaterial _heldDimMaterial;
     private TextureRect _heldGlow;
     private TextureRect _heldIcon;
@@ -7322,6 +7323,20 @@ public partial class GameUI : CanvasLayer
         };
         _heldRoot.AddChild(_heldIcon);
 
+        // The scene's blackout is above world sprites; mirror that ordering
+        // over the held display so the flashlight circle falls across Mara's
+        // hand and whatever she is holding, not just the background behind it.
+        _heldBeamOverlay = new ColorRect
+        {
+            Color = Colors.White,
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _heldBeamOverlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        if (_heldDimMaterial != null)
+            _heldBeamOverlay.Material = _heldDimMaterial;
+        _heldRoot.AddChild(_heldBeamOverlay);
+
         _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
         _heldName.HorizontalAlignment = HorizontalAlignment.Center;
         _heldName.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -7661,6 +7676,8 @@ public partial class GameUI : CanvasLayer
             _heldDimMaterial.SetShaderParameter("viewport_size_px", viewportSize);
             _heldDimMaterial.SetShaderParameter("beam_radius_px", beamRadius);
         }
+        if (_heldBeamOverlay != null)
+            _heldBeamOverlay.Visible = torchLit && _heldShowing && _heldDimMaterial != null;
         if (_heldGlow != null)
             _heldGlow.Visible = !heldDark;
 
