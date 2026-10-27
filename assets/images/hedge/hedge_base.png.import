@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://9k58uq60p93ce"
-path="res://.godot/imported/hedge_base-177fbb053c05a42bbc94586a140abc47.ctex"
+uid="uid://dnwa5bty7n3aa"
+path="res://.godot/imported/hedge_base.png-177fbb053c05a42bbc94586a140abc47.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/hedge/hedge_base.png"
-dest_files=["res://.godot/imported/hedge_base-177fbb053c05a42bbc94586a140abc47.ctex"]
+dest_files=["res://.godot/imported/hedge_base.png-177fbb053c05a42bbc94586a140abc47.ctex"]
 
 [params]
 

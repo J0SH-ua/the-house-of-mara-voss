@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://7ekttw5yng4c8"
-path="res://.godot/imported/grass_ground-36cb1426f9797863342e7a0c6e533fb7.ctex"
+uid="uid://bhbu4hsx4t4a4"
+path="res://.godot/imported/grass_ground.png-36cb1426f9797863342e7a0c6e533fb7.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/hedge/grass_ground.png"
-dest_files=["res://.godot/imported/grass_ground-36cb1426f9797863342e7a0c6e533fb7.ctex"]
+dest_files=["res://.godot/imported/grass_ground.png-36cb1426f9797863342e7a0c6e533fb7.ctex"]
 
 [params]
 

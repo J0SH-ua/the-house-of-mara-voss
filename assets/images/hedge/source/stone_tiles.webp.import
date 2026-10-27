@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://idm82vdtduwp4"
-path="res://.godot/imported/stone_tiles-c0eef7d91a5936547221f44932c8de5d.ctex"
+uid="uid://mtivrjb8g57l"
+path="res://.godot/imported/stone_tiles.webp-c0eef7d91a5936547221f44932c8de5d.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/hedge/source/stone_tiles.webp"
-dest_files=["res://.godot/imported/stone_tiles-c0eef7d91a5936547221f44932c8de5d.ctex"]
+dest_files=["res://.godot/imported/stone_tiles.webp-c0eef7d91a5936547221f44932c8de5d.ctex"]
 
 [params]
 

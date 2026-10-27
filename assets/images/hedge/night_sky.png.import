@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://4tbon44y4odby"
-path="res://.godot/imported/night_sky-4a13703e91a8e1326682e6653d82723f.ctex"
+uid="uid://crgljqo75870m"
+path="res://.godot/imported/night_sky.png-4a13703e91a8e1326682e6653d82723f.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/hedge/night_sky.png"
-dest_files=["res://.godot/imported/night_sky-4a13703e91a8e1326682e6653d82723f.ctex"]
+dest_files=["res://.godot/imported/night_sky.png-4a13703e91a8e1326682e6653d82723f.ctex"]
 
 [params]
 

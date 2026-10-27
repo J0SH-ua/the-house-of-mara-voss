@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d1lss2e8okqhl"
-path="res://.godot/imported/hedge-713bfdc8daa0a72e3d0ef6c51d393b8d.ctex"
+path="res://.godot/imported/hedge.webp-713bfdc8daa0a72e3d0ef6c51d393b8d.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/hedge/source/hedge.webp"
-dest_files=["res://.godot/imported/hedge-713bfdc8daa0a72e3d0ef6c51d393b8d.ctex"]
+dest_files=["res://.godot/imported/hedge.webp-713bfdc8daa0a72e3d0ef6c51d393b8d.ctex"]
 
 [params]
 

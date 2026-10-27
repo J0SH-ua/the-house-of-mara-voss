@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d9wkdu4s6xvwr"
-path="res://.godot/imported/hands_flashlight-e538d35e1082f83b36118f140e52c098.ctex"
+uid="uid://fiors7kmq050"
+path="res://.godot/imported/hands_flashlight.webp-e538d35e1082f83b36118f140e52c098.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/hedge/source/hands_flashlight.webp"
-dest_files=["res://.godot/imported/hands_flashlight-e538d35e1082f83b36118f140e52c098.ctex"]
+dest_files=["res://.godot/imported/hands_flashlight.webp-e538d35e1082f83b36118f140e52c098.ctex"]
 
 [params]
 
