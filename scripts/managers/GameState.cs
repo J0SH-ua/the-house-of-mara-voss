@@ -2508,6 +2508,7 @@ public partial class GameState : Node
     private bool _devMouseCamera;
     private bool _devMouseLight;
     private float _devFlashlightScale = 1f;
+    private float _devMouseSensitivity = 1f;
 
     public event Action DeveloperToolsChanged;
 
@@ -2520,6 +2521,7 @@ public partial class GameState : Node
     public bool DevMouseCamera => _devMouseCamera;
     public bool DevMouseLight => _devMouseLight;
     public float DevFlashlightScale => _devFlashlightScale;
+    public float DevMouseSensitivity => _devMouseSensitivity;
 
     /// <summary>Turn the whole toolset on or off. Everything the
     /// maze reads is gated on this, so one switch puts everything
@@ -2548,6 +2550,18 @@ public partial class GameState : Node
         if (Mathf.IsEqualApprox(clamped, _devFlashlightScale))
             return;
         _devFlashlightScale = clamped;
+        DeveloperToolsChanged?.Invoke();
+    }
+
+    /// <summary>Mouse-turn multiplier for testing only. At 1× the maze
+    /// uses its current default turn response; this never changes the
+    /// player's ordinary settings.</summary>
+    public void SetDevMouseSensitivity(float value)
+    {
+        float clamped = Mathf.Clamp(value, 0.25f, 3f);
+        if (Mathf.IsEqualApprox(clamped, _devMouseSensitivity))
+            return;
+        _devMouseSensitivity = clamped;
         DeveloperToolsChanged?.Invoke();
     }
 

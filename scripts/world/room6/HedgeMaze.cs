@@ -163,8 +163,8 @@ public partial class HedgeMaze : Node2D
     // inside that sprite (measured by tools/build_hedge_art.py).
     // It is drawn as big as the house draws its held hand elsewhere,
     // and it does not turn: it slides along the bottom of the frame,
-    // left and right, with where she is pointing. A developer can
-    // make it bigger still.
+    // left and right, with where she is pointing. Dev light sizing
+    // changes the circle only; the held sprite stays this size.
     private const float TorchSpriteBaseWidth = 320f;
     private const float TorchRestLeft = 0f;
     private const float TorchSlideRange = 44f;
@@ -843,18 +843,6 @@ public partial class HedgeMaze : Node2D
         if (tools && gs.DevFreeFlashlight)
             _flashlightOn = true;
 
-        // A developer's torch can be as big as they ask for.
-        float width = TorchSpriteBaseWidth * (tools ? gs.DevFlashlightScale : 1f);
-        if (!Mathf.IsEqualApprox(width, _torchSpriteWidth))
-        {
-            _torchSpriteWidth = width;
-            if (_torchHandsTexture != null && _torchHandsTexture.GetWidth() > 0)
-            {
-                _torchSpriteHeight = width *
-                    ((float)_torchHandsTexture.GetHeight() / _torchHandsTexture.GetWidth());
-            }
-        }
-
         UpdateDevReadout(wantCoordinates);
     }
 
@@ -1025,11 +1013,13 @@ public partial class HedgeMaze : Node2D
         var gs = GameState.Instance;
         if (gs != null && gs.DevToolsEnabled && gs.DevMouseCamera)
         {
+            float mouseSensitivity = gs.DevMouseSensitivity;
             if (Mathf.Abs(_mouseDeltaX) > 0.01f)
             {
-                _yaw = NormalizeAngle(_yaw + _mouseDeltaX * MouseTurnScale);
+                float mouseTurn = _mouseDeltaX * MouseTurnScale * mouseSensitivity;
+                _yaw = NormalizeAngle(_yaw + mouseTurn);
                 if (_freeCamera)
-                    _cameraYaw = NormalizeAngle(_cameraYaw + _mouseDeltaX * MouseTurnScale);
+                    _cameraYaw = NormalizeAngle(_cameraYaw + mouseTurn);
             }
             return;
         }
