@@ -31,7 +31,7 @@ import os
 import sys
 
 try:
-    from PIL import Image, ImageChops
+    from PIL import Image, ImageFilter, ImageChops
 except ImportError:  # pragma: no cover - convenience for contributors
     print("This script needs Pillow: pip install pillow", file=sys.stderr)
     raise
@@ -62,14 +62,46 @@ def load(name):
 
 
 def pixelate(im, block=BLOCK, colors=0, dither=None):
-    """Chunk an image down to `block`-sized pixels and quantise it."""
+    """Chunk an image down to `block`-sized pixels and quantise it.
+
+    The alpha is kept out of the quantisation. When the palette is
+    built from the RGBA image, the transparent ground competes with
+    the art for entries and a dark shape (the wool of Mara's sleeve)
+    gets dithered half into nothing. So the colours are quantised on
+    their own and the alpha is laid back on top, untouched.
+    """
     w, h = im.size
     small = im.resize((max(1, w // block), max(1, h // block)), Image.BOX)
     if colors:
         if dither is None:
             dither = Image.Dither.NONE
-        method = Image.Quantize.FASTOCTREE if small.mode == "RGBA" else Image.Quantize.MEDIANCUT
-        small = small.quantize(colors=colors, method=method, dither=dither).convert("RGBA")
+        if small.mode == "RGBA":
+            alpha = small.getchannel("A")
+            solid = small.convert("RGB")
+            # the cut-out ground would otherwise pull the palette
+            # towards black; stand in the art's own mid tone for it
+            opaque = [
+                solid.getpixel((x, y))
+                for y in range(0, solid.size[1], 3)
+                for x in range(0, solid.size[0], 3)
+                if alpha.getpixel((x, y)) > 200
+            ]
+            if opaque:
+                mid = tuple(sum(c[i] for c in opaque) // len(opaque) for i in range(3))
+                for y in range(solid.size[1]):
+                    for x in range(solid.size[0]):
+                        if alpha.getpixel((x, y)) < 40:
+                            solid.putpixel((x, y), mid)
+            quantised = solid.quantize(
+                colors=colors, method=Image.Quantize.FASTOCTREE, dither=dither
+            ).convert("RGB")
+            out = quantised.convert("RGBA")
+            out.putalpha(alpha)
+            small = out
+        else:
+            small = small.quantize(
+                colors=colors, method=Image.Quantize.FASTOCTREE, dither=dither
+            ).convert("RGBA")
     return small
 
 
@@ -120,6 +152,11 @@ def chroma_key_magenta(im):
     "how much more red and blue than green" instead of a distance to
     one flat colour. Anything that still smells of magenta after the
     cut is dropped as well, which keeps the black outline clean.
+
+    The one thing that is *not* the background is the wool of Mara's
+    sleeve: it is a deep burgundy, and burgundy is also "more red and
+    blue than green". So the cut also asks whether the colour is
+    bright: the studio pink is, the wool is not.
     """
     px = im.load()
     w, h = im.size
@@ -130,9 +167,14 @@ def chroma_key_magenta(im):
         r, g, b = c[:3]
         return min(r, b) - g
 
+    def is_background(c):
+        return min(c[0], c[2]) >= 96
+
     for y in range(h):
         for x in range(w):
             r, g, b, a = px[x, y]
+            if not is_background((r, g, b)):
+                continue  # dark burgundy wool, not the studio pink
             amount = magenta_amount((r, g, b))
             if amount >= 70:
                 op[x, y] = (0, 0, 0, 0)
@@ -149,10 +191,132 @@ def chroma_key_magenta(im):
             r, g, b, a = op[x, y]
             if a == 0:
                 continue
-            if magenta_amount((r, g, b)) >= 20:
+            if is_background((r, g, b)) and magenta_amount((r, g, b)) >= 20:
                 op[x, y] = (0, 0, 0, 0)
 
     return out
+
+
+def recolour_knit(im):
+    """Mara's jumper is the house's burgundy.
+
+    The source painting has the sleeve in a dull near-black brown,
+    which disappears against a night hedge. The rest of the house
+    draws that same sleeve in a deep wine red (see the held hand in
+    assets/images/core/hand_palm.png), so the knit here is remapped
+    onto the same ramp: the hands stay skin, the cloth stays cloth,
+    the black outline stays black, and the wool becomes the house's
+    burgundy.
+    """
+    px = im.load()
+    w, h = im.size
+    for y in range(int(h * 0.5), h):
+        for x in range(int(w * 0.5)):
+            r, g, b, a = px[x, y]
+            if a < 40:
+                continue
+            if r < 8:
+                continue  # the black outline
+            if r > 190 or g > 190:
+                continue  # skin and cloth
+            if g > r * 0.35:
+                continue  # skin, cloth and stone are not the wool
+            if b > r + 6:
+                continue  # not a red
+            luma = 0.3 * r + 0.6 * g + 0.1 * b
+            k = max(0.0, min(1.0, luma / 70.0))
+            px[x, y] = (
+                int(44 + 74 * k),
+                int(8 + 16 * k),
+                int(28 + 36 * k),
+                a,
+            )
+    return im
+
+
+def knit_solid(im):
+    """The wool of Mara's sleeve is dithered in the painting.
+
+    Half of that dither is magenta and the key takes it away, so the
+    sleeve comes out as confetti and disappears in the dark. The
+    shape is what matters: the knit is closed up (grown a little, then
+    cut back to its own size) and filled with the house's burgundy.
+    """
+    px = im.load()
+    w, h = im.size
+    mask = Image.new("L", (w, h), 0)
+    mp = mask.load()
+    for y in range(int(h * 0.5), h):
+        for x in range(int(w * 0.5)):
+            r, g, b, a = px[x, y]
+            if a < 200 or r < 4 or r > 190:
+                continue
+            if g > r * 0.7 or b > r + 8:
+                continue
+            mp[x, y] = 255
+
+    mask = mask.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+    mp = mask.load()
+    for y in range(int(h * 0.5), h):
+        for x in range(int(w * 0.5)):
+            if mp[x, y] and px[x, y][3] < 255:
+                px[x, y] = (60, 12, 36, 255)
+    return im
+
+
+def fill_pinholes(im):
+    """Dithered shapes leave pinholes behind the key.
+
+    The source painting draws the wool of Mara's sleeve as a dithered
+    shape, so half of it keys away to nothing and the sleeve ends up a
+    transparent mesh that vanishes in the dark. Any transparent pixel
+    that cannot be reached from the edge of the picture is a hole
+    *inside* the art, so it is filled with the colour of the art
+    around it.
+    """
+    px = im.load()
+    w, h = im.size
+    seen = bytearray(w * h)
+
+    def push(x, y):
+        idx = y * w + x
+        if not seen[idx] and px[x, y][3] == 0:
+            seen[idx] = 1
+            stack.append((x, y))
+
+    stack = []
+    for x in range(w):
+        push(x, 0)
+        push(x, h - 1)
+    for y in range(h):
+        push(0, y)
+        push(w - 1, y)
+    while stack:
+        x, y = stack.pop()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < w and 0 <= ny < h:
+                push(nx, ny)
+
+    for y in range(h):
+        for x in range(w):
+            if px[x, y][3] != 0 or seen[y * w + x]:
+                continue
+            fill = None
+            for r in range(1, 7):
+                for dx in range(-r, r + 1):
+                    for dy in (-r, r):
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < w and 0 <= ny < h and px[nx, ny][3] > 200:
+                            fill = px[nx, ny]
+                            break
+                    if fill:
+                        break
+                if fill:
+                    break
+            if fill:
+                px[x, y] = (fill[0], fill[1], fill[2], 255)
+    return im
 
 
 def measure_anchors(im):
@@ -167,7 +331,7 @@ def measure_anchors(im):
                 continue
             # the ember: the one strongly saturated orange in the art,
             # not the warm skin or the copper band around the head.
-            if r > 170 and g < 175 and b < 100 and (r - b) > 110:
+            if r > 190 and g < 165 and b < 85 and (r - b) > 140:
                 lens_x += x
                 lens_y += y
                 lens_n += 1
@@ -184,7 +348,7 @@ def measure_anchors(im):
             r, g, b, a = px[x, y]
             if a < 128:
                 continue
-            if r > 200 and 140 < g < 210 and 110 < b < 190 and (r - g) > 35 and (g - b) > 25:
+            if r > 195 and 130 < g < 215 and 85 < b < 200 and (r - g) > 30 and (g - b) > 25:
                 grip_x += x
                 grip_y += y
                 grip_n += 1
@@ -206,6 +370,9 @@ def main():
     hands = load("hands")
     hands = chroma_key_magenta(hands)
     hands = hands.crop(hands.getbbox())
+    hands = fill_pinholes(hands)
+    hands = knit_solid(hands)
+    hands = recolour_knit(hands)
     hands = pixelate(hands, block=4, colors=32)
     save(hands, os.path.join(CORE_DIR, "hand_flashlight.png"))
 
