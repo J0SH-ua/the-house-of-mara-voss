@@ -539,6 +539,9 @@ public partial class GameUI : CanvasLayer
     private Control _devPanel;
     private Label _devStatusLabel;
     private Button _devPauseButton;
+    // The developer-tool switches, so they can be kept in step with
+    // the state they drive.
+    private readonly List<(CheckBox Box, Func<bool> Get, bool IsMaster)> _devToolToggles = new();
     private Button _pauseSaveButton;
     private int _settingsPressCount;
     private ulong _settingsPressSequenceStartedMsec;
@@ -1841,6 +1844,7 @@ public partial class GameUI : CanvasLayer
     private void RefreshDeveloperChrome()
     {
         bool active = GameState.Instance?.DeveloperModeActive == true;
+        RefreshDevToolToggles();
         if (_devPauseButton != null)
             _devPauseButton.Visible = active;
         if (_pauseSaveButton != null)
@@ -1918,6 +1922,7 @@ public partial class GameUI : CanvasLayer
             return;
 
         string restoredScene = gs.EndDeveloperSession();
+        gs.SetDevToolsEnabled(false);
         _settingsPressCount = 0;
         _settingsPressSequenceStartedMsec = 0;
         if (_devPanel != null)
@@ -4170,17 +4175,9 @@ public partial class GameUI : CanvasLayer
         vbox.AddThemeConstantOverride("separation", 9);
         panel.AddChild(vbox);
 
-        var title = MakeLabel("DEV MODE — LOCATIONS", 32, new Color(1f, 0.84f, 0.5f, 0.98f));
-        title.HorizontalAlignment = HorizontalAlignment.Center;
-        vbox.AddChild(title);
-
-        _devStatusLabel = MakeLabel("", 18, new Color(0.9f, 0.85f, 0.7f, 0.95f));
-        _devStatusLabel.AutowrapMode = TextServer.AutowrapMode.Word;
-        _devStatusLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _devStatusLabel.CustomMinimumSize = new Vector2(0, 52);
-        vbox.AddChild(_devStatusLabel);
-        vbox.AddChild(new HSeparator());
-
+        // Everything above the footer scrolls, so the tools can be
+        // added without pushing the Close and Exit buttons off the
+        // bottom of the screen.
         var scroll = new ScrollContainer
         {
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
@@ -4190,6 +4187,58 @@ public partial class GameUI : CanvasLayer
         };
         vbox.AddChild(scroll);
 
+        var inner = new VBoxContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        inner.AddThemeConstantOverride("separation", 9);
+        scroll.AddChild(inner);
+
+        var title = MakeLabel("DEV MODE — LOCATIONS", 32, new Color(1f, 0.84f, 0.5f, 0.98f));
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        inner.AddChild(title);
+
+        _devStatusLabel = MakeLabel("", 18, new Color(0.9f, 0.85f, 0.7f, 0.95f));
+        _devStatusLabel.AutowrapMode = TextServer.AutowrapMode.Word;
+        _devStatusLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _devStatusLabel.CustomMinimumSize = new Vector2(0, 52);
+        inner.AddChild(_devStatusLabel);
+
+        // The developer tools: one master switch and the tools it
+        // turns on. They are ordinary run state on the GameState
+        // autoload, so a place being tested on its own can use them
+        // without the whole throwaway session.
+        inner.AddChild(new HSeparator());
+        var toolsTitle = MakeLabel("DEV TOOLS", 21, new Color(0.72f, 0.88f, 0.7f, 0.95f));
+        toolsTitle.HorizontalAlignment = HorizontalAlignment.Center;
+        inner.AddChild(toolsTitle);
+
+        var toolsRow = new HBoxContainer();
+        toolsRow.AddThemeConstantOverride("separation", 18);
+        inner.AddChild(toolsRow);
+
+        var toolsLeft = new VBoxContainer();
+        toolsLeft.AddThemeConstantOverride("separation", 2);
+        toolsRow.AddChild(toolsLeft);
+        var toolsRight = new VBoxContainer();
+        toolsRight.AddThemeConstantOverride("separation", 2);
+        toolsRow.AddChild(toolsRight);
+
+        AddDevToggle(toolsLeft, "Dev tools", () => GameState.Instance?.DevToolsEnabled ?? false,
+            v => GameState.Instance?.SetDevToolsEnabled(v), isMaster: true);
+        AddDevToggle(toolsLeft, "Coordinates", () => GameState.Instance?.DevShowCoordinates ?? false,
+            v => GameState.Instance?.SetDevShowCoordinates(v));
+        AddDevToggle(toolsLeft, "Free roam (walk through hedges)", () => GameState.Instance?.DevNoClip ?? false,
+            v => GameState.Instance?.SetDevNoClip(v));
+        AddDevToggle(toolsRight, "Free camera", () => GameState.Instance?.DevFreeCamera ?? false,
+            v => GameState.Instance?.SetDevFreeCamera(v));
+        AddDevToggle(toolsRight, "Flashlight always on", () => GameState.Instance?.DevFreeFlashlight ?? false,
+            v => GameState.Instance?.SetDevFreeFlashlight(v));
+        AddDevToggle(toolsRight, "Map overlay", () => GameState.Instance?.DevShowMap ?? false,
+            v => GameState.Instance?.SetDevShowMap(v));
+
+        inner.AddChild(new HSeparator());
+
         var grid = new GridContainer
         {
             Columns = 3,
@@ -4198,7 +4247,7 @@ public partial class GameUI : CanvasLayer
         };
         grid.AddThemeConstantOverride("h_separation", 8);
         grid.AddThemeConstantOverride("v_separation", 6);
-        scroll.AddChild(grid);
+        inner.AddChild(grid);
 
         foreach (var location in DeveloperLocations)
         {
@@ -4242,6 +4291,44 @@ public partial class GameUI : CanvasLayer
         footer.AddChild(exit);
 
         AddChild(_devPanel);
+    }
+
+    /// <summary>One of the developer tools: a switch that reads and
+    /// writes a piece of developer state on the GameState
+    /// autoload.</summary>
+    private void AddDevToggle(Container parent, string label, Func<bool> get,
+        Action<bool> set, bool isMaster = false)
+    {
+        var check = new CheckBox { Text = label };
+        if (_font != null)
+            check.AddThemeFontOverride("font", _font);
+        check.AddThemeFontSizeOverride("font_size", 19);
+        check.AddThemeColorOverride("font_color", new Color(0.86f, 0.9f, 0.8f));
+        check.ButtonPressed = get();
+        check.Toggled += v =>
+        {
+            set(v);
+            AudioManager.Play(Sfx.UiClick, -8f);
+            RefreshDevToolToggles();
+        };
+        _devToolToggles.Add((check, get, isMaster));
+        parent.AddChild(check);
+    }
+
+    /// <summary>Keep the developer-tool switches in step with the
+    /// state they drive, and grey the tools out while the master
+    /// switch is off.</summary>
+    private void RefreshDevToolToggles()
+    {
+        bool master = GameState.Instance?.DevToolsEnabled ?? false;
+        foreach (var (box, get, isMaster) in _devToolToggles)
+        {
+            box.SetPressedNoSignal(get());
+            box.Disabled = !isMaster && !master;
+            box.Modulate = box.Disabled
+                ? new Color(1f, 1f, 1f, 0.45f)
+                : new Color(1f, 1f, 1f, 1f);
+        }
     }
 
     private void AddVolumeSlider(Container parent, string label, Func<float> get, Action<float> set)
