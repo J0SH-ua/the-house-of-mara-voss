@@ -4246,10 +4246,14 @@ public partial class GameUI : CanvasLayer
         AddDevToggle(toolsRight, "Map overlay", () => GameState.Instance?.DevShowMap ?? false,
             v => GameState.Instance?.SetDevShowMap(v));
 
-        AddDevSlider(toolsLeft, "Flashlight size", 1, 3, 0.1,
+        AddDevSlider(toolsLeft, "Light circle size", 1, 3, 0.1,
             () => GameState.Instance?.DevFlashlightScale ?? 1f,
             v => GameState.Instance?.SetDevFlashlightScale((float)v),
             v => $"{v:0.0}×");
+        AddDevSlider(toolsLeft, "Dev mouse sensitivity", 0.25, 3, 0.05,
+            () => GameState.Instance?.DevMouseSensitivity ?? 1f,
+            v => GameState.Instance?.SetDevMouseSensitivity((float)v),
+            v => $"{v:0.00}×");
 
         inner.AddChild(new HSeparator());
 
