@@ -416,7 +416,7 @@ public partial class GameUI : CanvasLayer
     private Control _heldRoot;
     private ColorRect _heldDim;
     private ColorRect _heldBeamOverlay;
-    private ShaderMaterial _heldBeamMaterial;
+    private ShaderMaterial _heldDimMaterial;
     private TextureRect _heldGlow;
     private TextureRect _heldIcon;
     private Label _heldName;
@@ -7284,6 +7284,12 @@ public partial class GameUI : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Stop,
         };
         _heldDim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        var heldDimShader = GD.Load<Shader>("res://assets/shaders/held_light_circle.gdshader");
+        if (heldDimShader != null)
+        {
+            _heldDimMaterial = new ShaderMaterial { Shader = heldDimShader };
+            _heldDim.Material = _heldDimMaterial;
+        }
         _heldRoot.AddChild(_heldDim);
 
         _heldGlow = new TextureRect
@@ -7326,12 +7332,8 @@ public partial class GameUI : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         _heldBeamOverlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        var heldBeamShader = GD.Load<Shader>("res://assets/shaders/held_light_circle.gdshader");
-        if (heldBeamShader != null)
-        {
-            _heldBeamMaterial = new ShaderMaterial { Shader = heldBeamShader };
-            _heldBeamOverlay.Material = _heldBeamMaterial;
-        }
+        if (_heldDimMaterial != null)
+            _heldBeamOverlay.Material = _heldDimMaterial;
         _heldRoot.AddChild(_heldBeamOverlay);
 
         _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
@@ -7665,21 +7667,17 @@ public partial class GameUI : CanvasLayer
             ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
             : new Color(0.02f, 0.015f, 0.01f, 0.62f);
         if (_heldDim != null)
-            _heldDim.Color = dimColor;
-        if (_heldBeamMaterial != null)
+            _heldDim.Color = _heldDimMaterial != null ? Colors.White : dimColor;
+        if (_heldDimMaterial != null)
         {
-            Rect2 handBounds = new Rect2(_heldHand.Position, _heldHand.Size).Grow(64f);
-            _heldBeamMaterial.SetShaderParameter("dim_color", dimColor);
-            _heldBeamMaterial.SetShaderParameter("beam_enabled", torchLit);
-            _heldBeamMaterial.SetShaderParameter("beam_center_px", beamCentre);
-            _heldBeamMaterial.SetShaderParameter("viewport_size_px", viewportSize);
-            _heldBeamMaterial.SetShaderParameter("beam_radius_px", beamRadius);
-            _heldBeamMaterial.SetShaderParameter("held_region_px", new Vector4(
-                handBounds.Position.X, handBounds.Position.Y,
-                handBounds.Size.X, handBounds.Size.Y));
+            _heldDimMaterial.SetShaderParameter("dim_color", dimColor);
+            _heldDimMaterial.SetShaderParameter("beam_enabled", torchLit);
+            _heldDimMaterial.SetShaderParameter("beam_center_px", beamCentre);
+            _heldDimMaterial.SetShaderParameter("viewport_size_px", viewportSize);
+            _heldDimMaterial.SetShaderParameter("beam_radius_px", beamRadius);
         }
         if (_heldBeamOverlay != null)
-            _heldBeamOverlay.Visible = torchLit && _heldShowing && _heldBeamMaterial != null;
+            _heldBeamOverlay.Visible = torchLit && _heldShowing && _heldDimMaterial != null;
         if (_heldGlow != null)
             _heldGlow.Visible = !heldDark;
 
