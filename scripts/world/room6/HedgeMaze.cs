@@ -37,12 +37,15 @@ using Godot;
 /// Crouching and jumping are hers again, and the camera goes with
 /// them: a crouch drops her eye, so the hedge tops lean in and
 /// less ground shows under her boots; a jump lifts her, so the
-/// whole maze falls away and comes back. Looking behind her is a
-/// thing she *holds*, not a thing she taps: keep Caps Lock down
-/// and the view turns all the way round at a calm, even rate,
-/// and lets go and it turns back. It is only her *view* that
-/// turns: her body keeps its heading, so she walks on the way she
-/// was going while she looks over her shoulder.
+/// whole maze falls away and comes back. Crouching is a tap - one
+/// press of C to go down and stand, one press to come back up.
+/// The torch has a button of its own, the way his did: F lets the
+/// light off and brings it back. Looking behind her is a thing she
+/// *holds*, not a thing she taps: keep Caps Lock down and the view
+/// turns all the way round at a calm, even rate, and lets go and it
+/// turns back. It is only her *view* that turns: her body keeps
+/// its heading, so she walks on the way she was going while she
+/// looks over her shoulder.
 ///
 /// The south break returns to the bridge and the far north-west
 /// break continues to the last room, so exploring it can never
@@ -215,6 +218,7 @@ public partial class HedgeMaze : Node2D
     private bool _running;
 
     private float _crouchAmount;
+    private bool _crouchToggled;
     private float _jumpHeight;
     private float _verticalVelocity;
     private bool _grounded = true;
@@ -347,7 +351,7 @@ public partial class HedgeMaze : Node2D
             new Vector2(560, 530), new Vector2(568, 34), 25,
             new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Right);
         _promptLabel = MakeLabel(
-            "W/S walk · A/D turn · mouse aims the torch\nSHIFT run · C crouch · SPACE jump · HOLD CAPS LOCK to look back",
+            "W/S walk · A/D turn · mouse aims the torch · F torch on/off\nSHIFT run · C crouch (tap) · SPACE jump · HOLD CAPS LOCK to look back",
             new Vector2(480, 566), new Vector2(648, 56), 17,
             new Color(0.92f, 0.89f, 0.78f, 0.92f), HorizontalAlignment.Right);
 
@@ -530,6 +534,19 @@ public partial class HedgeMaze : Node2D
             .SetEase(Tween.EaseType.Out);
     }
 
+    /// <summary>The torch has a button of its own, the way his did:
+    /// tap F and the light goes out, tap it again and it comes back.
+    /// The torch stays in her hands either way — she is only letting
+    /// the light off.</summary>
+    private void ToggleFlashlight()
+    {
+        if (!_hasFlashlight)
+            return;
+        _flashlightOn = !_flashlightOn;
+        AudioManager.Play(Sfx.FlashlightClick, _flashlightOn ? -7f : -9f);
+        QueueRedraw();
+    }
+
     private void SetHandRise(float value)
     {
         _handRise = Mathf.Clamp(value, 0f, 1f);
@@ -555,9 +572,26 @@ public partial class HedgeMaze : Node2D
         bool movementKey = capsLock || shift ||
             keyEvent.PhysicalKeycode is
                 Key.W or Key.A or Key.S or Key.D or Key.C or Key.Space or
-                Key.Left or Key.Right or Key.Up or Key.Down;
+                Key.Left or Key.Right or Key.Up or Key.Down or Key.F;
         if (!movementKey)
             return;
+
+        // Crouching is a tap: one press to go down and stand, one
+        // press to come back up.
+        if (keyEvent.PhysicalKeycode == Key.C && keyEvent.Pressed &&
+            !keyEvent.Echo && InputFree())
+        {
+            _crouchToggled = !_crouchToggled;
+        }
+
+        // The torch has a button of its own: tap F and the light
+        // goes out, tap it again and it comes back. She keeps the
+        // torch in her hand either way.
+        if (keyEvent.PhysicalKeycode == Key.F && keyEvent.Pressed &&
+            !keyEvent.Echo && InputFree())
+        {
+            ToggleFlashlight();
+        }
 
         // Looking behind her is a hold, not a tap, so there is nothing
         // to do on the press of Caps Lock: the key is claimed here and
@@ -642,7 +676,9 @@ public partial class HedgeMaze : Node2D
 
     private void UpdateCrouch(float dt, bool free)
     {
-        bool wantsCrouch = free && Input.IsPhysicalKeyPressed(Key.C);
+        // Crouching is a tap, not a hold: one press of C to go down
+        // and stand, one press to come back up.
+        bool wantsCrouch = free && _crouchToggled;
         _crouchAmount = Mathf.MoveToward(_crouchAmount, wantsCrouch ? 1f : 0f, dt * 6f);
     }
 
@@ -887,6 +923,8 @@ public partial class HedgeMaze : Node2D
             text = "Looking behind her";
         else if (_crouchAmount >= 0.45f)
             text = "Crouching";
+        else if (_hasFlashlight && !_flashlightOn)
+            text = "The torch is off — F to switch it on";
 
         if (text != _exitHintCache)
         {
@@ -1699,9 +1737,10 @@ public partial class HedgeMaze : Node2D
 
     /// <summary>The light itself, thrown from the ember in her hand
     /// to the circle she has put on the hedges. The circle is the
-    /// house's own chunky pool of torchlight; the ray is only a
-    /// breath of white between the two, so the light has a direction
-    /// without becoming a second sun.</summary>
+    /// house's own: one clean ring of torchlight with the chunky
+    /// dark around it, and nothing else drawn inside it. The ray is
+    /// only a breath of white between the ember and the circle, so
+    /// the light has a direction without becoming a second sun.</summary>
     private void DrawBeamShaft()
     {
         if (!_hasFlashlight || !_flashlightOn || _handRise >= 0.995f)
@@ -1709,7 +1748,6 @@ public partial class HedgeMaze : Node2D
 
         GetHandPose(out _, out _, out Vector2 lens);
         float strength = BeamFlicker() * (1f - _handRise);
-        var warm = new Color(1f, 0.88f, 0.6f);
 
         // The ray: a faint, transparent wedge of white from the
         // ember out towards the circle, fading away before it gets
@@ -1742,17 +1780,6 @@ public partial class HedgeMaze : Node2D
                 DrawPolygon(points, colors);
             }
         }
-
-        // The pool it lands in: a stepped, slightly squashed pool of
-        // light, hottest at the middle, the way his big torch burned
-        // through every bulb they owned. It sits inside the circle of
-        // light, so the chunky dark around it stays chunky.
-        DrawSetTransform(_beamPosition, 0f, new Vector2(1f, 0.74f));
-        DrawCircle(Vector2.Zero, 138f, new Color(warm.R, warm.G, warm.B, 0.08f * strength));
-        DrawCircle(Vector2.Zero, 100f, new Color(warm.R, warm.G, warm.B, 0.10f * strength));
-        DrawCircle(Vector2.Zero, 64f, new Color(warm.R, warm.G, warm.B, 0.12f * strength));
-        DrawCircle(Vector2.Zero, 34f, new Color(1f, 0.93f, 0.72f, 0.16f * strength));
-        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
         // The lamp itself, glinting in her hand.
         DrawCircle(lens, 17f, new Color(1f, 0.94f, 0.74f, 0.4f * strength));
