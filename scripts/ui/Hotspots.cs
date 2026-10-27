@@ -106,12 +106,13 @@ public static class Hotspots
         }
     }
 
-    /// <summary>Mark only the named object (level-3 hint).</summary>
-    public static void RevealObject(string objectName, float seconds = 3.5f)
+    /// <summary>Mark only the named object; callers may also include hidden targets.</summary>
+    public static void RevealObject(string objectName, float seconds = 3.5f, bool includeHidden = false)
     {
         var scene = SceneManager.Instance?.CurrentScene;
         if (scene == null || string.IsNullOrEmpty(objectName))
             return;
+        _markerScene = scene;
 
         foreach (var (node, memoryObject) in FindMemoryTargets(scene))
         {
@@ -122,17 +123,45 @@ public static class Hotspots
                 return;
         }
 
+        ExamineHandler hiddenFallback = null;
         foreach (var layer in FindExamineLayers(scene))
         {
             if (layer.GetParent()?.Name.ToString() != objectName)
                 continue;
-            if (!IsLayerActive(layer))
-                continue;
-
-            var marker = SpawnMarker(scene, LayerCenter(layer), oneShot: false, temporarySeconds: seconds);
-            if (marker != null)
-                return;
+            if (IsLayerActive(layer))
+            {
+                var marker = SpawnMarker(scene, LayerCenter(layer), oneShot: false, temporarySeconds: seconds);
+                if (marker != null)
+                    return;
+            }
+            else if (includeHidden)
+            {
+                hiddenFallback ??= layer;
+            }
         }
+
+        if (hiddenFallback != null)
+            SpawnMarker(scene, LayerCenter(hiddenFallback), oneShot: false, temporarySeconds: seconds);
+    }
+
+    /// <summary>Mark an authored target directly, even while its sprite is hidden.</summary>
+    public static void RevealNode(Node2D target, float seconds = 0f)
+    {
+        var scene = SceneManager.Instance?.CurrentScene;
+        if (scene == null || target == null || !GodotObject.IsInstanceValid(target))
+            return;
+        _markerScene = scene;
+        SpawnMarker(scene, target.GlobalPosition, oneShot: false, temporarySeconds: seconds);
+    }
+
+    /// <summary>Mark a fixed screen-space target in the current scene.</summary>
+    public static void RevealPosition(Vector2 globalPosition, float seconds = 0f)
+    {
+        var scene = SceneManager.Instance?.CurrentScene;
+        if (scene == null)
+            return;
+        _markerScene = scene;
+        SpawnMarker(scene, globalPosition, oneShot: false, temporarySeconds: seconds);
     }
 
     /// <summary>One-shot ripple at an arbitrary position (examine click feedback).</summary>

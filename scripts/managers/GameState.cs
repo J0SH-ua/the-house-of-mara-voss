@@ -1182,8 +1182,9 @@ public partial class GameState : Node
         string file = FileNameOf(path);
         string room = CurrentRoomName();
 
-        // The Tab objective is a room landmark, not a narrative recap.
-        // Keep it stable while the player is orienting themselves.
+        // Keep the concise HUD label aligned with the single interactive
+        // that Tab circles in each room. This is supplemental text, not a
+        // replacement for the target marker itself.
         switch (file)
         {
             case "bedroom_prologue.tscn": return "The door";

@@ -8,8 +8,8 @@ using Godot;
 ///  * HUD — current objective, clarity pips, memory-integrity meter, shards.
 ///  * Corruption screen overlay (shader) driven by GameState corruption.
 ///  * Pause menu, Settings panel, Memory Journal (fragments + echoes), toasts.
-///  * Global input: pause/journal/hint/clarity keys, a Tab-revealed current
-///    objective, guided first-time HUD callouts, and dialogue advance forwarding
+///  * Global input: pause/journal/hint/clarity keys, one room-specific Tab
+///    marker, guided first-time HUD callouts, and dialogue advance forwarding
 ///    (Dialogue lives in a SubViewport whose
 ///    _Input is not guaranteed to receive root input, so we forward clicks).
 /// Everything is built in code so no .tscn surgery was needed. Context-aware:
@@ -734,6 +734,7 @@ public partial class GameUI : CanvasLayer
             if (scenePath != null && scenePath.EndsWith("/room_5.tscn"))
                 _memoryVerbBarExpanded = false;
             Hotspots.HideAll();
+            _hotspotsHeld = false;
             if (_bagPanel != null)
                 _bagPanel.Visible = false;
             _openedBagFromPause = false;
@@ -805,7 +806,7 @@ public partial class GameUI : CanvasLayer
                 _controlsChip.OffsetBottom = -176f;
                 if (_controlsLabel != null)
                 {
-                    _controlsLabel.Text = "W/S move · A/D strafe · ←/→ turn · PgUp/PgDn look\nShift run · C crouch · Space jump · L torch · F use\nCaps hold-look back · V MEMORY tab · Tab objective/help";
+                    _controlsLabel.Text = "W/S move · A/D strafe · ←/→ turn · PgUp/PgDn look\nShift run · C crouch · Space jump · L torch · F use\nCaps hold-look back · V MEMORY tab · Tab movement help";
                     _controlsLabel.AddThemeFontSizeOverride("font_size", 16);
                 }
             }
@@ -821,7 +822,7 @@ public partial class GameUI : CanvasLayer
                 _controlsChip.OffsetBottom = -8f;
                 if (_controlsLabel != null)
                 {
-                    _controlsLabel.Text = "Tab — main objective      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause";
+                    _controlsLabel.Text = "Tab — room target      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause";
                     _controlsLabel.AddThemeFontSizeOverride("font_size", 16);
                 }
             }
@@ -877,11 +878,9 @@ public partial class GameUI : CanvasLayer
                 _corruptionMaterial.SetShaderParameter("intensity", next);
         }
 
-        // Tab is deliberately not a room-wide hotspot cheat: it reveals
-        // only the current main objective. Keep clue rings under player
-        // control (or their own authored scenes), and never expose every
-        // hidden thing just because Tab was tapped.
-        if (!_roomFlashPlaying && _hotspotsHeld)
+        // Tab's objective marker is a single authored target per room and
+        // stays up only while the key is held. Recover cleanly if focus is lost.
+        if (_hotspotsHeld && !Input.IsActionPressed(InputSetup.RevealObjective))
         {
             Hotspots.HideAll();
             _hotspotsHeld = false;
@@ -1101,10 +1100,10 @@ public partial class GameUI : CanvasLayer
         switch (_hudTourStep)
         {
             case 0:
-                title = "TAB — the main objective";
+                title = "TAB — room focus";
                 body = _hudTourIsMaze
-                    ? "Hold Tab for the one thing Mara needs next and the movement reminder at the lower-right. MEMORY and Clarity stay visible."
-                    : "Hold Tab to show the one current objective — for example, the locked cabinet. It does not reveal every hidden clue.";
+                    ? "In the maze, hold Tab for the movement reminder. There is no target marker here; MEMORY and Clarity stay visible."
+                    : "Hold Tab to circle this room's main interactive. It marks one chosen target, not every hotspot.";
                 break;
             case 1:
                 title = "THE MEMORY TAB";
@@ -1301,12 +1300,21 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        // Tab is a quick peek at the current main objective. In the maze
-        // it also reveals the movement hint; it never reveals hidden items.
-        if (@event.IsActionPressed(InputSetup.RevealObjective) &&
-            _context == UiContext.Game && !GetTree().Paused &&
-            !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing())
+        // Tab reveals the room's single authored landmark (not every
+        // interactive); the ring follows the hold and clears on release.
+        bool canRevealRoomTarget = _context == UiContext.Game && !GetTree().Paused &&
+            !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing() && !SceneManager.IsChanging;
+        if (@event.IsActionPressed(InputSetup.RevealObjective) && canRevealRoomTarget)
+        {
             _topHudHoldTimer = TopHudHoldSeconds;
+            if (!_hotspotsHeld)
+                RevealCurrentRoomTarget();
+        }
+        if (@event.IsActionReleased(InputSetup.RevealObjective) && _hotspotsHeld)
+        {
+            Hotspots.HideAll();
+            _hotspotsHeld = false;
+        }
 
         // The held-fragment moment takes the click for itself: admire,
         // then click, and it goes in the bag.
@@ -4107,6 +4115,44 @@ public partial class GameUI : CanvasLayer
 
     // ===================================================================== HUD
 
+    private void RevealCurrentRoomTarget()
+    {
+        string scenePath = SceneManager.CurrentScenePath;
+        string sceneFile = SceneFileName(scenePath);
+        string targetName = sceneFile switch
+        {
+            "bedroom_prologue.tscn" => "Door",
+            "room_1.tscn" => "DrawerFinal",
+            "room_2.tscn" => "TableFinal",
+            "room_3.tscn" => "JarsFinal",
+            "room_5.tscn" => "DeskDrawerFinal",
+            _ => string.Empty,
+        };
+
+        Hotspots.HideAll();
+        if (sceneFile == "room_4.tscn")
+        {
+            // The hallway door is deliberately hidden until its sentence is
+            // complete, but its marker still points to where it will appear.
+            var door = SceneManager.Instance?.CurrentScene?.GetNodeOrNull<Node2D>("Door");
+            if (door != null)
+                Hotspots.RevealNode(door);
+            else
+                Hotspots.RevealPosition(new Vector2(951f, 432f));
+            _hotspotsHeld = true;
+            return;
+        }
+
+        if (sceneFile is "room_6.tscn" or "room_7.tscn" or "hedge_maze.tscn")
+            return;
+
+        if (!string.IsNullOrEmpty(targetName))
+        {
+            Hotspots.RevealObject(targetName, seconds: 0f, includeHidden: true);
+            _hotspotsHeld = true;
+        }
+    }
+
     private void RefreshHud()
     {
         if (_objectiveLabel == null)
@@ -4503,7 +4549,7 @@ public partial class GameUI : CanvasLayer
         AddChild(_hud);
         BuildGameplayTorchHand();
 
-        // Tab briefly reveals only the current main objective. The status
+        // Tab briefly marks one room-authored interactive. The status
         // chip, Bag, and Memory tab are persistent gameplay HUD elements.
         _topHud = new Control
         {
@@ -4637,7 +4683,7 @@ public partial class GameUI : CanvasLayer
         controlsChip.OffsetRight = 1004;
         controlsChip.OffsetTop = -40;
         controlsChip.OffsetBottom = -8;
-        _controlsLabel = MakeLabel("Tab — main objective      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
+        _controlsLabel = MakeLabel("Tab — room target      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
             16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
         _controlsLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
         controlsChip.AddChild(_controlsLabel);
@@ -5454,7 +5500,7 @@ public partial class GameUI : CanvasLayer
                 var col = TutorialColumn();
                 col.AddChild(TutorialChip("CLICK — look closer", gold));
                 col.AddChild(TutorialChip("look again — deeper, at a cost", gold));
-                col.AddChild(TutorialChip("Tab — current objective", gold));
+                col.AddChild(TutorialChip("Tab — circle the room target", gold));
                 _tutorialVisual.AddChild(col);
                 break;
             }
@@ -5527,7 +5573,7 @@ public partial class GameUI : CanvasLayer
             {
                 _tutorialVisual.AddChild(TutorialImage("res://assets/images/core/ui/bag_icon.png", new Vector2(150, 150), cover: false));
                 var col = TutorialColumn();
-                col.AddChild(TutorialChip("Tab — current objective    ·    H — a nudge", gold));
+                col.AddChild(TutorialChip("Tab — room target    ·    H — a nudge", gold));
                 col.AddChild(TutorialChip("B — Mara's bag    ·    J — her journal", gold));
                 col.AddChild(TutorialChip("Q — step back    ·    Return \u2192 — the new room", gold));
                 col.AddChild(TutorialChip("click — dialogue    ·    Esc — pause", gold));
