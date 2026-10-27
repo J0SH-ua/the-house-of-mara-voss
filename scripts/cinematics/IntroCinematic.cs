@@ -35,7 +35,8 @@ public partial class IntroCinematic : Control
 		_whiteFlash = GetNode<ColorRect>("WhiteFlash");
 
 		AudioManager.Instance?.StopAmbience();
-		AudioManager.Instance?.PlayMusic(AudioManager.MusicIntro, -5f, 1.6f);
+		// 70% linear gain for the opening cutscene's background score.
+		AudioManager.Instance?.PlayMusic(AudioManager.MusicIntro, Mathf.LinearToDb(0.7f), 1.6f);
 
 		ConfigureFullscreenRect(_blackBg, new Color(0, 0, 0, 1), 0);
 		ConfigureFullscreenRect(_whiteFlash, new Color(1, 1, 1, 1), 2);

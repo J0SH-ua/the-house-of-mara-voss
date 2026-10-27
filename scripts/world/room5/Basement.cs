@@ -84,7 +84,9 @@ public partial class Basement : MemoryRoomBase
             return;
         }
 
-        AudioManager.Play(Sfx.FlashlightClick, -7f);
+        if (gs == null || !gs.HasFlag("house_flashlight_off") ||
+            (gs.DevToolsEnabled && gs.DevFreeFlashlight))
+            AudioManager.Play(Sfx.FlashlightClick, -7f);
         _ = PlayStoryLessonOnceAsync("story_lesson_basement",
             "No one took photographs down here. This is the part of the house that kept the rest of it warm, fed and mended — and like most keeping, it was never thanked in the family album.");
     }
@@ -567,7 +569,8 @@ public partial class Basement : MemoryRoomBase
     private void DrawFlashlight()
     {
         var gs = GameState.Instance;
-        if (gs == null || !gs.HasFlag("item_flashlight"))
+        if (gs == null || !gs.HasFlag("item_flashlight") ||
+            (gs.HasFlag("house_flashlight_off") && !(gs.DevToolsEnabled && gs.DevFreeFlashlight)))
         {
             DrawRect(new Rect2(0, 0, 1152, 648), new Color(0, 0, 0, 0.97f), true);
             return;

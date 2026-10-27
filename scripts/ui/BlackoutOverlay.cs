@@ -135,7 +135,8 @@ public partial class BlackoutOverlay : Control
 
         var gs = GameState.Instance;
         bool flickering = gs?.HasFlag("blackout_flickering") ?? false;
-        bool hasLight = gs?.HasFlag("item_flashlight") ?? false;
+        bool hasLight = gs != null && gs.HasFlag("item_flashlight") &&
+            (!gs.HasFlag("house_flashlight_off") || (gs.DevToolsEnabled && gs.DevFreeFlashlight));
 
         if (flickering || !hasLight)
         {

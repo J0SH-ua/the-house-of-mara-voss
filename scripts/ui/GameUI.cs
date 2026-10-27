@@ -415,6 +415,7 @@ public partial class GameUI : CanvasLayer
 
     private Control _heldRoot;
     private ColorRect _heldDim;
+    private ShaderMaterial _heldDimMaterial;
     private TextureRect _heldGlow;
     private TextureRect _heldIcon;
     private Label _heldName;
@@ -1515,6 +1516,15 @@ public partial class GameUI : CanvasLayer
         if (GetTree().Paused)
             return;
 
+        if (@event is InputEventKey flashlightKey && flashlightKey.Pressed &&
+            !flashlightKey.Echo && flashlightKey.PhysicalKeycode == Key.L &&
+            !FocusIsTextEditing() && !Dialogue.IsShowing && !Dialogue.IsInputBlocked &&
+            !AnyPanelOpen() && !SceneManager.IsChanging && ToggleHouseFlashlight())
+        {
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         if (@event.IsActionPressed(InputSetup.ToggleMemoryBar) &&
             SceneManager.Instance?.CurrentScene is HedgeMaze &&
             !FocusIsTextEditing() && !Dialogue.IsShowing && !Dialogue.IsInputBlocked && !AnyPanelOpen())
@@ -1604,6 +1614,43 @@ public partial class GameUI : CanvasLayer
             GoBack();
             GetViewport().SetInputAsHandled();
         }
+    }
+
+    private bool ToggleHouseFlashlight()
+    {
+        var gs = GameState.Instance;
+        if (gs == null || !gs.HasFlag("item_flashlight") ||
+            !FlashlightInBagForHeldMoment(gs))
+            return false;
+
+        string sceneFile = SceneFileName(SceneManager.CurrentScenePath);
+        bool blackoutRoom = gs.HasFlag("blackout_active") &&
+            !gs.HasFlag("backup_power_on") &&
+            (sceneFile is "room_1.tscn" or "room_2.tscn" or "room_3.tscn" or
+                "room_4.tscn" or "room_5.tscn" or "journey_to_room_2.tscn" or
+                "journey_to_room_3.tscn" or "journey_to_room_4.tscn");
+        bool underHouse = sceneFile is "basement.tscn" or "vent_crawl.tscn";
+        if (!blackoutRoom && !underHouse)
+            return false;
+
+        if (gs.DevToolsEnabled && gs.DevFreeFlashlight)
+        {
+            gs.ClearFlag("house_flashlight_off", save: false);
+            ShowToast("Developer light is locked on.", 1.6f, true);
+            return true;
+        }
+
+        bool wasOff = gs.HasFlag("house_flashlight_off");
+        if (wasOff)
+            gs.ClearFlag("house_flashlight_off", save: false);
+        else
+            gs.SetFlag("house_flashlight_off", save: false);
+
+        bool isNowOn = wasOff;
+        AudioManager.Play(Sfx.FlashlightClick, isNowOn ? -7f : -9f);
+        ShowToast(isNowOn ? "Flashlight on — mouse aims the beam." :
+            "Flashlight off — press L to turn it back on.", 1.8f, true);
+        return true;
     }
 
     /// <summary>Screen furniture that is allowed to receive a harmless
@@ -3748,7 +3795,7 @@ public partial class GameUI : CanvasLayer
                 "res://assets/images/core/items/flashlight.png",
                 "IN BAG",
                 "Her father's — top shelf of the kitchen cabinet that was never there",
-                "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout. The batteries, in this house, were never once dead.\n\nOnce it is in the Bag, move the mouse to aim its beam in the dark — in rooms, under the house, and over anything Mara is holding in her hand. Before that click puts it away, her other hand stays dark. In the vent, hold W to crawl; release W and Mara stops."));
+                "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout. The batteries, in this house, were never once dead.\n\nOnce it is in the Bag, move the mouse to aim its beam in the dark — in rooms, under the house, and over anything Mara is holding in her hand. Press L to switch the flashlight on or off in the dark. Before that click puts it away, her other hand stays dark. In the vent, hold W to crawl; release W and Mara stops."));
         }
 
         if (gs.HasFlag("item_iron_cellar_key"))
@@ -4597,6 +4644,9 @@ public partial class GameUI : CanvasLayer
             && !_heldShowing
             && !SceneManager.IsChanging
             && !AnyPanelOpen();
+        bool beamCanLightHand = gs != null && gs.HasFlag("item_flashlight") &&
+            (!gs.HasFlag("house_flashlight_off") || (gs.DevToolsEnabled && gs.DevFreeFlashlight)) &&
+            !(blackoutRoom && gs.HasFlag("blackout_flickering"));
 
         float handScale = gs != null && gs.DevToolsEnabled ? gs.DevFlashlightHandScale : 1f;
         float width = 320f * handScale;
@@ -4649,7 +4699,7 @@ public partial class GameUI : CanvasLayer
             _gameplayTorchLensIndicator.Position = handTopLeft + new Vector2(
                 width * lensX - _gameplayTorchLensIndicator.Size.X * 0.5f,
                 height * lensY - _gameplayTorchLensIndicator.Size.Y * 0.5f);
-            _gameplayTorchLensIndicator.Visible = show;
+            _gameplayTorchLensIndicator.Visible = show && beamCanLightHand;
         }
 
         Node activeRoom = SceneManager.Instance?.CurrentScene;
@@ -4672,7 +4722,9 @@ public partial class GameUI : CanvasLayer
         float distance = beamCenter.DistanceTo(lightPoint);
         float beamFalloff = 1f - Mathf.Clamp(
             (distance - beamRadius * 0.35f) / Mathf.Max(beamRadius * 0.65f, 1f), 0f, 1f);
-        float lightLevel = Mathf.Lerp(0.16f, 1f, beamFalloff);
+        float lightLevel = beamCanLightHand
+            ? Mathf.Lerp(0.16f, 1f, beamFalloff)
+            : 0.16f;
         // No added amber glow: only the aimed circle lifts the hand out
         // of shadow, in neutral light with a dim silhouette outside it.
         _gameplayTorchHand.Modulate = new Color(lightLevel, lightLevel, lightLevel, 0.96f);
@@ -7235,6 +7287,12 @@ public partial class GameUI : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Stop,
         };
         _heldDim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        var heldDimShader = GD.Load<Shader>("res://assets/shaders/held_light_circle.gdshader");
+        if (heldDimShader != null)
+        {
+            _heldDimMaterial = new ShaderMaterial { Shader = heldDimShader };
+            _heldDim.Material = _heldDimMaterial;
+        }
         _heldRoot.AddChild(_heldDim);
 
         _heldGlow = new TextureRect
@@ -7519,6 +7577,9 @@ public partial class GameUI : CanvasLayer
             radius = maze.FlashlightBeamRadius;
             return maze.FlashlightBeamActive;
         }
+        if (gs.HasFlag("house_flashlight_off") &&
+            !(gs.DevToolsEnabled && gs.DevFreeFlashlight))
+            return false;
         if (activeRoom is Basement basement)
         {
             centre = basement.FlashlightBeamPosition;
@@ -7582,14 +7643,26 @@ public partial class GameUI : CanvasLayer
         bool placeDark = sceneFile is
             "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn" or "hedge_maze.tscn";
         bool heldDark = blackoutDark || placeDark;
+        Vector2 viewportSize = GetViewport().GetVisibleRect().Size;
+        Vector2 beamCentre = GetViewport().GetMousePosition();
+        float beamRadius = 152f;
         bool torchLit = heldDark &&
-            TryGetMainFlashlightBeam(out _, out _);
+            TryGetMainFlashlightBeam(out beamCentre, out beamRadius);
         _heldTorchLit = torchLit && _heldShowing;
 
+        Color dimColor = heldDark
+            ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
+            : new Color(0.02f, 0.015f, 0.01f, 0.62f);
         if (_heldDim != null)
-            _heldDim.Color = heldDark
-                ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
-                : new Color(0.02f, 0.015f, 0.01f, 0.62f);
+            _heldDim.Color = _heldDimMaterial != null ? Colors.White : dimColor;
+        if (_heldDimMaterial != null)
+        {
+            _heldDimMaterial.SetShaderParameter("dim_color", dimColor);
+            _heldDimMaterial.SetShaderParameter("beam_enabled", torchLit);
+            _heldDimMaterial.SetShaderParameter("beam_center_px", beamCentre);
+            _heldDimMaterial.SetShaderParameter("viewport_size_px", viewportSize);
+            _heldDimMaterial.SetShaderParameter("beam_radius_px", beamRadius);
+        }
         if (_heldGlow != null)
             _heldGlow.Visible = !heldDark;
 

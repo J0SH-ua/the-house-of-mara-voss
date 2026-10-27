@@ -129,7 +129,9 @@ public partial class VentCrawl : Node2D
             // No talking in the duct. The torch clicks on, and
             // then it's elbows, knees and dripping water the whole
             // way down — Mara saves her voice for the far grille.
-            AudioManager.Play(Sfx.FlashlightClick, -5f);
+            if (gs == null || !gs.HasFlag("house_flashlight_off") ||
+                (gs.DevToolsEnabled && gs.DevFreeFlashlight))
+                AudioManager.Play(Sfx.FlashlightClick, -5f);
             _stage = CrawlStage.Crawling;
             _crawlSoundTimer = 0.1f;
         }
@@ -446,7 +448,13 @@ public partial class VentCrawl : Node2D
     {
         Vector2 beam = _beamPosition;
         var gs = GameState.Instance;
-        float radius = gs?.HasFlag("basement_battery_taken") == true ? 205f : 172f;
+        if (gs == null || !gs.HasFlag("item_flashlight") ||
+            (gs.HasFlag("house_flashlight_off") && !(gs.DevToolsEnabled && gs.DevFreeFlashlight)))
+        {
+            DrawRect(new Rect2(0, 0, 1152, 648), new Color(0.003f, 0.003f, 0.005f, 0.94f), true);
+            return;
+        }
+        float radius = gs.HasFlag("basement_battery_taken") ? 205f : 172f;
         float falloffScale = 1f;
         if (gs != null && gs.DevToolsEnabled)
         {
