@@ -848,7 +848,6 @@ public partial class GameUI : CanvasLayer
             UpdateContext();
         }
 
-        UpdatePendingPrologueHudTour();
         UpdateTopHud((float)delta);
         UpdateGameplayFlashlightHand((float)delta);
         RefreshBackButton();
@@ -4593,13 +4592,13 @@ public partial class GameUI : CanvasLayer
         bool reducedMotion = Settings.ReduceMotionOrDefault();
         // Keep the first-person hand's footfall gentle; the vent crawl is
         // slower still than Mara's ordinary house walk.
-        float stepSeconds = sceneFile == "vent_crawl.tscn" ? 1.6f : 1.35f;
+        float stepSeconds = sceneFile == "vent_crawl.tscn" ? 2.1f : 1.85f;
         if (walking && !reducedMotion)
             _torchHandWalkTime += delta * Mathf.Tau / stepSeconds;
 
         Vector2 bob = walking && !reducedMotion
-            ? new Vector2(Mathf.Sin(_torchHandWalkTime * 0.5f) * 7f,
-                Mathf.Abs(Mathf.Sin(_torchHandWalkTime)) * 4.5f)
+            ? new Vector2(Mathf.Sin(_torchHandWalkTime * 0.5f) * 3.5f,
+                Mathf.Abs(Mathf.Sin(_torchHandWalkTime)) * 2.25f)
             : Vector2.Zero;
         Vector2 viewSize = GetViewport().GetVisibleRect().Size;
         Vector2 mouse = GetViewport().GetMousePosition();
@@ -5418,7 +5417,6 @@ public partial class GameUI : CanvasLayer
     private bool _tutorialFromPause;
     private bool _tutorialFromPrologueAuto;
     private bool _tutorialAutoShown;
-    private bool _prologueHudTourPending;
 
     private void BuildTutorialPanel()
     {
@@ -8644,42 +8642,17 @@ public partial class GameUI : CanvasLayer
         }
     }
 
-    /// <summary>The prologue starts the pointed HUD callouts after Mara
-    /// wakes. They can be replayed any time from the pause menu.</summary>
+    /// <summary>The prologue starts the pointed HUD callouts after Mara's
+    /// waking dialogue finishes. The same tour can be replayed from pause.</summary>
     public void TryStartPrologueTutorial()
     {
         if (_tutorialAutoShown || _hudTourShowing)
             return;
 
-        // BedroomPrologue calls this only after Mara wakes and the narrated
-        // room reveal has finished. Queue rather than start on that exact
-        // frame: the last dialogue/input block or intro transition can still
-        // be unwinding, and must not silently swallow the tutorial.
+        // BedroomPrologue calls this at the end of its waking sequence, so
+        // start here rather than routing through a best-effort auto-show
+        // check that could discard the tour on a transient busy frame.
         _tutorialAutoShown = true;
-        _prologueHudTourPending = true;
-    }
-
-    private void UpdatePendingPrologueHudTour()
-    {
-        if (!_prologueHudTourPending)
-            return;
-
-        string scenePath = SceneManager.CurrentScenePath ?? string.Empty;
-        if (!string.IsNullOrEmpty(scenePath) && !scenePath.EndsWith("bedroom_prologue.tscn"))
-        {
-            _prologueHudTourPending = false;
-            return;
-        }
-
-        // The call comes directly after the waking dialogue. Wait through
-        // dialogue input blocks, intro/camera transitions, and any overlay
-        // rather than dropping the first-run tour on a transient busy frame.
-        if (_context != UiContext.Game || GetTree().Paused || Dialogue.IsShowing ||
-            Dialogue.IsInputBlocked || AnyPanelOpen() || SceneManager.IsChanging ||
-            _cutscenePlaying || _roomFlashPlaying || Settings.Instance == null)
-            return;
-
-        _prologueHudTourPending = false;
         ShowHudTour(isMaze: false);
     }
 }
