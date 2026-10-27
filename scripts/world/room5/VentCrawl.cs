@@ -434,8 +434,15 @@ public partial class VentCrawl : Node2D
     private void DrawFlashlightDarkness()
     {
         Vector2 beam = _beamPosition;
-        float radius = GameState.Instance?.HasFlag("basement_battery_taken") == true ? 205f : 172f;
-        DrawDarkOutside(beam, radius + 58f, new Color(0.004f, 0.004f, 0.006f, 0.62f));
+        var gs = GameState.Instance;
+        float radius = gs?.HasFlag("basement_battery_taken") == true ? 205f : 172f;
+        float falloffScale = 1f;
+        if (gs != null && gs.DevToolsEnabled)
+        {
+            radius *= gs.DevFlashlightScale;
+            falloffScale = gs.DevFlashlightScale;
+        }
+        DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.004f, 0.004f, 0.006f, 0.62f));
         DrawDarkOutside(beam, radius, new Color(0.003f, 0.003f, 0.005f, 0.78f));
         // Warm falloff, kept to square pixel rings rather than a shader.
         DrawArc(beam, radius * 0.96f, 0f, Mathf.Tau, 56,

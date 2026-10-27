@@ -30,6 +30,9 @@ public partial class GameUI : CanvasLayer
     // HUD
     private Control _hud;
     private Control _topHud;
+    private TextureRect _gameplayTorchHand;
+    private Label _controlsLabel;
+    private Button _mazeJournalButton;
     private float _topHudHoldTimer;
     private float _topHudAlpha;
     private const float TopHudHoldSeconds = 3.5f;
@@ -642,6 +645,7 @@ public partial class GameUI : CanvasLayer
         Instance = this;
         Layer = 90;
         ProcessMode = ProcessModeEnum.Always;
+        CursorHelper.ApplyDefaultCursor();
         _font = GD.Load<FontFile>(FontPath);
 
         BuildAmbientLife();
@@ -751,6 +755,37 @@ public partial class GameUI : CanvasLayer
             _rememberButton.MouseFilter = _topHudAlpha > 0.02f
                 ? Control.MouseFilterEnum.Stop
                 : Control.MouseFilterEnum.Ignore;
+
+        bool inMaze = SceneManager.Instance?.CurrentScene is HedgeMaze;
+        bool canShowControls = _context == UiContext.Game && !GetTree().Paused &&
+            !Dialogue.IsShowing && !AnyPanelOpen() && !FocusIsTextEditing();
+        if (_controlsChip != null)
+        {
+            _controlsChip.Visible = canShowControls && (!inMaze || _topHudAlpha > 0.02f);
+            _controlsChip.Modulate = inMaze
+                ? new Color(1f, 1f, 1f, _topHudAlpha)
+                : Colors.White;
+            if (inMaze)
+            {
+                _controlsChip.OffsetLeft = 332f;
+                _controlsChip.OffsetRight = 1140f;
+                if (_controlsLabel != null)
+                {
+                    _controlsLabel.Text = "A/D strafe · ←/→ turn · E/G/T/R memory · J Journal · F use · L torch · C crouch · Space jump · Tab hides";
+                    _controlsLabel.AddThemeFontSizeOverride("font_size", 14);
+                }
+            }
+            else
+            {
+                _controlsChip.OffsetLeft = 12f;
+                _controlsChip.OffsetRight = 1004f;
+                if (_controlsLabel != null)
+                {
+                    _controlsLabel.Text = "Tab — HUD / hotspots      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause";
+                    _controlsLabel.AddThemeFontSizeOverride("font_size", 16);
+                }
+            }
+        }
     }
 
     public override void _Process(double delta)
@@ -763,6 +798,7 @@ public partial class GameUI : CanvasLayer
         }
 
         UpdateTopHud((float)delta);
+        UpdateGameplayFlashlightHand();
         RefreshBackButton();
         RefreshForwardButton();
         RefreshRememberButton();
@@ -1044,42 +1080,40 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        // Inside the hedge walls, A turns her and C crouches. The
-        // movement scene consumes those keys first; this is the
-        // second lock on the same door. Memory Verbs rest there too
-        // (their bar is hidden), so E/T/R cannot arm one unseen.
-        bool hedgeMazeOwnsMovementKeys = SceneManager.Instance?.CurrentScene is HedgeMaze;
+        // C remains reserved for crouching in the maze. Memory verbs
+        // use E/G/T/R there too; the controls are revealed with Tab.
 
         if (@event.IsActionPressed(InputSetup.OpenJournal) && !FocusIsTextEditing())
         {
             OpenJournal();
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.ToggleClarity) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.ToggleClarity) &&
+                 SceneManager.Instance?.CurrentScene is not HedgeMaze && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 ClaritySystem.Toggle();
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryEcho) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryEcho) && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Echo);
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryAnchor) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryAnchor) && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Anchor);
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryTrace) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryTrace) && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Trace);
             GetViewport().SetInputAsHandled();
         }
-        else if (@event.IsActionPressed(InputSetup.MemoryRelease) && !hedgeMazeOwnsMovementKeys && !FocusIsTextEditing())
+        else if (@event.IsActionPressed(InputSetup.MemoryRelease) && !FocusIsTextEditing())
         {
             if (!Dialogue.IsShowing)
                 MemoryVerbSystem.Toggle(MemoryVerb.Release);
@@ -1363,6 +1397,14 @@ public partial class GameUI : CanvasLayer
             row.AddChild(button);
         }
 
+        _mazeJournalButton = MakeButton("J — Journal", 16);
+        _mazeJournalButton.Name = "MazeJournalButton";
+        _mazeJournalButton.CustomMinimumSize = new Vector2(132, 36);
+        _mazeJournalButton.FocusMode = Control.FocusModeEnum.None;
+        _mazeJournalButton.Visible = false;
+        _mazeJournalButton.Pressed += () => OpenJournal();
+        row.AddChild(_mazeJournalButton);
+
         _hud.AddChild(_verbPanel);
     }
 
@@ -1382,13 +1424,18 @@ public partial class GameUI : CanvasLayer
             _lastActiveMemoryVerb = activeVerb;
         }
 
+        bool inMaze = SceneManager.Instance?.CurrentScene is HedgeMaze;
+        bool mazePeek = inMaze && _context == UiContext.Game && _topHudAlpha > 0.02f
+            && !AnyPanelOpen() && !Dialogue.IsShowing && !GetTree().Paused && !SceneManager.IsChanging;
+        bool showExpanded = _memoryVerbBarExpanded || mazePeek;
+
         bool anyUnlocked = false;
         foreach (var (verb, button) in _verbButtons)
         {
             bool unlocked = gs != null && gs.HasVerb(verb);
             anyUnlocked |= unlocked;
             bool active = unlocked && gs.ActiveVerb == verb;
-            button.Visible = unlocked && _memoryVerbBarExpanded;
+            button.Visible = unlocked && showExpanded;
             button.Disabled = false;
             button.Text = $"{(active ? "◆ " : string.Empty)}{MemoryVerbSystem.HotkeyLabel(verb)} — {MemoryVerbSystem.DisplayName(verb)}";
             button.TooltipText = MemoryVerbSystem.Description(verb) + " Right-click or Esc releases it.";
@@ -1400,12 +1447,12 @@ public partial class GameUI : CanvasLayer
         if (_verbToggleButton != null)
         {
             _verbToggleButton.Visible = anyUnlocked;
-            _verbToggleButton.Text = _memoryVerbBarExpanded
+            _verbToggleButton.Text = showExpanded
                 ? "MEMORY  −"
                 : activeVerb != MemoryVerb.None
                     ? $"◆ {MemoryVerbSystem.DisplayName(activeVerb)}  +"
                     : "MEMORY  +";
-            _verbToggleButton.TooltipText = _memoryVerbBarExpanded
+            _verbToggleButton.TooltipText = showExpanded
                 ? "Collapse the Memory Verb bar"
                 : activeVerb != MemoryVerb.None
                     ? $"{MemoryVerbSystem.DisplayName(activeVerb)} is held — expand the Memory Verb bar"
@@ -1415,38 +1462,52 @@ public partial class GameUI : CanvasLayer
                 : new Color(0.88f, 0.78f, 0.60f));
         }
 
-        // Expanded: the familiar bottom-centre bar. Collapsed: a slim
-        // tab just right of Step Back, clear of Room 5's floor photos.
-        if (_memoryVerbBarExpanded)
+        // The maze's temporary Tab controls sit below the objective/status
+        // chips rather than over the prompt, flashlight hand, or interaction dot.
+        if (inMaze && mazePeek)
         {
             _verbPanel.AnchorLeft = 0.5f;
             _verbPanel.AnchorRight = 0.5f;
-            _verbPanel.OffsetLeft = -355;
-            _verbPanel.OffsetRight = 355;
-            _verbPanel.OffsetTop = -104;
-            _verbPanel.OffsetBottom = -48;
+            _verbPanel.AnchorTop = 0f;
+            _verbPanel.AnchorBottom = 0f;
+            _verbPanel.OffsetLeft = -430f;
+            _verbPanel.OffsetRight = 430f;
+            _verbPanel.OffsetTop = 212f;
+            _verbPanel.OffsetBottom = 268f;
+        }
+        else if (showExpanded)
+        {
+            _verbPanel.AnchorLeft = 0.5f;
+            _verbPanel.AnchorRight = 0.5f;
+            _verbPanel.AnchorTop = 1f;
+            _verbPanel.AnchorBottom = 1f;
+            _verbPanel.OffsetLeft = -355f;
+            _verbPanel.OffsetRight = 355f;
+            _verbPanel.OffsetTop = -104f;
+            _verbPanel.OffsetBottom = -48f;
         }
         else
         {
             _verbPanel.AnchorLeft = 0f;
             _verbPanel.AnchorRight = 0f;
-            _verbPanel.OffsetLeft = 284;
-            _verbPanel.OffsetRight = 456;
-            _verbPanel.OffsetTop = -88;
-            _verbPanel.OffsetBottom = -48;
+            _verbPanel.AnchorTop = 1f;
+            _verbPanel.AnchorBottom = 1f;
+            _verbPanel.OffsetLeft = 284f;
+            _verbPanel.OffsetRight = 456f;
+            _verbPanel.OffsetTop = -88f;
+            _verbPanel.OffsetBottom = -48f;
         }
-        _verbPanel.AnchorTop = 1f;
-        _verbPanel.AnchorBottom = 1f;
 
-        // Memory Verbs rest inside the hedge walls: A turns Mara
-        // there, and her torch hand owns the bottom-left corner.
-        _verbPanel.Visible = _context == UiContext.Game
-                             && anyUnlocked
-                             && !(SceneManager.Instance?.CurrentScene is HedgeMaze)
-                             && !AnyPanelOpen()
-                             && !Dialogue.IsShowing
-                             && !GetTree().Paused
-                             && !SceneManager.IsChanging;
+        if (_mazeJournalButton != null)
+            _mazeJournalButton.Visible = mazePeek;
+
+        bool ordinaryBarVisible = _context == UiContext.Game && !AnyPanelOpen()
+            && !Dialogue.IsShowing && !GetTree().Paused && !SceneManager.IsChanging;
+        _verbPanel.Visible = ordinaryBarVisible && (anyUnlocked || mazePeek)
+            && (!inMaze || mazePeek);
+        _verbPanel.Modulate = inMaze
+            ? new Color(1f, 1f, 1f, _topHudAlpha)
+            : Colors.White;
     }
 
     /// <summary>Keeps the Step Back button in sync with the live scene: shown
@@ -3654,12 +3715,6 @@ public partial class GameUI : CanvasLayer
               (gs.CountPlaced() > 0 ? $"   ·   Returned {gs.CountPlaced()}" : "")
             : string.Empty;
 
-        // The hedge walls draw their own controls and Mara's torch
-        // hand in the bottom-left; the room chip's C/A/E/T/R help
-        // does not apply there.
-        if (_controlsChip != null)
-            _controlsChip.Visible = !(SceneManager.Instance?.CurrentScene is HedgeMaze);
-
         RefreshBagButton();
         RefreshMemoryVerbBar();
     }
@@ -3934,11 +3989,76 @@ public partial class GameUI : CanvasLayer
         AddChild(_corruptionRect);
     }
 
+    private void BuildGameplayTorchHand()
+    {
+        if (_blackoutLayer == null)
+            return;
+
+        var texture = GD.Load<Texture2D>("res://assets/images/core/hand_flashlight.png");
+        if (texture == null)
+            return;
+
+        _gameplayTorchHand = new TextureRect
+        {
+            Name = "GameplayFlashlightHand",
+            Texture = texture,
+            Visible = false,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Modulate = new Color(1f, 1f, 1f, 0.96f),
+        };
+        _gameplayTorchHand.AnchorLeft = 0f;
+        _gameplayTorchHand.AnchorRight = 0f;
+        _gameplayTorchHand.AnchorTop = 1f;
+        _gameplayTorchHand.AnchorBottom = 1f;
+        _gameplayTorchHand.OffsetLeft = 0f;
+        _gameplayTorchHand.OffsetRight = 320f;
+        _gameplayTorchHand.OffsetTop = -320f * texture.GetHeight() / Mathf.Max(texture.GetWidth(), 1f);
+        _gameplayTorchHand.OffsetBottom = 0f;
+        // Layer 1 puts the hand over the room's darkness, but beneath
+        // the speech bubble (2) and the HUD proper (90).
+        _blackoutLayer.AddChild(_gameplayTorchHand);
+    }
+
+    private void UpdateGameplayFlashlightHand()
+    {
+        if (_gameplayTorchHand == null)
+            return;
+
+        var gs = GameState.Instance;
+        string path = SceneManager.CurrentScenePath ?? string.Empty;
+        int slash = path.LastIndexOf('/');
+        string sceneFile = slash >= 0 ? path.Substring(slash + 1) : path;
+        bool blackoutRoom = sceneFile is "room_1.tscn" or "room_2.tscn" or "room_3.tscn"
+            or "room_4.tscn" or "room_5.tscn" or "journey_to_room_2.tscn"
+            or "journey_to_room_3.tscn" or "journey_to_room_4.tscn";
+        bool isDark = (blackoutRoom && (gs?.HasFlag("blackout_active") == true
+                || gs?.HasFlag("blackout_flickering") == true))
+            || (sceneFile is "basement.tscn" or "vent_crawl.tscn");
+        bool show = _context == UiContext.Game
+            && gs?.HasFlag("item_flashlight") == true
+            && isDark
+            && !_heldShowing
+            && !SceneManager.IsChanging
+            && !AnyPanelOpen();
+
+        float handScale = gs != null && gs.DevToolsEnabled ? gs.DevFlashlightHandScale : 1f;
+        float width = 320f * handScale;
+        float height = width * _gameplayTorchHand.Texture.GetHeight()
+            / Mathf.Max(_gameplayTorchHand.Texture.GetWidth(), 1f);
+        _gameplayTorchHand.OffsetRight = width;
+        _gameplayTorchHand.OffsetTop = -height;
+        _gameplayTorchHand.Visible = show;
+    }
+
     private void BuildHud()
     {
         _hud = new Control { MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
         _hud.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         AddChild(_hud);
+        BuildGameplayTorchHand();
 
         // The upper HUD can be summoned briefly with Tab; the Bag button
         // remains a separate child of _hud and stays visible throughout.
@@ -4072,10 +4192,10 @@ public partial class GameUI : CanvasLayer
         controlsChip.OffsetRight = 1004;
         controlsChip.OffsetTop = -40;
         controlsChip.OffsetBottom = -8;
-        var controls = MakeLabel("Tab — HUD / look      C — clarity      E/A/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
+        _controlsLabel = MakeLabel("Tab — HUD / hotspots      C — clarity      E/G/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
             16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
-        controls.MouseFilter = Control.MouseFilterEnum.Ignore;
-        controlsChip.AddChild(controls);
+        _controlsLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        controlsChip.AddChild(_controlsLabel);
         _hud.AddChild(controlsChip);
         _controlsChip = controlsChip;
     }
@@ -4301,13 +4421,17 @@ public partial class GameUI : CanvasLayer
         AddDevToggle(toolsRight, "Map overlay", () => GameState.Instance?.DevShowMap ?? false,
             v => GameState.Instance?.SetDevShowMap(v));
 
-        AddDevSlider(toolsLeft, "Light circle size", 1, 3, 0.1,
+        AddDevSlider(toolsLeft, "Light circle size", 0.5, 3, 0.1,
             () => GameState.Instance?.DevFlashlightScale ?? 1f,
             v => GameState.Instance?.SetDevFlashlightScale((float)v),
             v => $"{v:0.0}×");
         AddDevSlider(toolsLeft, "Dev mouse sensitivity", 0.25, 3, 0.05,
             () => GameState.Instance?.DevMouseSensitivity ?? 1f,
             v => GameState.Instance?.SetDevMouseSensitivity((float)v),
+            v => $"{v:0.00}×");
+        AddDevSlider(toolsLeft, "Flashlight hand size", 0.55, 2.2, 0.05,
+            () => GameState.Instance?.DevFlashlightHandScale ?? 1f,
+            v => GameState.Instance?.SetDevFlashlightHandScale((float)v),
             v => $"{v:0.00}×");
 
         inner.AddChild(new HSeparator());

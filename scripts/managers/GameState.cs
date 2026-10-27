@@ -375,7 +375,7 @@ public partial class GameState : Node
             "A verb stays in Mara's hands while she is using it. Right-click or Esc puts it down."),
         ["way_anchor"] = ("A way of remembering — Anchor: hold still",
             "\"She would have loved to see how far you've come.\" One whole sentence gives Mara one thing that does not move when she repeats it.\n\n" +
-            "Look at a room normally first, so its contradictions can speak. Then choose Anchor (A, or its Memory-bar button) and click the one thing whose meaning never changed. A wrong Anchor does not spend the verb; the object will show why it slides. When the right thing is held, Anchor is spent and ordinary hands can work in the stillness it made."),
+            "Look at a room normally first, so its contradictions can speak. Then choose Anchor (G, or its Memory-bar button) and click the one thing whose meaning never changed. A wrong Anchor does not spend the verb; the object will show why it slides. When the right thing is held, Anchor is spent and ordinary hands can work in the stillness it made."),
         ["way_trace"] = ("A way of remembering — Trace: connect",
             "An apology is not one missed minute. It is the minute, and every minute that followed because of it.\n\n" +
             "Examine each stop normally first. When all of them have been faced, choose Trace (T, or its Memory-bar button) and click the same places again in the order the afternoon actually happened — each stop already told you whether she was waiting, passing time, leaving, or gone. Rising notes and the gold line mean the memory is joining. A wrong click breaks the line, so begin again where the waiting began."),
@@ -1468,7 +1468,7 @@ public partial class GameState : Node
             return NextHintLevel("Room5") switch
             {
                 1 => ("One object in this room has the same purpose in childhood and adulthood: it was left on for whoever came home late.", null),
-                2 => ("Anchor (A) must be chosen before the click. Choose the thing you examined that was warm in both years — the room will stop sliding around it.", null),
+                2 => ("Anchor (G) must be chosen before the click. Choose the thing you examined that was warm in both years — the room will stop sliding around it.", null),
                 _ => ("What stays lit for latecomers, by a bed, in a child's room and a woman's? Anchor that. Afterwards ordinary hands will do: the writing desk keeps a drawer.", null),
             };
         }
@@ -2508,6 +2508,7 @@ public partial class GameState : Node
     private bool _devMouseCamera;
     private bool _devMouseLight;
     private float _devFlashlightScale = 1f;
+    private float _devFlashlightHandScale = 1f;
     private float _devMouseSensitivity = 1f;
 
     public event Action DeveloperToolsChanged;
@@ -2521,6 +2522,7 @@ public partial class GameState : Node
     public bool DevMouseCamera => _devMouseCamera;
     public bool DevMouseLight => _devMouseLight;
     public float DevFlashlightScale => _devFlashlightScale;
+    public float DevFlashlightHandScale => _devFlashlightHandScale;
     public float DevMouseSensitivity => _devMouseSensitivity;
 
     /// <summary>Turn the whole toolset on or off. Everything the
@@ -2546,10 +2548,21 @@ public partial class GameState : Node
     /// developer who wants to see the whole hedge at once.</summary>
     public void SetDevFlashlightScale(float value)
     {
-        float clamped = Mathf.Clamp(value, 1f, 3f);
+        float clamped = Mathf.Clamp(value, 0.5f, 3f);
         if (Mathf.IsEqualApprox(clamped, _devFlashlightScale))
             return;
         _devFlashlightScale = clamped;
+        DeveloperToolsChanged?.Invoke();
+    }
+
+    /// <summary>Developer-only size multiplier for the separate hand
+    /// sprite that holds the flashlight. The default game art is unchanged.</summary>
+    public void SetDevFlashlightHandScale(float value)
+    {
+        float clamped = Mathf.Clamp(value, 0.55f, 2.2f);
+        if (Mathf.IsEqualApprox(clamped, _devFlashlightHandScale))
+            return;
+        _devFlashlightHandScale = clamped;
         DeveloperToolsChanged?.Invoke();
     }
 

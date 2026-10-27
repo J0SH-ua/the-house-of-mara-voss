@@ -41,7 +41,7 @@ public static class InputSetup
         AddKeyAction(RequestHint, Key.H);
         AddKeyAction(NavBack, Key.Q, Key.Backspace);
         AddKeyAction(MemoryEcho, Key.E);
-        AddKeyAction(MemoryAnchor, Key.A);
+        AddKeyAction(MemoryAnchor, Key.G);
         AddKeyAction(MemoryTrace, Key.T);
         AddKeyAction(MemoryRelease, Key.R);
     }
