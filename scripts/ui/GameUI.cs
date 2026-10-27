@@ -37,7 +37,7 @@ public partial class GameUI : CanvasLayer
     private Control _objectivePanel;
     private Control _statusPanel;
     private TextureRect _gameplayTorchHand;
-    private Panel _gameplayTorchLensIndicator;
+    private TextureRect _gameplayTorchLensIndicator;
     private float _torchHandWalkTime;
     private Vector2 _torchHandSway;
     private Label _controlsLabel;
@@ -4600,26 +4600,20 @@ public partial class GameUI : CanvasLayer
         _gameplayTorchHand.OffsetRight = 0f;
         _gameplayTorchHand.OffsetTop = -320f * texture.GetHeight() / Mathf.Max(texture.GetWidth(), 1f);
         _gameplayTorchHand.OffsetBottom = 0f;
-        _gameplayTorchLensIndicator = new Panel
+        _gameplayTorchLensIndicator = new TextureRect
         {
-            Name = "FlashlightLensOnIndicator",
+            Name = "FlashlightLensOnGlow",
+            Texture = GD.Load<Texture2D>("res://assets/images/core/hand_flashlight_lens_lit.png"),
             Visible = false,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-            Rotation = Mathf.DegToRad(32f),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        // Tint the whole glass lens while the flashlight is on, rather than
-        // relying on a tiny specular dot that disappears at gameplay scale.
-        var lensStyle = new StyleBoxFlat
-        {
-            BgColor = new Color(1f, 0.72f, 0.035f, 0.68f),
-            BorderColor = new Color(1f, 0.94f, 0.32f, 0.98f),
-            ShadowColor = new Color(1f, 0.72f, 0.06f, 0.55f),
-            ShadowSize = 8,
-        };
-        lensStyle.SetBorderWidthAll(2);
-        lensStyle.SetCornerRadiusAll(20);
-        _gameplayTorchLensIndicator.AddThemeStyleboxOverride("panel", lensStyle);
+        _gameplayTorchLensIndicator.AnchorLeft = 1f;
+        _gameplayTorchLensIndicator.AnchorRight = 1f;
+        _gameplayTorchLensIndicator.AnchorTop = 1f;
+        _gameplayTorchLensIndicator.AnchorBottom = 1f;
         // Keep the lit lens as a sibling, not a child, so the hand's
         // beam-based dimming cannot wash out the on-state indicator.
         // Layer 1 puts both over the room's darkness, below the speech
@@ -4695,15 +4689,13 @@ public partial class GameUI : CanvasLayer
         _gameplayTorchHand.OffsetBottom = -bottomInset + _torchHandSway.Y;
         if (_gameplayTorchLensIndicator != null)
         {
-            const float lensX = 0.145f;
-            const float lensY = 0.17f;
-            _gameplayTorchLensIndicator.Size = new Vector2(48f, 36f) * handScale;
-            Vector2 handTopLeft = new(
-                viewSize.X - width - rightInset + _torchHandSway.X,
-                viewSize.Y - height - bottomInset + _torchHandSway.Y);
-            _gameplayTorchLensIndicator.Position = handTopLeft + new Vector2(
-                width * lensX - _gameplayTorchLensIndicator.Size.X * 0.5f,
-                height * lensY - _gameplayTorchLensIndicator.Size.Y * 0.5f);
+            // This overlay uses the same full hand texture coordinates, but
+            // contains only its warm, brightened glass pixels. Copying the
+            // hand's rect keeps the lens locked exactly to the flashlight.
+            _gameplayTorchLensIndicator.OffsetLeft = _gameplayTorchHand.OffsetLeft;
+            _gameplayTorchLensIndicator.OffsetRight = _gameplayTorchHand.OffsetRight;
+            _gameplayTorchLensIndicator.OffsetTop = _gameplayTorchHand.OffsetTop;
+            _gameplayTorchLensIndicator.OffsetBottom = _gameplayTorchHand.OffsetBottom;
             _gameplayTorchLensIndicator.Visible = show && beamCanLightHand;
         }
 
@@ -7578,22 +7570,23 @@ public partial class GameUI : CanvasLayer
         Node activeRoom = SceneManager.Instance?.CurrentScene;
         if (activeRoom is HedgeMaze maze)
         {
-            centre = maze.FlashlightBeamPosition;
+            centre = GetViewport().GetCanvasTransform() * maze.FlashlightBeamPosition;
             radius = maze.FlashlightBeamRadius;
             return maze.FlashlightBeamActive;
         }
         if (gs.HasFlag("house_flashlight_off") &&
             !(gs.DevToolsEnabled && gs.DevFreeFlashlight))
             return false;
+        Transform2D worldToViewport = GetViewport().GetCanvasTransform();
         if (activeRoom is Basement basement)
         {
-            centre = basement.FlashlightBeamPosition;
+            centre = worldToViewport * basement.FlashlightBeamPosition;
             radius = basement.FlashlightBeamRadius;
             return true;
         }
         if (activeRoom is VentCrawl vent)
         {
-            centre = vent.FlashlightBeamPosition;
+            centre = worldToViewport * vent.FlashlightBeamPosition;
             radius = vent.FlashlightBeamRadius;
             return true;
         }
