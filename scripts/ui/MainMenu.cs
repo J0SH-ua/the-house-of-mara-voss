@@ -136,6 +136,7 @@ public partial class MainMenu : Control
 
 	public override void _Process(double delta)
 	{
+		ApplyMenuUiScale();
 		if (_menuRainLeft == null || _menuRainRight == null || _menuSteam == null)
 			return;
 
@@ -157,6 +158,21 @@ public partial class MainMenu : Control
 
 		float steamAlpha = 0.52f + 0.08f * Mathf.Sin((float)_menuFxTime * 1.3f);
 		_menuSteam.Modulate = new Color(1f, 1f, 1f, steamAlpha);
+	}
+
+	private void ApplyMenuUiScale()
+	{
+		ApplyCenteredScale(GetNodeOrNull<Control>("SubViewportContainer/SubViewport/Center"));
+		ApplyCenteredScale(_fullStoryModal?.GetNodeOrNull<Control>("Panel"));
+		ApplyCenteredScale(_aboutModal?.GetNodeOrNull<Control>("Panel"));
+	}
+
+	private static void ApplyCenteredScale(Control control)
+	{
+		if (control == null || control.Size.X <= 0f || control.Size.Y <= 0f)
+			return;
+		control.PivotOffset = control.Size * 0.5f;
+		control.Scale = new Vector2(0.8f, 0.8f);
 	}
 
 	private void BuildMenuAtmosphere()
