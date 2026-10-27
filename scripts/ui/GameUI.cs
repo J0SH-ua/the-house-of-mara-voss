@@ -735,6 +735,8 @@ public partial class GameUI : CanvasLayer
             MemoryVerbSystem.Cancel(silent: true);
             _lastActiveMemoryVerb = MemoryVerb.None;
             CancelHudTour();
+            if (scenePath != null && scenePath.EndsWith("bedroom_prologue.tscn"))
+                _tutorialAutoShown = false;
             // Room 5's painted photographs live along the bottom edge;
             // arrive there with only the slim Memory tab showing.
             if (scenePath != null && scenePath.EndsWith("/room_5.tscn"))
@@ -846,6 +848,7 @@ public partial class GameUI : CanvasLayer
             UpdateContext();
         }
 
+        UpdatePendingPrologueHudTour();
         UpdateTopHud((float)delta);
         UpdateGameplayFlashlightHand((float)delta);
         RefreshBackButton();
@@ -5415,6 +5418,7 @@ public partial class GameUI : CanvasLayer
     private bool _tutorialFromPause;
     private bool _tutorialFromPrologueAuto;
     private bool _tutorialAutoShown;
+    private bool _prologueHudTourPending;
 
     private void BuildTutorialPanel()
     {
@@ -8644,26 +8648,39 @@ public partial class GameUI : CanvasLayer
     /// wakes. They can be replayed any time from the pause menu.</summary>
     public void TryStartPrologueTutorial()
     {
-        MaybeAutoShowTutorial(SceneManager.CurrentScenePath);
+        if (_tutorialAutoShown || _hudTourShowing)
+            return;
+
+        // BedroomPrologue calls this only after Mara wakes and the narrated
+        // room reveal has finished. Queue rather than start on that exact
+        // frame: the last dialogue/input block or intro transition can still
+        // be unwinding, and must not silently swallow the tutorial.
+        _tutorialAutoShown = true;
+        _prologueHudTourPending = true;
     }
 
-    private void MaybeAutoShowTutorial(string scenePath)
+    private void UpdatePendingPrologueHudTour()
     {
-        if (scenePath == null || !scenePath.EndsWith("bedroom_prologue.tscn") ||
-            GameState.Instance?.HasFlag("prologue_awake") != true || Settings.Instance == null)
+        if (!_prologueHudTourPending)
             return;
 
-        if (_tutorialAutoShown)
+        string scenePath = SceneManager.CurrentScenePath ?? string.Empty;
+        if (!string.IsNullOrEmpty(scenePath) && !scenePath.EndsWith("bedroom_prologue.tscn"))
+        {
+            _prologueHudTourPending = false;
             return;
-        _tutorialAutoShown = true;
+        }
 
-        // The new tutorial is the actual on-screen HUD tour, not another
-        // confirmation or a menu of pages. Keep its first-run gate separate
-        // from the legacy How to Play booklet in the main menu.
-        if (Settings.Instance.PrologueTutorialSeen)
-            TryStartHouseHudTour();
-        else
-            TryStartHouseHudTour(force: true);
+        // The call comes directly after the waking dialogue. Wait through
+        // dialogue input blocks, intro/camera transitions, and any overlay
+        // rather than dropping the first-run tour on a transient busy frame.
+        if (_context != UiContext.Game || GetTree().Paused || Dialogue.IsShowing ||
+            Dialogue.IsInputBlocked || AnyPanelOpen() || SceneManager.IsChanging ||
+            _cutscenePlaying || _roomFlashPlaying || Settings.Instance == null)
+            return;
+
+        _prologueHudTourPending = false;
+        ShowHudTour(isMaze: false);
     }
 }
 
