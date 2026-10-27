@@ -132,6 +132,9 @@ public partial class Settings : Node
 
     public void ApplyDisplay()
     {
+        // Change only the window mode. The SubViewport's 1152×648 game
+        // canvas is fixed by the scenes and stretches to the window; do not
+        // request a monitor-resolution change here.
         DisplayServer.WindowSetMode(Fullscreen
             ? DisplayServer.WindowMode.Fullscreen
             : DisplayServer.WindowMode.Windowed);

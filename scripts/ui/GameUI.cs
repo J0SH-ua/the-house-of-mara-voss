@@ -4195,7 +4195,7 @@ public partial class GameUI : CanvasLayer
 
         vbox.AddChild(new HSeparator());
 
-        AddToggle(vbox, "Fullscreen",
+        AddToggle(vbox, "Fullscreen (keep game resolution)",
             () => Settings.Instance.Fullscreen,
             v => Settings.Instance.Fullscreen = v);
         AddToggle(vbox, "Reduce motion / flashing",
