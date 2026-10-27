@@ -414,7 +414,6 @@ public partial class GameUI : CanvasLayer
 
     private Control _heldRoot;
     private ColorRect _heldDim;
-    private HeldBeam _heldBeam;
     private TextureRect _heldGlow;
     private TextureRect _heldIcon;
     private Label _heldName;
@@ -7237,13 +7236,6 @@ public partial class GameUI : CanvasLayer
         };
         _heldRoot.AddChild(_heldIcon);
 
-        // The torch in her other hand, drawn over hand and item
-        // but under the words: dark only, and only when the
-        // flashlight is actually hers to shine.
-        _heldBeam = new HeldBeam { Visible = false };
-        _heldBeam.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _heldRoot.AddChild(_heldBeam);
-
         _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
         _heldName.HorizontalAlignment = HorizontalAlignment.Center;
         _heldName.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -7349,9 +7341,9 @@ public partial class GameUI : CanvasLayer
         // Dad's flashlight has actually been clicked into the Bag
         // (its own first held moment included), there is no beam,
         // no warm glow and no lit hand here. Once it is bagged,
-        // the mouse becomes Mara's wrist over whatever she holds.
+        // the actual scene beam decides whether her hand and its object are lit.
         _heldIcon.Modulate = Colors.White;
-        UpdateHeldTorchLighting(snapBeamToMouse: true);
+        UpdateHeldTorchLighting();
         _heldHint.Text = _heldTorchLit
             ? "move mouse — aim Dad's torch · click"
             : "click";
@@ -7390,8 +7382,8 @@ public partial class GameUI : CanvasLayer
             ? "move mouse — aim Dad's torch · click — put it in the bag"
             : "click — put it in the bag";
 
-        // The wrist does not chase the lift on its own anymore:
-        // while the torch is lit, the player's mouse is the wrist.
+        // The wrist stays planted; the scene's flashlight circle is
+        // aimed independently and only brightens the hand when it lands.
 
         _heldTween?.Kill();
         _heldTween = CreateTween();
@@ -7418,11 +7410,6 @@ public partial class GameUI : CanvasLayer
             return;
         _heldShowing = false;
         _heldTorchLit = false;
-        if (_heldBeam != null)
-        {
-            _heldBeam.PlayerControlled = false;
-            _heldBeam.TargetStrength = 0f;
-        }
         AudioManager.Play(_heldShowingItem ? Sfx.DrawerClose : Sfx.ShardPlace, -9f,
             _heldShowingItem ? 1.12f : 1f);
 
@@ -7467,7 +7454,7 @@ public partial class GameUI : CanvasLayer
     /// flashlight is still queued for — or sitting in — its own
     /// first "click, and it flies to the bag" moment, it is in
     /// her hand, not in the Bag yet.</summary>
-    private bool FlashlightInBagForHeldBeam(GameState gs)
+    private bool FlashlightInBagForHeldMoment(GameState gs)
     {
         if (gs == null || !gs.HasFlag("item_flashlight"))
             return false;
@@ -7483,31 +7470,63 @@ public partial class GameUI : CanvasLayer
         return true;
     }
 
-    private Vector2 HeldTorchSource()
+    /// <summary>Read the same beam position and radius the active dark
+    /// scene uses. The held overlay never draws its own light.</summary>
+    private bool TryGetMainFlashlightBeam(out Vector2 centre, out float radius)
     {
-        // When the flashlight itself is the thing taken back in
-        // hand from the Bag, its own head is the lamp. For every
-        // other held thing, it burns in her other hand, just out
-        // of the frame's bottom corner.
-        if (_heldItemId == "item_flashlight" && _heldIcon != null)
-            return _heldIcon.Position + _heldIcon.PivotOffset;
+        var gs = GameState.Instance;
+        centre = GetViewport().GetMousePosition();
+        radius = gs?.HasFlag("basement_battery_taken") == true ? 198f : 152f;
+        if (gs == null || !FlashlightInBagForHeldMoment(gs) ||
+            !gs.HasFlag("item_flashlight"))
+            return false;
 
-        Vector2 view = GetViewport().GetVisibleRect().Size;
-        return new Vector2(84f, view.Y + 16f);
+        Node activeRoom = SceneManager.Instance?.CurrentScene;
+        if (activeRoom is HedgeMaze maze)
+        {
+            centre = maze.FlashlightBeamPosition;
+            radius = maze.FlashlightBeamRadius;
+            return maze.FlashlightBeamActive;
+        }
+        if (activeRoom is Basement basement)
+        {
+            centre = basement.FlashlightBeamPosition;
+            radius = basement.FlashlightBeamRadius;
+            return true;
+        }
+        if (activeRoom is VentCrawl vent)
+        {
+            centre = vent.FlashlightBeamPosition;
+            radius = vent.FlashlightBeamRadius;
+            return true;
+        }
+
+        string sceneFile = SceneFileName(SceneManager.CurrentScenePath);
+        if (gs.HasFlag("blackout_active") && !gs.HasFlag("blackout_flickering") &&
+            sceneFile is "room_1.tscn" or "room_2.tscn" or "room_3.tscn" or
+                "room_4.tscn" or "room_5.tscn" or "journey_to_room_2.tscn" or
+                "journey_to_room_3.tscn" or "journey_to_room_4.tscn")
+        {
+            centre = _blackoutOverlay?.FlashlightBeamPosition ?? centre;
+            radius = _blackoutOverlay?.FlashlightBeamRadius ?? radius;
+            return true;
+        }
+
+        return false;
     }
 
     private float HeldTorchLightLevel(Vector2 centre)
     {
-        if (_heldBeam == null)
-            return 1f;
-        float distance = _heldBeam.Aim.DistanceTo(centre);
-        float falloff = 1f - Mathf.Clamp((distance - 110f) / 330f, 0f, 1f);
-        float strength = Mathf.Clamp(_heldBeam.CurrentStrength, 0f, 1f);
-        return 0.16f + 0.96f * falloff * strength;
+        if (!TryGetMainFlashlightBeam(out Vector2 beamCentre, out float beamRadius))
+            return 0.16f;
+        float distance = beamCentre.DistanceTo(centre);
+        float falloff = 1f - Mathf.Clamp(
+            (distance - beamRadius * 0.35f) / Mathf.Max(beamRadius * 0.65f, 1f), 0f, 1f);
+        return Mathf.Lerp(0.16f, 1f, falloff);
     }
 
     private static Color HeldTorchTint(float level, float alpha) =>
-        new Color(level, level * 0.96f, level * 0.84f, alpha);
+        new Color(level, level, level, alpha);
 
     /// <summary>All darkness light for the held moment, in one
     /// place. The house blackout is one kind of dark; a place
@@ -7520,7 +7539,7 @@ public partial class GameUI : CanvasLayer
     /// the same dim, but the beam is the player's — the mouse
     /// aims it, and the hand and held thing are only as bright
     /// as the light actually landing on them.</summary>
-    private void UpdateHeldTorchLighting(bool snapBeamToMouse = false)
+    private void UpdateHeldTorchLighting()
     {
         if (_heldRoot == null || _heldHand == null || _heldIcon == null)
             return;
@@ -7532,7 +7551,8 @@ public partial class GameUI : CanvasLayer
         bool placeDark = sceneFile is
             "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn" or "hedge_maze.tscn";
         bool heldDark = blackoutDark || placeDark;
-        bool torchLit = heldDark && FlashlightInBagForHeldBeam(gs);
+        bool torchLit = heldDark &&
+            TryGetMainFlashlightBeam(out _, out _);
         _heldTorchLit = torchLit && _heldShowing;
 
         if (_heldDim != null)
@@ -7541,23 +7561,6 @@ public partial class GameUI : CanvasLayer
                 : new Color(0.02f, 0.015f, 0.01f, 0.62f);
         if (_heldGlow != null)
             _heldGlow.Visible = !heldDark;
-
-        if (_heldBeam != null)
-        {
-            if (_heldTorchLit)
-            {
-                _heldBeam.PlayerControlled = true;
-                _heldBeam.Source = HeldTorchSource();
-                if (snapBeamToMouse)
-                    _heldBeam.SnapToMouse();
-                _heldBeam.TargetStrength = 1f;
-                _heldBeam.Visible = true;
-            }
-            else
-            {
-                _heldBeam.TurnOffImmediately();
-            }
-        }
 
         float handAlpha = _heldHand.Modulate.A;
         float iconAlpha = _heldIcon.Modulate.A;

@@ -157,6 +157,9 @@ public partial class HedgeMaze : Node2D
     // battery from older saves widens it the same way).
     private const float BeamRadius = 158f;
     private const float StrongBeamRadius = 208f;
+    public Vector2 FlashlightBeamPosition => _beamPosition;
+    public float FlashlightBeamRadius => BeamRadiusNow();
+    public bool FlashlightBeamActive => _hasFlashlight && _flashlightOn;
 
     // The garden lamp is a machine of her own: when it is switched
     // on it throws its own warm light, this far across the path.

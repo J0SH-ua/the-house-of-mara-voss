@@ -98,6 +98,7 @@ public partial class AudioManager : Node
     private const string AmbienceFirePath = SfxDir + "ambience_fire.wav";
     private const string AmbienceGardenPath = SfxDir + "ambience_garden.wav";
     private const string AmbiencePorchPath = SfxDir + "ambience_porch.wav";
+    private const string AmbienceHedgeMazePath = SfxDir + "ambience_hedge_maze.wav";
     private const string AmbienceBasementPath = SfxDir + "ambience_basement.wav";
     private const string AmbienceDripsPath = SfxDir + "ambience_drips.wav";
     private const string AmbienceVentAirPath = SfxDir + "ambience_vent_air.wav";
@@ -369,26 +370,26 @@ public partial class AudioManager : Node
         // are several dB quieter at source than the room music, so these
         // gains are low enough for rain/fire/room tone to lead the mix.
         bool puzzle = scene.Contains("puzzle") || scene.Contains("difference_investigation");
-        float volume = puzzle ? -28f : -25f;
+        float volume = puzzle ? -26f : -23f;
 
         if (scene.Contains("difference_investigation"))
-            PlayMusic(MusicRoom2, -28f);
+            PlayMusic(MusicRoom2, -26f);
         else if (scene.Contains("jar_closeup"))
-            PlayMusic(MusicRoom3, -28f);
+            PlayMusic(MusicRoom3, -26f);
         else if (scene.Contains("kitchen_cabinet"))
-            PlayMusic(MusicRoom1, -28f);
+            PlayMusic(MusicRoom1, -26f);
         else if (scene.Contains("flashback"))
-            PlayMusic(MusicRoom4, -28f);
+            PlayMusic(MusicRoom4, -26f);
         else if (scene.Contains("apartment"))
-            PlayMusic(MusicRoom5, -28f);
+            PlayMusic(MusicRoom5, -26f);
         else if (scene.Contains("basement") || scene.Contains("vent_crawl") || scene.Contains("lockpick") || scene.Contains("breaker_box"))
-            PlayMusic(MusicRoom5, -29f);
+            PlayMusic(MusicRoom5, -27f);
         else if (scene.Contains("bridge_repair") || scene.Contains("hedge_maze"))
-            PlayMusic(MusicRoom6, -26f);
+            PlayMusic(MusicRoom6, -24f);
         else if (scene.EndsWith("room_7.tscn") || scene.EndsWith("door.tscn"))
             PlayMusic(MusicFinale, -18f);
         else if (scene.Contains("bedroom"))
-            PlayMusic(MusicRoom1, -26f);
+            PlayMusic(MusicRoom1, -24f);
         else if (scene.Contains("room_1"))
             PlayMusic(MusicRoom1, volume);
         else if (scene.Contains("room_2"))
@@ -424,8 +425,8 @@ public partial class AudioManager : Node
     /// <summary>Each place sounds like itself, mixed in front of the
     /// background score: rain where the windows are wet (Room 5, the
     /// Apartment), the fire in Room 2, wind and leaves in the garden,
-    /// crickets at dusk by the bridge and inside the hedge walls,
-    /// drips and furnace air below the
+    /// crickets at dusk by the bridge, a distinct leaf-and-cricket bed
+    /// inside the hedge walls, drips and furnace air below the
     /// house, and plain room tone everywhere else. Crossfaded like music.</summary>
     public void PlayAmbienceForScene(string scenePath)
     {
@@ -458,11 +459,12 @@ public partial class AudioManager : Node
             scene.Contains("vent_crawl") ? (AmbienceDripsPath, -11.5f)
             : scene.Contains("basement") || scene.Contains("breaker_box") ? (AmbienceDripsPath, -13f)
             : scene.Contains("lockpick") ? (AmbiencePath, -20f)
-            : scene.Contains("bridge_repair") || scene.Contains("hedge_maze") ? (AmbiencePorchPath, -16f)
+            : scene.Contains("hedge_maze") ? (AmbienceHedgeMazePath, -13f)
+            : scene.Contains("bridge_repair") ? (AmbiencePorchPath, -15f)
             : scene.Contains("apartment") ? (AmbienceRainPath, -15f)
             : scene.Contains("room_5") ? (AmbienceRainPath, -15f)
             : scene.Contains("room_2") || scene.Contains("difference_investigation") ? (AmbienceFirePath, puzzle || scene.Contains("difference_investigation") ? -20f : -17f)
-            : scene.Contains("room_6") ? (AmbienceGardenPath, -16f)
+            : scene.Contains("room_6") ? (AmbienceGardenPath, -15f)
             : (AmbiencePath, -18f);
 
         CrossfadeAmbience(ambience.path, ambience.volume);
