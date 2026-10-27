@@ -415,8 +415,6 @@ public partial class GameUI : CanvasLayer
 
     private Control _heldRoot;
     private ColorRect _heldDim;
-    private ColorRect _heldBeamOverlay;
-    private ShaderMaterial _heldDimMaterial;
     private TextureRect _heldGlow;
     private TextureRect _heldIcon;
     private Label _heldName;
@@ -7284,12 +7282,6 @@ public partial class GameUI : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Stop,
         };
         _heldDim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        var heldDimShader = GD.Load<Shader>("res://assets/shaders/held_light_circle.gdshader");
-        if (heldDimShader != null)
-        {
-            _heldDimMaterial = new ShaderMaterial { Shader = heldDimShader };
-            _heldDim.Material = _heldDimMaterial;
-        }
         _heldRoot.AddChild(_heldDim);
 
         _heldGlow = new TextureRect
@@ -7321,20 +7313,6 @@ public partial class GameUI : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         _heldRoot.AddChild(_heldIcon);
-
-        // The scene's blackout is above world sprites; mirror that ordering
-        // over the held display so the flashlight circle falls across Mara's
-        // hand and whatever she is holding, not just the background behind it.
-        _heldBeamOverlay = new ColorRect
-        {
-            Color = Colors.White,
-            Visible = false,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        _heldBeamOverlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        if (_heldDimMaterial != null)
-            _heldBeamOverlay.Material = _heldDimMaterial;
-        _heldRoot.AddChild(_heldBeamOverlay);
 
         _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
         _heldName.HorizontalAlignment = HorizontalAlignment.Center;
@@ -7656,28 +7634,16 @@ public partial class GameUI : CanvasLayer
         bool placeDark = sceneFile is
             "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn" or "hedge_maze.tscn";
         bool heldDark = blackoutDark || placeDark;
-        Vector2 viewportSize = GetViewport().GetVisibleRect().Size;
-        Vector2 beamCentre = GetViewport().GetMousePosition();
-        float beamRadius = 152f;
         bool torchLit = heldDark &&
-            TryGetMainFlashlightBeam(out beamCentre, out beamRadius);
+            TryGetMainFlashlightBeam(out _, out _);
         _heldTorchLit = torchLit && _heldShowing;
 
-        Color dimColor = heldDark
-            ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
-            : new Color(0.02f, 0.015f, 0.01f, 0.62f);
+        // Keep the inspection backdrop steady. Only Mara's hand and the
+        // object in it respond to the flashlight, not the room behind them.
         if (_heldDim != null)
-            _heldDim.Color = _heldDimMaterial != null ? Colors.White : dimColor;
-        if (_heldDimMaterial != null)
-        {
-            _heldDimMaterial.SetShaderParameter("dim_color", dimColor);
-            _heldDimMaterial.SetShaderParameter("beam_enabled", torchLit);
-            _heldDimMaterial.SetShaderParameter("beam_center_px", beamCentre);
-            _heldDimMaterial.SetShaderParameter("viewport_size_px", viewportSize);
-            _heldDimMaterial.SetShaderParameter("beam_radius_px", beamRadius);
-        }
-        if (_heldBeamOverlay != null)
-            _heldBeamOverlay.Visible = torchLit && _heldShowing && _heldDimMaterial != null;
+            _heldDim.Color = heldDark
+                ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
+                : new Color(0.02f, 0.015f, 0.01f, 0.62f);
         if (_heldGlow != null)
             _heldGlow.Visible = !heldDark;
 
