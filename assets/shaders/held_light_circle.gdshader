@@ -7,16 +7,25 @@ uniform vec2 beam_center_px = vec2(576.0, 324.0);
 uniform vec2 viewport_size_px = vec2(1152.0, 648.0);
 uniform float beam_radius_px = 152.0;
 uniform float beam_softness_px = 2.0;
+uniform vec4 held_region_px = vec4(336.0, 0.0, 480.0, 648.0);
 uniform vec4 beam_light_color : source_color = vec4(1.0, 0.92, 0.78, 0.12);
 
 void fragment() {
+    vec2 pixel_position = UV * viewport_size_px;
+    vec2 held_region_end = held_region_px.xy + held_region_px.zw;
+    if (pixel_position.x < held_region_px.x || pixel_position.y < held_region_px.y ||
+        pixel_position.x > held_region_end.x || pixel_position.y > held_region_end.y) {
+        // Keep the rest of the inspection backdrop steady; only the held
+        // hand and item get the flashlight's local light/dark falloff.
+        COLOR = vec4(0.0);
+        return;
+    }
+
     vec3 overlay_rgb = dim_color.rgb;
     float overlay_alpha = dim_color.a;
 
     if (beam_enabled) {
         // Match the room flashlight's horizontal, pixel-stepped circle.
-        // This rect is full-viewport, so local UV maps to viewport pixels.
-        vec2 pixel_position = UV * viewport_size_px;
         float strip_y = floor((pixel_position.y - beam_center_px.y) / 9.0) * 9.0
             + beam_center_px.y + 4.5;
         float distance_to_beam = length(vec2(
