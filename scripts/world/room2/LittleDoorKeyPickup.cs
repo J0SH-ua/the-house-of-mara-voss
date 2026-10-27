@@ -56,9 +56,14 @@ public partial class LittleDoorKeyPickup : Node2D
 
     public override void _Input(InputEvent @event)
     {
-        if (@event is not InputEventMouseButton mouseEvent || !mouseEvent.Pressed ||
-            mouseEvent.ButtonIndex != MouseButton.Left ||
-            Dialogue.IsInputBlocked || Dialogue.IsShowing ||
+        // The key can be clicked or taken with F, the house's hand.
+        bool clicked = @event is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
+            mouseEvent.ButtonIndex == MouseButton.Left;
+        bool useKey = @event is InputEventKey keyEvent && keyEvent.Pressed &&
+            !keyEvent.Echo && keyEvent.PhysicalKeycode == Key.F;
+        if (!clicked && !useKey)
+            return;
+        if (Dialogue.IsInputBlocked || Dialogue.IsShowing ||
             !ContainsGlobalPoint(GetGlobalMousePosition()))
             return;
 

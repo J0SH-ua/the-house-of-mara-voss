@@ -399,7 +399,7 @@ public partial class Room4 : Node2D
 		}
 	}
 
-	private bool TryHandleTurnedFramesCollision(InputEventMouseButton mouseButton)
+	private bool TryHandleTurnedFramesCollision()
 	{
 		if (Dialogue.IsInputBlocked)
 			return false;
@@ -417,7 +417,7 @@ public partial class Room4 : Node2D
 		return false;
 	}
 
-	private bool TryHandleMirrorCollision(InputEventMouseButton mouseButton)
+	private bool TryHandleMirrorCollision()
 	{
 		if (Dialogue.IsInputBlocked || _mirrorCollisionArea == null)
 			return false;
@@ -431,7 +431,7 @@ public partial class Room4 : Node2D
 		return true;
 	}
 
-	private bool TryHandleDrawerCollision(InputEventMouseButton mouseButton)
+	private bool TryHandleDrawerCollision()
 	{
 		if (Dialogue.IsInputBlocked || _drawerCollisionArea == null)
 			return false;
@@ -452,7 +452,7 @@ public partial class Room4 : Node2D
 	/// work is unfinished, the door leads to its close-up. Once all
 	/// three keys have turned, the door is simply open: clicking it
 	/// in the hall takes Mara straight through.</summary>
-	private bool TryHandleDoorCollision(InputEventMouseButton mouseButton)
+	private bool TryHandleDoorCollision()
 	{
 		if (Dialogue.IsInputBlocked || Dialogue.IsShowing || _doorBusy ||
 			_doorClickArea == null)
@@ -614,44 +614,43 @@ public partial class Room4 : Node2D
 		if (SceneManager.IsChanging)
 			return;
 
+		// A click, or F: the house's hand, for the thing under the
+		// cursor. Same reach, same rules, either way.
+		bool pressed = (@event is InputEventMouseButton mouseButton && mouseButton.Pressed &&
+			mouseButton.ButtonIndex == MouseButton.Left)
+			|| (@event is InputEventKey key && key.Pressed && !key.Echo &&
+				key.PhysicalKeycode == Key.F);
+		if (!pressed)
+			return;
+
 		if (GameState.Instance?.IsRoomSealed("Room4") == true)
 		{
-			if (@event is InputEventMouseButton sealedClick && sealedClick.Pressed
-				&& sealedClick.ButtonIndex == MouseButton.Left)
-			{
-				// Exits never seal. The brass door in particular is
-				// the only way onward from the blackout's trek home,
-				// so it is heard before the quiet-room refusal.
-				if (TryHandleDoorCollision(sealedClick))
-					return;
-				// One practical retrieval survives sealing: a save that
-				// faced this drawer before Father's roll lived under
-				// its keys may still come back and look underneath.
-				if (GameState.Instance.HasFlag("item_lockpick_set") == false &&
-					TryHandleDrawerCollision(sealedClick))
-					return;
-				GameState.Instance.NotifySealedInteraction();
-				GetTree().Root.SetInputAsHandled();
-			}
+			// Exits never seal. The brass door in particular is
+			// the only way onward from the blackout's trek home,
+			// so it is heard before the quiet-room refusal.
+			if (TryHandleDoorCollision())
+				return;
+			// One practical retrieval survives sealing: a save that
+			// faced this drawer before Father's roll lived under
+			// its keys may still come back and look underneath.
+			if (GameState.Instance.HasFlag("item_lockpick_set") == false &&
+				TryHandleDrawerCollision())
+				return;
+			GameState.Instance.NotifySealedInteraction();
+			GetTree().Root.SetInputAsHandled();
 			return;
 		}
 
-		if (@event is not InputEventMouseButton mouseButton)
+		if (TryHandleMirrorCollision())
 			return;
 
-		if (!mouseButton.Pressed || mouseButton.ButtonIndex != MouseButton.Left)
+		if (TryHandleDrawerCollision())
 			return;
 
-		if (TryHandleMirrorCollision(mouseButton))
+		if (TryHandleTurnedFramesCollision())
 			return;
 
-		if (TryHandleDrawerCollision(mouseButton))
-			return;
-
-		if (TryHandleTurnedFramesCollision(mouseButton))
-			return;
-
-		TryHandleDoorCollision(mouseButton);
+		TryHandleDoorCollision();
 	}
 
 	private int GetHoveredIndex(Vector2 mousePosition)

@@ -166,7 +166,14 @@ public partial class ExamineHandler : TileMapLayer
         if (Dialogue.IsInputBlocked)
             return;
 
-        if (@event is not InputEventMouseButton mouseEvent || !mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
+        // F is the house's hand: the same reach as a click, for
+        // whatever the cursor is on. Clicking still works — this is
+        // the keyboard's way in, not a replacement for the mouse.
+        bool useKey = @event is InputEventKey keyEvent && keyEvent.Pressed &&
+            !keyEvent.Echo && keyEvent.PhysicalKeycode == Key.F;
+        bool useClick = @event is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
+            mouseEvent.ButtonIndex == MouseButton.Left;
+        if (!useKey && !useClick)
             return;
 
         // One painted-over pickup outranks every examine tile under

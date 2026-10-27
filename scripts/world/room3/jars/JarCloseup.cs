@@ -346,13 +346,18 @@ public partial class JarCloseup : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (@event is not InputEventMouseButton mouseButton ||
-            mouseButton.ButtonIndex != MouseButton.Left)
+        // A click, or F: the house's hand, for the thing under the
+        // cursor. Same reach, same rules, either way.
+        bool clicked = @event is InputEventMouseButton mouseButton &&
+            mouseButton.ButtonIndex == MouseButton.Left;
+        bool useKey = @event is InputEventKey keyEvent && keyEvent.Pressed &&
+            !keyEvent.Echo && keyEvent.PhysicalKeycode == Key.F;
+        if (!clicked && !useKey)
             return;
 
         Vector2 pos = GetGlobalMousePosition();
 
-        if (!mouseButton.Pressed)
+        if (clicked && !mouseButton.Pressed)
             return;
 
         if (!InputFree())

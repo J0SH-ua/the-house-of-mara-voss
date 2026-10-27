@@ -245,8 +245,13 @@ public partial class BridgeRepair : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (@event is not InputEventMouseButton mouseButton ||
-            mouseButton.ButtonIndex != MouseButton.Left || !mouseButton.Pressed)
+        bool clicked = @event is InputEventMouseButton mouseButton &&
+            mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed;
+        // F is the house's hand, but only for the ways out: the
+        // hammering is a matter of where the mouse is, not of a key.
+        bool useKey = @event is InputEventKey keyEvent && keyEvent.Pressed &&
+            !keyEvent.Echo && keyEvent.PhysicalKeycode == Key.F;
+        if (!clicked && !useKey)
             return;
         if (!InputFree())
             return;
@@ -277,7 +282,8 @@ public partial class BridgeRepair : Node2D
         if (_state == BridgeState.Hammering)
         {
             GetViewport().SetInputAsHandled();
-            StrikeAt(pos);
+            if (clicked)
+                StrikeAt(pos);
         }
     }
 

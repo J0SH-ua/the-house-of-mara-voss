@@ -4012,10 +4012,12 @@ public partial class GameUI : CanvasLayer
         controlsChip.AnchorTop = 1;
         controlsChip.AnchorBottom = 1;
         controlsChip.OffsetLeft = 12;
-        controlsChip.OffsetRight = 924;
+        // Wide enough for the whole line of keys (the panel takes its
+        // own minimum, so this only has to clear it).
+        controlsChip.OffsetRight = 956;
         controlsChip.OffsetTop = -40;
         controlsChip.OffsetBottom = -8;
-        var controls = MakeLabel("Tab — look      C — clarity      E/A/T/R — memory verbs      H — hint      B — bag      J — journal      Q — back      Esc — pause",
+        var controls = MakeLabel("Tab — look      C — clarity      E/A/T/R — memory verbs      F — use      H — hint      B — bag      J — journal      Q — back      Esc — pause",
             16, new Color(0.93f, 0.89f, 0.82f, 0.92f));
         controls.MouseFilter = Control.MouseFilterEnum.Ignore;
         controlsChip.AddChild(controls);
