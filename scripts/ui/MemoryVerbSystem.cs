@@ -21,7 +21,7 @@ public static class MemoryVerbSystem
     public static string HotkeyLabel(MemoryVerb verb) => verb switch
     {
         MemoryVerb.Echo => "E",
-        MemoryVerb.Anchor => "A",
+        MemoryVerb.Anchor => "G",
         MemoryVerb.Trace => "T",
         MemoryVerb.Release => "R",
         _ => string.Empty,

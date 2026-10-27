@@ -96,10 +96,11 @@ public partial class BlackoutOverlay : Control
 
         // The beam is Mara hand: it follows the mouse directly,
         // smoothed the same way the basement's light is.
+        Vector2 view = ViewSize;
         Vector2 mouse = GetGlobalMousePosition();
         mouse = new Vector2(
-            Mathf.Clamp(mouse.X, 0f, 1152f),
-            Mathf.Clamp(mouse.Y, 0f, 648f));
+            Mathf.Clamp(mouse.X, 0f, view.X),
+            Mathf.Clamp(mouse.Y, 0f, view.Y));
         if (!_beamReady)
         {
             _beamPosition = mouse;
@@ -135,12 +136,18 @@ public partial class BlackoutOverlay : Control
         }
 
         float radius = (gs?.HasFlag("basement_battery_taken") ?? false) ? 198f : 152f;
+        float falloffScale = 1f;
+        if (gs != null && gs.DevToolsEnabled)
+        {
+            radius *= gs.DevFlashlightScale;
+            falloffScale = gs.DevFlashlightScale;
+        }
         // Three square-edged passes, darkest only far from the beam —
         // the same strips the basement uses, so one flashlight feels
         // like one flashlight everywhere it goes.
-        DrawDarkOutside(_beamPosition, radius + 118f,
+        DrawDarkOutside(_beamPosition, radius + 118f * falloffScale,
             new Color(0.002f, 0.002f, 0.004f, 0.66f * _darkAlpha));
-        DrawDarkOutside(_beamPosition, radius + 54f,
+        DrawDarkOutside(_beamPosition, radius + 54f * falloffScale,
             new Color(0.002f, 0.002f, 0.004f, 0.62f * _darkAlpha));
         DrawDarkOutside(_beamPosition, radius,
             new Color(0.001f, 0.001f, 0.003f, 0.72f * _darkAlpha));

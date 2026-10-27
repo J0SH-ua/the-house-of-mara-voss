@@ -125,13 +125,17 @@ public partial class HeldBeam : Control
         }
 
         // Where it lands: a stepped, slightly squashed pool of
-        // light — hottest at the middle, the way his big torch
-        // burned through every bulb they owned.
+        // light — hottest at the middle. Dev sizing affects this
+        // circle only, never the separate held-hand art.
+        var gs = GameState.Instance;
+        float lightScale = gs != null && gs.DevToolsEnabled
+            ? gs.DevFlashlightScale
+            : 1f;
         DrawSetTransform(_aim, 0f, new Vector2(1f, 0.74f));
-        DrawCircle(Vector2.Zero, 190f, new Color(warm.R, warm.G, warm.B, 0.10f * s));
-        DrawCircle(Vector2.Zero, 150f, new Color(warm.R, warm.G, warm.B, 0.13f * s));
-        DrawCircle(Vector2.Zero, 108f, new Color(warm.R, warm.G, warm.B, 0.16f * s));
-        DrawCircle(Vector2.Zero, 64f, new Color(1f, 0.93f, 0.72f, 0.20f * s));
+        DrawCircle(Vector2.Zero, 190f * lightScale, new Color(warm.R, warm.G, warm.B, 0.10f * s));
+        DrawCircle(Vector2.Zero, 150f * lightScale, new Color(warm.R, warm.G, warm.B, 0.13f * s));
+        DrawCircle(Vector2.Zero, 108f * lightScale, new Color(warm.R, warm.G, warm.B, 0.16f * s));
+        DrawCircle(Vector2.Zero, 64f * lightScale, new Color(1f, 0.93f, 0.72f, 0.20f * s));
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
         // The lamp itself, glinting at the frame's edge.

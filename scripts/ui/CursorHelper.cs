@@ -8,6 +8,7 @@ using System.Collections.Generic;
 /// </summary>
 public static class CursorHelper
 {
+    private const string DefaultPointerPath = "res://assets/images/core/cursor_pointer.png";
     private static readonly HashSet<long> ActiveHoverOwners = new();
     private static readonly Dictionary<string, Texture2D> TextureCache = new();
     private static string activeTexturePath = string.Empty;
@@ -106,6 +107,14 @@ public static class CursorHelper
             ResetCursor();
     }
 
+    public static void ApplyDefaultCursor()
+    {
+        activeTexturePath = DefaultPointerPath;
+        activeWidth = 32;
+        activeHeight = 32;
+        ApplyCursor(DefaultPointerPath, 32, 32);
+    }
+
     public static void ResetCursor()
     {
         // While Clarity is armed the eye cursor must survive hover churn;
@@ -122,11 +131,7 @@ public static class CursorHelper
             return;
         }
 
-        Input.SetCustomMouseCursor(null);
-
         ActiveHoverOwners.Clear();
-        activeTexturePath = string.Empty;
-        activeWidth = 0;
-        activeHeight = 0;
+        ApplyDefaultCursor();
     }
 }

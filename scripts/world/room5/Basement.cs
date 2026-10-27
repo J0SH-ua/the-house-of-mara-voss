@@ -563,11 +563,17 @@ public partial class Basement : MemoryRoomBase
 
         Vector2 beam = _beamPosition;
         float radius = gs.HasFlag("basement_battery_taken") ? 208f : 158f;
+        float falloffScale = 1f;
+        if (gs.DevToolsEnabled)
+        {
+            radius *= gs.DevFlashlightScale;
+            falloffScale = gs.DevFlashlightScale;
+        }
 
         // Two square-edged darkness passes: a broad penumbra, then the
         // true dark outside the beam itself. Chunky strips, no shader —
         // the same visual language as the rest of the code-drawn rooms.
-        DrawDarkOutside(beam, radius + 58f, new Color(0.002f, 0.002f, 0.004f, 0.42f));
+        DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.002f, 0.002f, 0.004f, 0.42f));
         DrawDarkOutside(beam, radius, new Color(0.001f, 0.001f, 0.003f, 0.74f));
 
         DrawArc(beam, radius * 0.97f, 0f, Mathf.Tau, 56,
