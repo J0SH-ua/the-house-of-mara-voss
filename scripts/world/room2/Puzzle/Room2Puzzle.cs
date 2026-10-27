@@ -1,6 +1,11 @@
 using System;
 using Godot;
 
+/// <summary>
+/// Room 2's four-letter lock. Wrong full attempts now rattle, clear and
+/// refocus instead of failing in total silence; typing and solving have
+/// matching audio.
+/// </summary>
 public partial class Room2Puzzle : Area2D
 {
 	private const string TargetWord = "HOME";
@@ -9,12 +14,41 @@ public partial class Room2Puzzle : Area2D
 	private Node2D _padlock;
 	private LineEdit[] _letterBoxes;
 	private bool _isSolved;
+	private bool _feedbackPlaying;
+	private Vector2 _padlockHome;
+
+	// Typed letters survive stepping back to the room mid-word (statics live
+	// for the whole run; GameState.NewGame clears them).
+	private static readonly char[] _savedLetters = new char[4];
+
+	/// <summary>True once the player has pressed Unlock (not merely spelled the
+	/// word). Drives pass-through state on later visits.</summary>
+	public static bool IsUnlocked { get; private set; }
+
+	private Button _unlockButton;
+	private bool _readyToUnlock;
+	private int _wrongAttempts;
+
+	/// <summary>Clears remembered letters (new game / fresh load / wrong word).</summary>
+	public static void ResetSavedState()
+	{
+		ClearSavedLetters();
+		IsUnlocked = false;
+	}
+
+	private static void ClearSavedLetters()
+	{
+		System.Array.Clear(_savedLetters, 0, _savedLetters.Length);
+	}
 
 	public override void _Ready()
 	{
 		_padlock = GetNodeOrNull<Node2D>("Padlock");
 		if (_padlock != null)
+		{
 			_padlock.Visible = true;
+			_padlockHome = _padlock.Position;
+		}
 
 		_letterBoxes = new LineEdit[4];
 		for (int i = 0; i < _letterBoxes.Length; i++)
@@ -29,6 +63,10 @@ public partial class Room2Puzzle : Area2D
 			box.MaxLength = 1;
 			box.Alignment = HorizontalAlignment.Center;
 
+			// Restore before subscribing so TextChanged doesn't fire for it.
+			if (_savedLetters[i] != '\0')
+				box.Text = _savedLetters[i].ToString();
+
 			int index = i;
 			box.TextChanged += (string newText) => OnLetterBoxTextChanged(index, newText);
 			box.GuiInput += (InputEvent @event) => OnLetterBoxGuiInput(index, @event);
@@ -36,13 +74,61 @@ public partial class Room2Puzzle : Area2D
 			_letterBoxes[i] = box;
 		}
 
-		_letterBoxes[0]?.GrabFocus();
+		// Resume typing where it left off: first empty box.
+		var focusBox = _letterBoxes[0];
+		foreach (var box in _letterBoxes)
+		{
+			if (box != null && string.IsNullOrEmpty(box.Text))
+			{
+				focusBox = box;
+				break;
+			}
+		}
+		focusBox?.GrabFocus();
+
+		// The right word no longer springs the drawer by itself: the player
+		// unlocks it. The Unlock button is always there and always pressable;
+		// judgement happens on the press, not while typing.
+		var firstBox = GetBox(0);
+		var lastBox = GetBox(3);
+		Vector2 unlockPos = new Vector2(-85, 96);
+		if (firstBox != null && lastBox != null)
+		{
+			unlockPos = new Vector2(
+				(firstBox.Position.X + lastBox.Position.X + lastBox.Size.X) / 2f - 85f,
+				lastBox.Position.Y + lastBox.Size.Y + 16f);
+		}
+		if (_padlock != null)
+		{
+			_unlockButton = BuildUnlockButton(_padlock, unlockPos);
+			_unlockButton.Pressed += OnUnlockPressed;
+		}
+
+		if (IsUnlocked)
+		{
+			// Unlocked on an earlier visit — drawer open. Whether
+			// the photograph is still inside is Photo1Reward's call:
+			// if it is in Mara's bag, the drawer must stay empty.
+			_isSolved = true;
+			SolveAsync();
+		}
+		else if (new string(_savedLetters) == TargetWord)
+		{
+			// Word already spelled from before stepping away — offer Unlock.
+			SetReadyToUnlock(true);
+		}
 	}
 
 	private void OnLetterBoxGuiInput(int index, InputEvent @event)
 	{
 		if (_isSolved)
 			return;
+
+		if (GameState.Instance?.IsRoomSealed("Room2") == true)
+		{
+			GameState.Instance.NotifySealedInteraction();
+			return;
+		}
 
 		if (@event is not InputEventKey keyEvent)
 			return;
@@ -68,12 +154,13 @@ public partial class Room2Puzzle : Area2D
 			return;
 
 		prev.Text = "";
+		_savedLetters[index - 1] = '\0';
 		prev.GrabFocus();
 	}
 
 	private void OnLetterBoxTextChanged(int index, string newText)
 	{
-		if (_isSolved)
+		if (_isSolved || _feedbackPlaying)
 			return;
 
 		var box = GetBox(index);
@@ -84,8 +171,14 @@ public partial class Room2Puzzle : Area2D
 		if (box.Text != filtered)
 			box.Text = filtered;
 
-		if (filtered.Length == 1 && index < _letterBoxes.Length - 1)
-			GetBox(index + 1)?.GrabFocus();
+		_savedLetters[index] = filtered.Length == 1 ? filtered[0] : '\0';
+
+		if (filtered.Length == 1)
+		{
+			AudioManager.PlayVaried(Sfx.KeyType, -5f, 1f, 0.08f);
+			if (index < _letterBoxes.Length - 1)
+				GetBox(index + 1)?.GrabFocus();
+		}
 
 		CheckSolution();
 	}
@@ -107,31 +200,204 @@ public partial class Room2Puzzle : Area2D
 
 			string text = box.Text?.Trim() ?? string.Empty;
 			if (text.Length != 1)
+			{
+				SetReadyToUnlock(false);
 				return;
+			}
 
 			chars[i] = char.ToUpperInvariant(text[0]);
 		}
 
 		string attempt = new string(chars);
-		if (!string.Equals(attempt, TargetWord, StringComparison.Ordinal))
+		// Typing is never punished: the word is judged when Unlock is pressed.
+		SetReadyToUnlock(string.Equals(attempt, TargetWord, StringComparison.Ordinal));
+	}
+
+	private void SetReadyToUnlock(bool ready)
+	{
+		bool wasReady = _readyToUnlock;
+		_readyToUnlock = ready;
+		if (_unlockButton != null)
+		{
+			// Always visible, always pressable. Bright when the word feels
+			// right, dimmer when it doesn't — never gone.
+			_unlockButton.Visible = true;
+			_unlockButton.Modulate = ready ? Colors.White : new Color(0.78f, 0.74f, 0.68f, 0.92f);
+		}
+
+		if (ready && !wasReady)
+		{
+			AudioManager.Play(Sfx.WordChime, -9f);
+			GameState.Instance?.Toast("That feels right. Now unlock it.");
+		}
+	}
+
+	private void OnUnlockPressed()
+	{
+		if (GameState.Instance?.IsRoomSealed("Room2") == true)
+		{
+			GameState.Instance.NotifySealedInteraction();
+			return;
+		}
+
+		if (_isSolved || _feedbackPlaying)
 			return;
 
+		if (!_readyToUnlock)
+		{
+			// Honest feedback at the press: incomplete, or simply not right.
+			int filled = 0;
+			foreach (var c in _savedLetters)
+			{
+				if (c != '\0')
+					filled++;
+			}
+			if (filled < 4)
+			{
+				AudioManager.Play(Sfx.LockRattle, -7f);
+				GameState.Instance?.Toast("It wants a whole word — four letters. What this room has told you is kept in your Journal (J) → Notes & Clues.");
+			}
+			else
+			{
+				WrongAttemptAsync();
+			}
+			return;
+		}
+
 		_isSolved = true;
+		IsUnlocked = true;
+		_readyToUnlock = false;
+		if (_unlockButton != null)
+			_unlockButton.Visible = false;
+
+		GameState.Instance?.NotifyPuzzleSolved();
 		SolveAsync();
+	}
+
+	private static Button BuildUnlockButton(Node parent, Vector2 position)
+	{
+		var button = new Button
+		{
+			Text = "Unlock",
+			Visible = true,
+			CustomMinimumSize = new Vector2(170, 46),
+			Position = position,
+		};
+		var font = GD.Load<FontFile>("res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf");
+		if (font != null)
+			button.AddThemeFontOverride("font", font);
+		button.AddThemeFontSizeOverride("font_size", 26);
+		button.AddThemeColorOverride("font_color", new Color(0.96f, 0.9f, 0.78f));
+		button.AddThemeColorOverride("font_hover_color", new Color(1f, 0.97f, 0.88f));
+
+		var normal = new StyleBoxFlat
+		{
+			BgColor = new Color(0.16f, 0.11f, 0.07f, 0.94f),
+			BorderColor = new Color(0.8f, 0.66f, 0.42f, 0.9f),
+		};
+		normal.SetBorderWidthAll(2);
+		normal.SetCornerRadiusAll(6);
+		normal.SetContentMarginAll(8);
+		var hover = new StyleBoxFlat
+		{
+			BgColor = new Color(0.32f, 0.23f, 0.13f, 0.96f),
+			BorderColor = new Color(0.95f, 0.8f, 0.55f, 1f),
+		};
+		hover.SetBorderWidthAll(2);
+		hover.SetCornerRadiusAll(6);
+		hover.SetContentMarginAll(8);
+		button.AddThemeStyleboxOverride("normal", normal);
+		button.AddThemeStyleboxOverride("hover", hover);
+		button.AddThemeStyleboxOverride("pressed", hover);
+		button.AddThemeStyleboxOverride("focus", hover);
+
+		button.MouseEntered += () => AudioManager.Play(Sfx.UiHover, -10f);
+		parent.AddChild(button);
+		return button;
+	}
+
+	private async void WrongAttemptAsync()
+	{
+		if (_feedbackPlaying)
+			return;
+		_feedbackPlaying = true;
+
+		// Repeated wrong words mean a stuck player: point at the journal's
+		// clue cards first, then at the H hint.
+		_wrongAttempts++;
+		if (_wrongAttempts == 1)
+			GameState.Instance?.Toast("The lock doesn't turn — that word isn't right. Something in this room has been saying the true one; your Journal (J) → Notes & Clues keeps it.");
+		else if (_wrongAttempts == 2)
+			GameState.Instance?.Toast("Still not right. Read her parents' letter again — J, then Notes & Clues.");
+		else if (_wrongAttempts == 4)
+			GameState.Instance?.Toast("Press H and the house will nudge you closer.");
+
+		AudioManager.Play(Sfx.LockRattle, -5f);
+		AudioManager.Play(Sfx.Denied, -11f);
+
+		if (_padlock != null && !Settings.ReduceMotionOrDefault())
+		{
+			var tween = CreateTween();
+			foreach (float offset in new[] { -7f, 6f, -4f, 3f, 0f })
+				tween.TweenProperty(_padlock, "position", _padlockHome + new Vector2(offset, 0), 0.05f);
+			await ToSignal(tween, Tween.SignalName.Finished);
+		}
+		else
+		{
+			await ToSignal(GetTree().CreateTimer(0.25f), SceneTreeTimer.SignalName.Timeout);
+		}
+
+		if (!GodotObject.IsInstanceValid(this) || _isSolved)
+		{
+			_feedbackPlaying = false;
+			return;
+		}
+
+		// Clearing triggers TextChanged; the _feedbackPlaying guard turns
+		// those callbacks into no-ops.
+		foreach (var box in _letterBoxes)
+		{
+			if (box != null)
+				box.Text = string.Empty;
+		}
+		ClearSavedLetters();
+		GetBox(0)?.GrabFocus();
+		_feedbackPlaying = false;
 	}
 
 	private async void SolveAsync()
 	{
+		AudioManager.Play(Sfx.LockOpen, -4f);
 		await PlayDrawerAnimation();
-		RevealPhotoReward();
+		bool photoWaiting = RevealPhotoReward();
 		_padlock?.SetDeferred("visible", false);
+		AudioManager.Play(Sfx.PuzzleSolve, -6f);
+		GameState.Instance?.Toast(photoWaiting
+			? "Inside: a photograph, face-down all these years."
+			: "The drawer is empty where the photograph lay — it's in Mara's bag now.");
 	}
 
-	private void RevealPhotoReward()
+	private bool RevealPhotoReward()
 	{
-		var photoReward = GetNodeOrNull<Area2D>("Photo1");
+		// Never set Photo1.Visible from here. That was the bug: this
+		// solve replay runs on every return to an unlocked drawer,
+		// and the direct write undid Photo1Reward's taken-state.
+		// The photograph owns its reveal and refuses it once bagged.
+		var photoReward = GetNodeOrNull<Photo1Reward>("Photo1");
 		if (photoReward != null)
-			photoReward.Visible = true;
+			return photoReward.RevealFromDrawer();
+
+		// Scene-shape fallback, held to the same rule.
+		var photoArea = GetNodeOrNull<Area2D>("Photo1");
+		if (photoArea == null || Photo1Reward.PhotographInBag)
+		{
+			if (photoArea != null)
+				photoArea.Visible = false;
+			return false;
+		}
+
+		photoArea.Visible = true;
+		return true;
 	}
 
 	private async System.Threading.Tasks.Task PlayDrawerAnimation()
@@ -140,6 +406,7 @@ public partial class Room2Puzzle : Area2D
 		if (drawer == null)
 			return;
 
+		AudioManager.Play(Sfx.DrawerOpen, -5f);
 		drawer.Play("DrawerOpen");
 		await ToSignal(GetTree().CreateTimer(0.35f), SceneTreeTimer.SignalName.Timeout);
 		drawer.Stop();

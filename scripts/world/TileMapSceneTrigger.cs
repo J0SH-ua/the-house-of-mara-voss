@@ -30,12 +30,20 @@ public partial class TileMapSceneTrigger : TileMapLayer
         if (!HasPointedTile(mouseButton.Position))
             return;
 
+        if (GameState.Instance?.IsCurrentSceneSealed() == true)
+        {
+            GameState.Instance.NotifySealedInteraction();
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
         TriggerSceneChange();
+        GetTree().Root.SetInputAsHandled();
     }
 
     public void TriggerSceneChange()
     {
-        if (!TriggerEnabled)
+        if (!TriggerEnabled || SceneManager.IsChanging)
             return;
 
         if (string.IsNullOrWhiteSpace(TargetScenePath))
@@ -44,6 +52,7 @@ public partial class TileMapSceneTrigger : TileMapLayer
             return;
         }
 
+        AudioManager.Play(Sfx.PageTurn, -9f);
         SceneManager.ChangeScene(TargetScenePath);
     }
 

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cmarabrkbxscn"]
+
+[ext_resource type="Script" uid="uid://cmarabrk0001" path="res://scripts/world/room5/BreakerBox.cs" id="1"]
+
+[node name="BreakerBox" type="Node2D"]
+script = ExtResource("1")

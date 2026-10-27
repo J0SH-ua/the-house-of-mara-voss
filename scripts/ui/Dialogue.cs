@@ -2,20 +2,48 @@ using Godot;
 using System;
 using System.Threading.Tasks;
 
+/// <summary>
+/// Bottom-of-screen dialogue bubble with a typewriter effect.
+///
+/// Interaction model (reworked):
+///  * Click / Space / Enter once → complete the current line instantly.
+///  * Click again → advance. Auto-advance is opt-in via Settings
+///    (the legacy per-line `durationInSeconds` becomes the auto-advance hold).
+///  * SkipDialogue action (End) → fast-forwards the whole sequence.
+///  * Typewriter blips every few characters; at high corruption the text
+///    itself occasionally glitches before settling.
+///  * Every line is written to the Memory Journal (GameState echoes), so
+///    text from freed examine layers can be re-read (press J).
+///
+/// The public ShowText signature is unchanged — all existing call sites keep
+/// working. Calls serialize: a second ShowText waits for the first to finish
+/// instead of stacking bubbles.
+/// </summary>
 public partial class Dialogue : Control
 {
     private static int _inputBlockCount = 0;
 
+    // --- sequencing / input state (static: Dialogue instances are ephemeral) ---
+    private static int _activeCount;
+    private static bool _advanceRequested;
+    private static ulong _chainSkipUntilMsec;
+    private static ulong _lineStartedMsec;
+    private static bool _mouseReleasedSinceLineStart;
+
     public TextureRect _backgroundRect;
     public Label _dialogueLabel;
     private ColorRect _inputBlocker;
+    private Label _advanceIndicator;
     private string _fullText;
-    private float _typewriterSpeed = 0.01f;
+    private float _typewriterSpeed = 0.01f; // legacy: seconds per char, only if caller overrides
     private Color _textColor = Colors.Black;
     private string _fontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     private int _fontSize = 32;
+    private bool _typingDone;
+    private Theme _labelTheme;
 
     public static bool IsInputBlocked => _inputBlockCount > 0;
+    public static bool IsShowing => _activeCount > 0;
 
     public static void BeginInputBlock()
     {
@@ -28,38 +56,161 @@ public partial class Dialogue : Control
             _inputBlockCount--;
     }
 
+    // -------------------------------------------------------- weather
+    // Sometimes the house's weather gets its hands on the words
+    // themselves. A gust sets a deadline; until it passes, the whole
+    // speech plate shivers and drifts, as if the line were being
+    // spoken into a wind. Static, because Dialogue instances are
+    // ephemeral: a line that begins mid-gust shivers too.
+
+    private static ulong _gustUntilMsec;
+    private static float _gustStrength;
+
+    public static void Gust(float seconds, float strength = 1f)
+    {
+        if (Settings.ReduceMotionOrDefault())
+            return;
+        _gustUntilMsec = Time.GetTicksMsec() +
+            (ulong)Mathf.RoundToInt(seconds * 1000f);
+        _gustStrength = Mathf.Max(_gustStrength, strength);
+    }
+
+    // Panic gets into the words differently from weather: not a
+    // passing lean, but a rapid, uneven tremor that stays with
+    // every line until the moment that caused it is over. The
+    // owner must end it; LockpickPuzzle also ends it on _ExitTree
+    // so the state can never leak into an unrelated conversation.
+    private static bool _panicActive;
+    private static float _panicStrength;
+
+    public static void BeginPanic(float strength = 1f)
+    {
+        _panicActive = true;
+        _panicStrength = Mathf.Clamp(
+            Mathf.Max(_panicStrength, strength), 0.1f, 2.2f);
+    }
+
+    public static void EndPanic()
+    {
+        _panicActive = false;
+        _panicStrength = 0f;
+    }
+
+    // ------------------------------------------------------------ input hooks
+
+    /// <summary>Called by GameUI's root-level _Input (always reachable, unlike
+    /// input inside the dialogue's own SubViewport).</summary>
+    public static void NotifyAdvancePressed()
+    {
+        if (!IsShowing)
+            return;
+
+        // Ignore the very click that opened the line (same input event) and
+        // require the mouse to have been released at least once since.
+        if (Time.GetTicksMsec() - _lineStartedMsec < 220)
+            return;
+        if (!_mouseReleasedSinceLineStart && Input.IsMouseButtonPressed(MouseButton.Left))
+            return;
+
+        _advanceRequested = true;
+    }
+
+    public static void NotifySkipPressed()
+    {
+        if (!IsShowing)
+            return;
+
+        _advanceRequested = true;
+        _chainSkipUntilMsec = Time.GetTicksMsec() + 1500;
+    }
+
+    private static bool ChainSkipActive => Time.GetTicksMsec() < _chainSkipUntilMsec;
+
+    public override void _Input(InputEvent @event)
+    {
+        // Best-effort path when events do reach this SubViewport;
+        // GameUI.NotifyAdvancePressed is the guaranteed one.
+        if (@event is InputEventMouseButton mouse && mouse.Pressed && mouse.ButtonIndex == MouseButton.Left)
+            NotifyAdvancePressed();
+        else if (@event.IsActionPressed(InputSetup.AdvanceDialogue))
+            NotifyAdvancePressed();
+        else if (@event.IsActionPressed(InputSetup.SkipDialogue))
+            NotifySkipPressed();
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!Input.IsMouseButtonPressed(MouseButton.Left))
+            _mouseReleasedSinceLineStart = true;
+
+        // Wind and panic both get their hands on the words. A
+        // gust is a fast shiver over a slower lean, settling as
+        // its deadline dies. Panic is quicker, less even, and
+        // does not politely expire in the middle of a line: it
+        // trembles until its owner says the moment is over.
+        ulong nowMsec = Time.GetTicksMsec();
+        double t = nowMsec / 1000.0;
+        Vector2 weatherOffset = Vector2.Zero;
+        if (nowMsec < _gustUntilMsec)
+        {
+            float remain = (float)(_gustUntilMsec - nowMsec) / 1000f;
+            float amp = Mathf.Min(1f, remain / 0.9f) * 8f * _gustStrength;
+            weatherOffset += new Vector2(
+                (float)(Math.Sin(t * 23.0) * amp + Math.Sin(t * 6.7) * amp * 1.7f),
+                (float)(Math.Sin(t * 31.0 + 1.3) * amp * 0.45f));
+        }
+        else
+        {
+            _gustStrength = 0f;
+        }
+
+        if (_panicActive && !Settings.ReduceMotionOrDefault())
+        {
+            float amp = 6.5f * _panicStrength;
+            weatherOffset += new Vector2(
+                (float)((Math.Sin(t * 41.0) +
+                    0.6 * Math.Sin(t * 67.0 + 1.9) +
+                    0.35 * Math.Sin(t * 97.0)) * amp * 0.62),
+                (float)((Math.Sin(t * 53.0 + 0.7) +
+                    0.55 * Math.Cos(t * 79.0 + 2.1)) * amp * 0.5));
+        }
+        Position = weatherOffset;
+
+        if (_advanceIndicator != null)
+        {
+            _advanceIndicator.Visible = _typingDone;
+            if (_typingDone)
+            {
+                float a = Settings.ReduceMotionOrDefault()
+                    ? 0.75f
+                    : 0.45f + 0.35f * (float)Math.Sin(Time.GetTicksMsec() / 280.0);
+                var m = _advanceIndicator.Modulate;
+                m.A = a;
+                _advanceIndicator.Modulate = m;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------- construction
+
     public void Initialize()
     {
         Name = "DialogueUI";
-        ProcessMode = ProcessModeEnum.Always;
+        // Pausable so the pause menu truly freezes mid-line; GameUI (Always)
+        // owns all input while paused.
+        ProcessMode = ProcessModeEnum.Pausable;
         ZIndex = 100;
         Visible = true;
-        AnchorLeft = 0;
-        AnchorTop = 0;
-        AnchorRight = 1;
-        AnchorBottom = 1;
-        OffsetLeft = 0;
-        OffsetTop = 0;
-        OffsetRight = 0;
-        OffsetBottom = 0;
-        GrowHorizontal = GrowDirection.Both;
-        GrowVertical = GrowDirection.Both;
+        SetAnchorsPreset(LayoutPreset.FullRect);
 
         _inputBlocker = new ColorRect
         {
             Name = "InputBlocker",
             Color = new Color(0, 0, 0, 0),
-            AnchorLeft = 0,
-            AnchorTop = 0,
-            AnchorRight = 1,
-            AnchorBottom = 1,
-            OffsetLeft = 0,
-            OffsetTop = 0,
-            OffsetRight = 0,
-            OffsetBottom = 0,
             MouseFilter = MouseFilterEnum.Stop,
-            ProcessMode = ProcessModeEnum.Always,
+            ProcessMode = ProcessModeEnum.Pausable,
         };
+        _inputBlocker.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_inputBlocker);
 
         _backgroundRect = new TextureRect
@@ -77,7 +228,7 @@ public partial class Dialogue : Control
             OffsetRight = -45,
             OffsetBottom = -123,
             Modulate = new Color(1, 1, 1, 0),
-            ProcessMode = ProcessModeEnum.Always,
+            ProcessMode = ProcessModeEnum.Pausable,
         };
         AddChild(_backgroundRect);
 
@@ -96,20 +247,50 @@ public partial class Dialogue : Control
             VerticalAlignment = VerticalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.Word,
             Modulate = new Color(1, 1, 1, 0),
-            ProcessMode = ProcessModeEnum.Always,
+            ProcessMode = ProcessModeEnum.Pausable,
         };
         AddChild(_dialogueLabel);
 
+        _advanceIndicator = new Label
+        {
+            Name = "AdvanceIndicator",
+            Text = "click to continue",
+            AnchorLeft = 0,
+            AnchorTop = 1,
+            AnchorRight = 1,
+            AnchorBottom = 1,
+            OffsetLeft = 50,
+            OffsetTop = -150,
+            OffsetRight = -80,
+            OffsetBottom = -128,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Modulate = new Color(0.25f, 0.2f, 0.15f, 0),
+            Visible = false,
+            ProcessMode = ProcessModeEnum.Pausable,
+        };
+        AddChild(_advanceIndicator);
+
         var font = GD.Load<FontFile>(_fontPath);
-        var theme = new Theme();
+        _labelTheme = new Theme();
+        var theme = _labelTheme;
         if (font != null)
             theme.SetFont("font", "Label", font);
         theme.SetFontSize("font_size", "Label", _fontSize);
         theme.SetColor("font_color", "Label", _textColor);
         _dialogueLabel.Theme = theme;
+
+        var indicatorTheme = new Theme();
+        if (font != null)
+            indicatorTheme.SetFont("font", "Label", font);
+        indicatorTheme.SetFontSize("font_size", "Label", 17);
+        indicatorTheme.SetColor("font_color", "Label", new Color(0.3f, 0.24f, 0.18f));
+        _advanceIndicator.Theme = indicatorTheme;
     }
 
     public override void _Ready() { }
+
+    // ---------------------------------------------------------------- playback
 
     public static async Task ShowText(
         Node caller,
@@ -122,24 +303,31 @@ public partial class Dialogue : Control
         Color? textColor = null,
         float? typewriterSpeed = null)
     {
+        if (caller == null || !GodotObject.IsInstanceValid(caller) || string.IsNullOrWhiteSpace(text))
+            return;
+
         var tree = caller.GetTree();
         var root = tree.Root;
+
+        // Serialize: wait for any line already on screen (prevents stacked
+        // bubbles when several handlers fire from the same click).
+        while (_activeCount > 0)
+        {
+            if (!GodotObject.IsInstanceValid(caller))
+                return;
+            await root.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+
+        _activeCount++;
+        BeginInputBlock();
 
         var container = new SubViewportContainer
         {
             Name = "DialogueContainer",
             Stretch = true,
-            AnchorLeft = 0,
-            AnchorTop = 0,
-            AnchorRight = 1,
-            AnchorBottom = 1,
-            OffsetLeft = 0,
-            OffsetTop = 0,
-            OffsetRight = 0,
-            OffsetBottom = 0,
-            GrowHorizontal = GrowDirection.Both,
-            GrowVertical = GrowDirection.Both,
+            ProcessMode = ProcessModeEnum.Pausable,
         };
+        container.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
         var subViewport = new SubViewport
         {
@@ -163,62 +351,227 @@ public partial class Dialogue : Control
 
         dialogue.Initialize();
         subViewport.AddChild(dialogue);
-        root.AddChild(container);
+        // Canvas layer 2: above GameUI's ambient-life weather (layer 1),
+        // so no animated sprite ever clips over the speech bubble — and
+        // still below GameUI itself (90), whose menus must win.
+        var layer = new CanvasLayer
+        {
+            Name = "DialogueLayer",
+            Layer = 2,
+            ProcessMode = ProcessModeEnum.Pausable,
+        };
+        layer.AddChild(container);
+        root.AddChild(layer);
 
-        await dialogue.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        _lineStartedMsec = Time.GetTicksMsec();
+        _mouseReleasedSinceLineStart = false;
+        _advanceRequested = false;
+        bool chainSkipped = ChainSkipActive;
+        if (chainSkipped)
+            _chainSkipUntilMsec = Time.GetTicksMsec() + 1500; // keep the chain alive
+
+        GameState.Instance?.LogEcho(text);
 
         try
         {
-            await dialogue.PlayFadeInAnimation();
+            await dialogue.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
 
-            await dialogue.PlayTypewriterAnimation();
-
-            await dialogue.ToSignal(
-                dialogue.GetTree().CreateTimer(durationInSeconds),
-                SceneTreeTimer.SignalName.Timeout);
-
-            await dialogue.PlayFadeOutAnimation();
+            dialogue.FitBubbleToText();
+            await dialogue.PlayFadeInAnimation(chainSkipped ? 0.05f : 0.3f);
+            await dialogue.PlayTypewriterAnimation(chainSkipped);
+            await dialogue.WaitForAdvance(durationInSeconds, chainSkipped);
+            await dialogue.PlayFadeOutAnimation(chainSkipped ? 0.05f : 0.22f);
         }
         catch (Exception e)
         {
             Logger.Error("[ Dialogue.ShowText ] Exception: " + e.Message);
-            throw;
         }
         finally
         {
-            container.QueueFree();
+            layer.QueueFree();
+            _activeCount = Math.Max(0, _activeCount - 1);
+            EndInputBlock();
         }
     }
 
-    private async Task PlayFadeInAnimation()
+    /// <summary>
+    /// Sizes the bubble plate to the line it is about to say. The plate used
+    /// to be one fixed height, so anything past two lines spilled off the
+    /// paper and out of the bubble entirely. Now the wrapped text is
+    /// measured with the real font first, the plate grows upward from its
+    /// bottom edge to hold it, and the font steps down only when the plate
+    /// would otherwise have to grow taller than a bubble should ever be.
+    /// Measuring a shade narrower than the label wraps to keeps the
+    /// estimate safely generous.
+    /// </summary>
+    private void FitBubbleToText()
+    {
+        if (_backgroundRect == null || _dialogueLabel == null)
+            return;
+
+        const float measureWidth = 1000f;
+        const float minBubbleHeight = 100f; // the plate's original height
+        const float maxBubbleHeight = 232f;
+        const float verticalPadding = 46f;
+
+        int size = _fontSize;
+        float textHeight = 0f;
+        var font = GD.Load<FontFile>(_fontPath);
+        if (font != null)
+        {
+            while (true)
+            {
+                textHeight = font.GetMultilineStringSize(
+                    _fullText, HorizontalAlignment.Center, measureWidth, size).Y;
+                if (textHeight + verticalPadding <= maxBubbleHeight || size <= 18)
+                    break;
+                size -= 2;
+            }
+        }
+
+        float bubbleHeight = Mathf.Clamp(
+            textHeight + verticalPadding, minBubbleHeight, maxBubbleHeight);
+        _backgroundRect.OffsetTop = _backgroundRect.OffsetBottom - bubbleHeight;
+        _dialogueLabel.OffsetTop = _dialogueLabel.OffsetBottom - bubbleHeight;
+        if (_labelTheme != null && size != _fontSize)
+            _labelTheme.SetFontSize("font_size", "Label", size);
+    }
+
+    private async Task NextFrame()
+    {
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        while (GetTree().Paused)
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+    }
+
+    private async Task PlayFadeInAnimation(float duration)
     {
         var tween = CreateTween();
-        tween.TweenProperty(_backgroundRect, "modulate:a", 1.0f, 0.4f);
-        tween.TweenProperty(_dialogueLabel, "modulate:a", 1.0f, 0.4f);
+        tween.SetParallel(true);
+        tween.TweenProperty(_backgroundRect, "modulate:a", 1.0f, duration);
+        tween.TweenProperty(_dialogueLabel, "modulate:a", 1.0f, duration);
         await ToSignal(tween, Tween.SignalName.Finished);
     }
 
-    private async Task PlayTypewriterAnimation()
+    private async Task PlayTypewriterAnimation(bool instant)
     {
         _dialogueLabel.Text = "";
         _dialogueLabel.Visible = true;
         _dialogueLabel.SelfModulate = new Color(1, 1, 1, 1);
-        int i = 0;
-        foreach (char c in _fullText)
+        _typingDone = false;
+
+        float cps = Settings.TextSpeedOrDefault();
+        if (instant || cps <= 0f)
         {
-            _dialogueLabel.Text += c;
-            i++;
-            await ToSignal(
-                GetTree().CreateTimer(_typewriterSpeed),
-                SceneTreeTimer.SignalName.Timeout);
+            _dialogueLabel.Text = _fullText;
+            _typingDone = true;
+            _advanceRequested = false;
+            return;
         }
+
+        double secondsPerChar = 1.0 / cps;
+        double accumulator = 0;
+        ulong lastMsec = Time.GetTicksMsec();
+        int shown = 0;
+        int blipCounter = 0;
+
+        float glitchChance = 0f;
+        var tier = GameState.Instance?.CurrentTier ?? CorruptionTier.Calm;
+        if (tier >= CorruptionTier.Fractured && Settings.CorruptionIntensityOrDefault() > 0f)
+            glitchChance = tier == CorruptionTier.Shattered ? 0.06f : 0.03f;
+        const string glitchChars = "#%&@$?!";
+
+        while (shown < _fullText.Length)
+        {
+            if (_advanceRequested)
+            {
+                // First click: complete the line (don't advance yet).
+                _advanceRequested = false;
+                _dialogueLabel.Text = _fullText;
+                break;
+            }
+
+            await NextFrame();
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+
+            ulong now = Time.GetTicksMsec();
+            accumulator += (now - lastMsec) / 1000.0;
+            lastMsec = now;
+
+            while (accumulator >= secondsPerChar && shown < _fullText.Length)
+            {
+                accumulator -= secondsPerChar;
+                char c = _fullText[shown];
+
+                if (glitchChance > 0f && !char.IsWhiteSpace(c) && GD.Randf() < glitchChance)
+                {
+                    // The memory writes it wrong for a beat, then corrects itself.
+                    _dialogueLabel.Text += glitchChars[(int)(GD.Randi() % glitchChars.Length)];
+                    await NextFrame();
+                    if (!GodotObject.IsInstanceValid(this))
+                        return;
+                    _dialogueLabel.Text = _fullText.Substring(0, shown);
+                }
+
+                shown++;
+                _dialogueLabel.Text = _fullText.Substring(0, shown);
+
+                if (!char.IsWhiteSpace(c) && ++blipCounter >= 3)
+                {
+                    blipCounter = 0;
+                    AudioManager.PlayVaried(Sfx.DialogueBlip, -12f, 1f, 0.05f);
+                }
+            }
+        }
+
+        _typingDone = true;
     }
 
-    private async Task PlayFadeOutAnimation()
+    private async Task WaitForAdvance(float legacyHoldSeconds, bool chainSkipped)
     {
+        if (chainSkipped)
+        {
+            await NextFrame();
+            return;
+        }
+
+        bool auto = Settings.AutoAdvanceOrDefault();
+        double hold = auto
+            ? Mathf.Clamp(Mathf.Max(legacyHoldSeconds, 0.9f + _fullText.Length * 0.028f), 1.2f, legacyHoldSeconds + 3f)
+            : double.PositiveInfinity;
+
+        double waited = 0;
+        ulong lastMsec = Time.GetTicksMsec();
+        bool playedAdvanceCue = false;
+
+        while (!_advanceRequested && waited < hold)
+        {
+            await NextFrame();
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+
+            ulong now = Time.GetTicksMsec();
+            waited += (now - lastMsec) / 1000.0;
+            lastMsec = now;
+        }
+
+        if (_advanceRequested && !playedAdvanceCue)
+            AudioManager.Play(Sfx.DialogueAdvance, -9f);
+
+        _advanceRequested = false;
+    }
+
+    private async Task PlayFadeOutAnimation(float duration)
+    {
+        if (!GodotObject.IsInstanceValid(this) || _backgroundRect == null)
+            return;
+
         var tween = CreateTween();
-        tween.TweenProperty(_backgroundRect, "modulate:a", 0.0f, 0.3f);
-        tween.TweenProperty(_dialogueLabel, "modulate:a", 0.0f, 0.3f);
+        tween.SetParallel(true);
+        tween.TweenProperty(_backgroundRect, "modulate:a", 0.0f, duration);
+        tween.TweenProperty(_dialogueLabel, "modulate:a", 0.0f, duration);
+        tween.TweenProperty(_advanceIndicator, "modulate:a", 0.0f, duration);
         await ToSignal(tween, Tween.SignalName.Finished);
     }
 }

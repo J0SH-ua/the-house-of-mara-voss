@@ -4,6 +4,13 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
 
+/// <summary>
+/// Base class for every clickable examine layer.
+/// Left-click cycles Examine1 → Examine2 → … and plays the layer's dialogue;
+/// while Clarity is armed, left-click reveals instead; right-click releases
+/// Clarity for free. Examining past the first layer corrupts the memory —
+/// routed through GameState so tiers, audio and HUD react.
+/// </summary>
 public partial class ExamineHandler : TileMapLayer
 {
     [Export(PropertyHint.MultilineText)] public string ExamineText = "";
@@ -16,14 +23,66 @@ public partial class ExamineHandler : TileMapLayer
     [Export] public int CursorWidth = 30;
     [Export] public int CursorHeight = 30;
     [Export] public bool HoverEnabled = true;
+    [ExportCategory("Audio")]
+    [Export] public string ExamineSfxId = Sfx.Examine;
 
     private bool _isHovering = false;
+    private string _roomNameCache;
     private string _currentHoverCursorTexturePath = string.Empty;
+    private Rect2I _usedRect;
+    private bool _hasUsedRect;
+    private int _cachedTrackerVersion = -1;
+    private bool _cachedRoomReady;
+    private static ulong _lastHoverTickMsec;
 
     public override void _Ready()
     {
         SetProcess(true);
         SetProcessInput(true);
+
+        // Cache the tile bounds once: the per-frame hover test then only pays
+        // for a rect check on the ~one layer actually under the mouse.
+        _usedRect = GetUsedRect();
+        _hasUsedRect = _usedRect.Size.X > 0 && _usedRect.Size.Y > 0;
+
+        RestoreExaminedState();
+    }
+
+    /// <summary>
+    /// Rooms can be left and re-entered now (step-back navigation, Continue):
+    /// rebuild this object's examine layers from the tracker so re-entering
+    /// doesn't reset objects to their first layer — which would look wrong
+    /// and let the corruption-free first look be repeated forever. Runs once
+    /// per object: the first sibling layer to ready up does it for all.
+    /// </summary>
+    private void RestoreExaminedState()
+    {
+        var parent = GetParent();
+        if (parent == null)
+            return;
+
+        string objectName = parent.Name.ToString();
+        if (objectName.EndsWith("Final") || objectName.EndsWith("Exclude"))
+            return;
+
+        if (parent.HasMeta("examine_restored"))
+            return;
+        parent.SetMeta("examine_restored", true);
+
+        string roomName = RoomExamineTracker.ResolveRoomName(this);
+        var clicked = RoomExamineTracker.GetClickedLayers(roomName, objectName);
+        if (clicked == null || clicked.Count == 0)
+            return;
+
+        // A clicked Clarify1 means this object's true form is its resting
+        // visual now; RestoreLayers only understands numbered Examine layers.
+        if (clicked.Contains("Clarify1"))
+        {
+            ExamineHelper.ApplyClarifyVisual(this);
+            return;
+        }
+
+        ExamineHelper.RestoreLayers(this, clicked);
     }
 
     public override void _ExitTree()
@@ -37,33 +96,122 @@ public partial class ExamineHandler : TileMapLayer
         }
     }
 
+    private bool MouseOnTile(out Vector2I cell)
+    {
+        Vector2 localMouse = ToLocal(GetGlobalMousePosition());
+        cell = LocalToMap(localMouse);
+        if (_hasUsedRect && !_usedRect.HasPoint(cell))
+            return false;
+        return GetCellSourceId(cell) != -1;
+    }
+
+    /// <summary>What this object sounds like when examined. An explicit
+    /// per-scene ExamineSfxId wins; otherwise the object name picks a fitting
+    /// sound/pitch from the pack, so a clock ticks and paper rustles.</summary>
+    private (string id, float pitch) ResolveExamineSound()
+    {
+        if (!string.IsNullOrWhiteSpace(ExamineSfxId) && ExamineSfxId != Sfx.Examine)
+            return (ExamineSfxId, 1f);
+
+        string obj = GetParent()?.Name.ToString() ?? string.Empty;
+        return obj switch
+        {
+            "Clock" => (Sfx.ClockTick, 1f),
+            "Calendar" or "Note" or "Letter" or "Drawing" or "Bookshelf" => (Sfx.PageTurn, 1f),
+            "Cup" or "Cup2" or "CupExclude" => (Sfx.DialTick, 1.7f), // ceramic tick
+            "Toast" => (Sfx.Examine, 1.1f),
+            "Window" => (Sfx.Examine, 1.2f),
+            "Phone" => (Sfx.KeyType, 0.85f),                          // mechanical click
+            "Globe" => (Sfx.Examine, 0.8f),                           // heavy wood
+            "Painting" => (Sfx.Examine, 0.95f),
+            "LeftChair" or "RightChair" => (Sfx.Examine, 0.85f),
+            "Jars" => (Sfx.WordChime, 1.3f),                          // glass
+            "Bag" => (Sfx.PageTurn, 0.75f),                           // soft rustle
+            "Bed" => (Sfx.Examine, 0.7f),                             // muffled cloth
+            _ => (Sfx.Examine, 1f),
+        };
+    }
+
+    /// <summary>Per-object cue used while Recollection changes the room one
+    /// object at a time: the object's own sound, with Clarity underneath.</summary>
+    public void PlayRecollectionCue()
+    {
+        var (sfxId, sfxPitch) = ResolveExamineSound();
+        AudioManager.PlayVaried(sfxId, -6f, sfxPitch, 0.03f);
+        AudioManager.Play(Sfx.ClarifyReveal, -12f, 1.04f);
+    }
+
+    /// <summary>Faint paper-brush tick on hover-enter, throttled so sweeping
+    /// the mouse across a crowded shelf doesn't machine-gun.</summary>
+    private static void PlayHoverTick()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (now - _lastHoverTickMsec < 90)
+            return;
+        _lastHoverTickMsec = now;
+        AudioManager.Play(Sfx.UiHover, -12f);
+    }
+
     public override void _Input(InputEvent @event)
     {
-        if (Dialogue.IsInputBlocked)
-            return;
-
-        if (!(@event is InputEventMouseButton mouseEvent) || !mouseEvent.Pressed || mouseEvent.ButtonIndex != MouseButton.Left)
-            return;
-
-        Vector2 globalMouse = GetGlobalMousePosition();
-        Vector2 localMouse = ToLocal(globalMouse);
-        Vector2I cell = LocalToMap(localMouse);
-
-        if (GetCellSourceId(cell) == -1)
-            return;
-
-        // If clarifying, delegate entirely to clarify logic and return.
-        if (Globals.Instance.IS_CLARIFYING)
+        // Right-click anywhere on an examine layer releases Clarity for free.
+        if (@event is InputEventMouseButton rightClick && rightClick.Pressed &&
+            rightClick.ButtonIndex == MouseButton.Right && ClaritySystem.IsArmed)
         {
-            ExamineHelper.TriggerClarify(this);
+            ClaritySystem.Disarm();
             GetTree().Root.SetInputAsHandled();
             return;
         }
+
+        if (Dialogue.IsInputBlocked)
+            return;
+
+        // F is the house's hand: the same reach as a click, for
+        // whatever the cursor is on. Clicking still works — this is
+        // the keyboard's way in, not a replacement for the mouse.
+        bool useKey = @event is InputEventKey keyEvent && keyEvent.Pressed &&
+            !keyEvent.Echo && keyEvent.PhysicalKeycode == Key.F;
+        bool useClick = @event is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
+            mouseEvent.ButtonIndex == MouseButton.Left;
+        if (!useKey && !useClick)
+            return;
+
+        // One painted-over pickup outranks every examine tile under
+        // it: the sitting room's little door key, while it waits on
+        // the table. Let its click pass untouched — claiming it here
+        // (and marking it handled) is what made the key unclickable.
+        if (this is not Room2 && Room2.ShouldYieldToDoorKey(GetGlobalMousePosition()))
+            return;
+
+        if (!MouseOnTile(out _))
+            return;
+
+        // A finished room, revisited from further on, has gone quiet.
+        if (GameState.Instance?.IsRoomSealed(_roomNameCache ??= RoomExamineTracker.ResolveRoomName(this)) == true)
+        {
+            GameState.Instance.NotifySealedInteraction();
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
+        // If clarifying, delegate entirely to clarify logic and return.
+        // ClaritySystem keeps the mode armed when there's nothing to reveal.
+        if (ClaritySystem.IsArmed)
+        {
+            ClaritySystem.TryReveal(this);
+            GetTree().Root.SetInputAsHandled();
+            return;
+        }
+
+        var (sfxId, sfxPitch) = ResolveExamineSound();
+        AudioManager.PlayVaried(sfxId, -3f, sfxPitch, 0.05f);
+        Hotspots.SpawnRipple(GetGlobalMousePosition());
 
         ExamineHelper.CycleExamine(this);
         RoomExamineTracker.OnExamineClicked(this);
         OnExamineClicked();
         OnAnyExamineClicked();
+        CheckRoomCompletion();
 
         var dialogueSegments = GetDialogueSegments();
         var dialogueDurations = GetDialogueDurations();
@@ -159,10 +307,22 @@ public partial class ExamineHandler : TileMapLayer
 
     private void OnAnyExamineClicked()
     {
-        // Only increment corruption when clicking something other than Examine1
-        // (the first/default examine layer).
+        // Only looking *deeper* than the first layer destabilises the
+        // memory. A deliberate second look now costs 3.0× the old unit.
         if (ExamineHelper.ExtractExamineNumber(Name.ToString()) != 1)
-            Globals.Instance.CORRUPTION_COUNT++;
+        {
+            if (GameState.Instance != null)
+                GameState.Instance.RegisterRepeatExaminePenalty();
+            else if (Globals.Instance != null)
+                Globals.Instance.CORRUPTION_COUNT += 3;
+        }
+    }
+
+    private void CheckRoomCompletion()
+    {
+        string roomName = RoomExamineTracker.ResolveRoomName(this);
+        if (RoomExamineTracker.HasRoomBeenFullyExamined(roomName))
+            GameState.Instance?.MarkRoomCompleted(roomName);
     }
 
     protected virtual void OnExamineClicked()
@@ -173,7 +333,13 @@ public partial class ExamineHandler : TileMapLayer
     {
         // While input is blocked (dialogue playing), forcibly end any hover so
         // the cursor doesn't stay stuck as a magnifying glass during dialogue.
-        if (Dialogue.IsInputBlocked)
+        // Sealed rooms offer no hover either: nothing here answers anymore.
+        // The waiting little door key owns its own pointer hover, so the
+        // examine tiles underneath it keep their magnifier sheathed too.
+        bool yieldHoverToDoorKey = this is not Room2 &&
+            Room2.ShouldYieldToDoorKey(GetGlobalMousePosition());
+        if (Dialogue.IsInputBlocked || !HoverEnabled || yieldHoverToDoorKey
+            || GameState.Instance?.IsRoomSealed(_roomNameCache ??= RoomExamineTracker.ResolveRoomName(this)) == true)
         {
             if (_isHovering)
             {
@@ -184,21 +350,7 @@ public partial class ExamineHandler : TileMapLayer
             return;
         }
 
-        if (!HoverEnabled)
-        {
-            if (_isHovering)
-            {
-                CursorHelper.EndHover(this);
-                _isHovering = false;
-                _currentHoverCursorTexturePath = string.Empty;
-            }
-            return;
-        }
-
-        Vector2 globalMouse = GetGlobalMousePosition();
-        Vector2 localMouse = ToLocal(globalMouse);
-        Vector2I cell = LocalToMap(localMouse);
-        bool hasTile = GetCellSourceId(cell) != -1;
+        bool hasTile = MouseOnTile(out _);
 
         if (hasTile)
         {
@@ -209,15 +361,23 @@ public partial class ExamineHandler : TileMapLayer
             bool isFinal = parent != null && parent.Name.ToString().EndsWith("Final");
             if (isFinal)
             {
-                string roomName = GetRoomNameFromNode(this);
-                bool roomReady = RoomExamineTracker.HasRoomBeenFullyExamined(roomName);
-                desiredCursor = roomReady ? UnlockedCursorTexturePath : LockedCursorTexturePath;
+                // Recompute the expensive room check only when progress changed.
+                if (_cachedTrackerVersion != RoomExamineTracker.Version)
+                {
+                    _cachedTrackerVersion = RoomExamineTracker.Version;
+                    _cachedRoomReady = RoomExamineTracker.HasRoomBeenFullyExamined(
+                        RoomExamineTracker.ResolveRoomName(this));
+                }
+                desiredCursor = _cachedRoomReady ? UnlockedCursorTexturePath : LockedCursorTexturePath;
             }
 
             // Only call BeginHover when we first enter or when the cursor type changes.
             if (!_isHovering || _currentHoverCursorTexturePath != desiredCursor)
             {
+                bool entering = !_isHovering;
                 CursorHelper.BeginHover(this, desiredCursor, CursorWidth, CursorHeight);
+                if (entering)
+                    PlayHoverTick();
                 _currentHoverCursorTexturePath = desiredCursor;
                 _isHovering = true;
             }
@@ -231,31 +391,5 @@ public partial class ExamineHandler : TileMapLayer
                 _currentHoverCursorTexturePath = string.Empty;
             }
         }
-    }
-
-    private static string GetRoomNameFromNode(Node node)
-    {
-        var current = node;
-        bool passedObjects = false;
-
-        while (current != null)
-        {
-            current = current.GetParent();
-            if (current == null)
-                break;
-
-            string currentName = current.Name.ToString();
-
-            if (currentName == "Objects")
-            {
-                passedObjects = true;
-                continue;
-            }
-
-            if (passedObjects && (current is Node2D || current is CanvasLayer || current is TileMapLayer))
-                return currentName;
-        }
-
-        return "Room1";
     }
 }

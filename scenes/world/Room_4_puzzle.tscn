@@ -21,7 +21,7 @@ position = Vector2(195, 97)
 scale = Vector2(0.32, 0.32)
 texture = ExtResource("2_arrow")
 script = ExtResource("3_back_arrow")
-TargetScenePath = "res://scenes/world/room4.tscn"
+TargetScenePath = "res://scenes/world/room_4.tscn"
 
 [node name="Area2D" type="Area2D" parent="BackArrow" unique_id=1679232474]
 

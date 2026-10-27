@@ -57,6 +57,18 @@ region = Rect2(392, 299, 142, 32)
 atlas = ExtResource("3_9fkkv")
 region = Rect2(392, 299, 142, 32)
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_continue_n"]
+atlas = ExtResource("3_9fkkv")
+region = Rect2(87, 376, 166, 39)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_continue_p"]
+atlas = ExtResource("3_9fkkv")
+region = Rect2(392, 379, 231, 33)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_continue_h"]
+atlas = ExtResource("3_9fkkv")
+region = Rect2(392, 379, 231, 33)
+
 [node name="MainMenu" type="Control" unique_id=1004610284]
 layout_mode = 3
 anchors_preset = 15
@@ -66,6 +78,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_0kq3x")
 StartButtonPath = NodePath("SubViewportContainer/SubViewport/Center/MarginContainer/VBox/StartButton")
+ContinueButtonPath = NodePath("SubViewportContainer/SubViewport/Center/MarginContainer/VBox/ContinueButton")
 FullStoryButtonPath = NodePath("SubViewportContainer/SubViewport/Center/MarginContainer/VBox/FullStoryButton")
 AboutButtonPath = NodePath("SubViewportContainer/SubViewport/Center/MarginContainer/VBox/AboutButton")
 QuitButtonPath = NodePath("SubViewportContainer/SubViewport/Center/MarginContainer/VBox/QuitButton")
@@ -234,30 +247,37 @@ layout_mode = 2
 theme_override_constants/separation = 150
 theme_override_styles/separator = SubResource("StyleBoxLine_1g8jr")
 
+[node name="ContinueButton" type="TextureButton" parent="SubViewportContainer/SubViewport/Center/MarginContainer/VBox" unique_id=987654321]
+layout_mode = 2
+size_flags_horizontal = 0
+texture_normal = SubResource("AtlasTexture_continue_n")
+texture_pressed = SubResource("AtlasTexture_continue_p")
+texture_hover = SubResource("AtlasTexture_continue_h")
+
 [node name="StartButton" type="TextureButton" parent="SubViewportContainer/SubViewport/Center/MarginContainer/VBox" unique_id=1602210753]
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 0
 texture_normal = SubResource("AtlasTexture_m1kxf")
 texture_pressed = SubResource("AtlasTexture_x2yvf")
 texture_hover = SubResource("AtlasTexture_otr3d")
 
 [node name="FullStoryButton" type="TextureButton" parent="SubViewportContainer/SubViewport/Center/MarginContainer/VBox" unique_id=1085748213]
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 0
 texture_normal = SubResource("AtlasTexture_uhagc")
 texture_pressed = SubResource("AtlasTexture_btxxm")
 texture_hover = SubResource("AtlasTexture_8ekit")
 
 [node name="AboutButton" type="TextureButton" parent="SubViewportContainer/SubViewport/Center/MarginContainer/VBox" unique_id=1489428595]
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 0
 texture_normal = SubResource("AtlasTexture_wb0q5")
 texture_pressed = SubResource("AtlasTexture_q85j6")
 texture_hover = SubResource("AtlasTexture_n4uci")
 
 [node name="QuitButton" type="TextureButton" parent="SubViewportContainer/SubViewport/Center/MarginContainer/VBox" unique_id=1421538295]
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 0
 texture_normal = SubResource("AtlasTexture_8g5eo")
 texture_pressed = SubResource("AtlasTexture_7suek")
 texture_hover = SubResource("AtlasTexture_877pj")

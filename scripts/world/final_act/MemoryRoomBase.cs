@@ -1,0 +1,546 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Godot;
+
+/// <summary>
+/// Shared foundation for the code-built final-act rooms.
+///
+/// Rooms 1-3 are TileMap-layer scenes. Rooms 5 and 6 are authored,
+/// full-screen paintings, so their interactive objects are explicit design
+/// rectangles over the artwork instead of tiles. This base keeps them on the
+/// same production systems as the rest of the game: RoomExamineTracker for
+/// objectives/clues/saves, Hotspots for Tab/hint rings (via tagged target
+/// nodes), Dialogue for text, CursorHelper for hover, and GameState for
+/// corruption, verbs, shards and room completion.
+/// </summary>
+public abstract partial class MemoryRoomBase : Node2D
+{
+    protected const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
+    protected const string SearchCursorPath = "res://assets/images/core/cursor_magnifying_glass.png";
+    protected const string PointerCursorPath = "res://assets/images/core/cursor_pointer.png";
+    protected const string EyeCursorPath = "res://assets/images/core/cursor_eye.png";
+
+    protected sealed class Hotspot
+    {
+        public string Id { get; }
+        public string DisplayName { get; }
+        public Rect2 Rect { get; }
+        public Vector2 Center { get; }
+        public string SfxId { get; }
+        public float SfxPitch { get; }
+        public string CursorPath { get; }
+        public bool Examinable { get; }
+
+        public Hotspot(
+            string id,
+            string displayName,
+            Rect2 rect,
+            Vector2 center,
+            string sfxId = Sfx.Examine,
+            float sfxPitch = 1f,
+            string cursorPath = SearchCursorPath,
+            bool examinable = true)
+        {
+            Id = id;
+            DisplayName = displayName;
+            Rect = rect;
+            Center = center;
+            SfxId = string.IsNullOrWhiteSpace(sfxId) ? Sfx.Examine : sfxId;
+            SfxPitch = sfxPitch;
+            CursorPath = string.IsNullOrWhiteSpace(cursorPath) ? SearchCursorPath : cursorPath;
+            Examinable = examinable;
+        }
+    }
+
+    private readonly List<Hotspot> _hotspots = new();
+    private readonly Dictionary<string, Hotspot> _hotspotsById = new();
+
+    private Font _font;
+    private Texture2D _backgroundTexture;
+    private Color _backgroundTint = Colors.White;
+    private Label _hoverLabel;
+    private Hotspot _hovered;
+    private bool _hoverCursorOwned;
+    private ulong _lastHoverTickMsec;
+    private ulong _lastClarityDeniedMsec;
+
+    /// <summary>Set by a room while it owns a multi-line or transition sequence.</summary>
+    protected bool Busy { get; set; }
+
+    protected abstract string RoomName { get; }
+    protected abstract string BackgroundPath { get; }
+    protected abstract IEnumerable<Hotspot> BuildHotspots();
+    protected abstract void OnHotspotClicked(Hotspot hotspot);
+
+    protected virtual void OnRoomReady()
+    {
+    }
+
+    /// <summary>Called inside ExamineObjectAsync, after the look that makes
+    /// every required object in the room known. Rooms use it to move the
+    /// story from ordinary looking into their Memory Verb in Mara's voice.</summary>
+    protected virtual Task OnRequiredExaminesCompletedAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Room-specific overlays (Anchor rings, Trace lines), drawn over the art.</summary>
+    protected virtual void DrawRoom()
+    {
+    }
+
+    public override void _Ready()
+    {
+        SetProcess(true);
+        SetProcessInput(true);
+
+        _font = GD.Load<FontFile>(FontPath);
+        _backgroundTexture = GD.Load<Texture2D>(BackgroundPath);
+        if (_backgroundTexture == null)
+            Logger.Error($"[{RoomName}] Could not load room background: {BackgroundPath}");
+
+        foreach (var hotspot in BuildHotspots())
+        {
+            if (hotspot == null || string.IsNullOrWhiteSpace(hotspot.Id))
+                continue;
+            _hotspots.Add(hotspot);
+            // A logical object may be painted in several separate places
+            // (Room 5's scattered photographs). Keep the first rect as the
+            // canonical GetHotspot result, while every rect remains in
+            // _hotspots for hover/click and gets its own reveal target.
+            if (!_hotspotsById.ContainsKey(hotspot.Id))
+                _hotspotsById[hotspot.Id] = hotspot;
+
+            // Hotspots.RevealAll/RevealObject understand these tagged targets,
+            // so Tab and third-level hints work exactly as in TileMap rooms.
+            string targetName = $"{hotspot.Id}Target";
+            int targetSuffix = 2;
+            while (GetNodeOrNull<Node>(targetName) != null)
+            {
+                targetName = $"{hotspot.Id}Target{targetSuffix}";
+                targetSuffix++;
+            }
+            var target = new Node2D
+            {
+                Name = targetName,
+                Position = hotspot.Center,
+            };
+            target.SetMeta("memory_object", hotspot.Id);
+            AddChild(target);
+        }
+
+        _hoverLabel = CreateLabel(string.Empty, Vector2.Zero, 19,
+            new Color(0.97f, 0.93f, 0.84f), new Vector2(190, 34));
+        _hoverLabel.Visible = false;
+        var chip = new StyleBoxFlat
+        {
+            BgColor = new Color(0.04f, 0.035f, 0.03f, 0.82f),
+            BorderColor = new Color(0.78f, 0.66f, 0.46f, 0.45f),
+        };
+        chip.SetBorderWidthAll(1);
+        chip.SetCornerRadiusAll(4);
+        chip.ContentMarginLeft = 8;
+        chip.ContentMarginRight = 8;
+        chip.ContentMarginTop = 4;
+        chip.ContentMarginBottom = 4;
+        _hoverLabel.AddThemeStyleboxOverride("normal", chip);
+
+        OnRoomReady();
+        QueueRedraw();
+    }
+
+    public override void _ExitTree()
+    {
+        ClearHover();
+    }
+
+    /// <summary>True when this room is finished and the player has moved
+    /// beyond it: examinables rest. Exits (non-examinable hotspots) never seal.</summary>
+    protected bool SealedHere => GameState.Instance?.IsRoomSealed(RoomName) == true;
+
+    /// <summary>A finished room stays quiet — except around the one
+    /// practical thing Mara walked past. Rooms override this for the
+    /// hotspot that still holds an untaken item (a hairpin in a
+    /// nightstand drawer) so going back for it always works.</summary>
+    protected virtual bool HotspotSealedException(Hotspot hotspot) => false;
+
+    public override void _Process(double delta)
+    {
+        if (Busy || Dialogue.IsInputBlocked || Dialogue.IsShowing ||
+            GetTree().Paused || SceneManager.IsChanging)
+        {
+            SetHovered(null);
+            return;
+        }
+
+        Vector2 mouse = GetGlobalMousePosition();
+        var hovered = IsOverUi(mouse) ? null : FindHotspot(mouse);
+        if (hovered != null && SealedHere && hovered.Examinable && !HotspotSealedException(hovered))
+            hovered = null;
+        SetHovered(hovered);
+        if (_hovered != null)
+            QueueRedraw();
+    }
+
+    public override void _Input(InputEvent @event)
+    {
+        // A click, or F: the house's hand, for the thing under the
+        // cursor. Same reach, same rules, either way.
+        bool clicked = @event is InputEventMouseButton mouse && mouse.Pressed &&
+            mouse.ButtonIndex == MouseButton.Left;
+        bool useKey = @event is InputEventKey key && key.Pressed &&
+            !key.Echo && key.PhysicalKeycode == Key.F;
+        if (!clicked && !useKey)
+            return;
+
+        if (Busy || Dialogue.IsInputBlocked || Dialogue.IsShowing ||
+            GetTree().Paused || SceneManager.IsChanging)
+            return;
+
+        Vector2 position = GetGlobalMousePosition();
+        if (IsOverUi(position))
+            return;
+
+        var hotspot = FindHotspot(position);
+        if (hotspot == null)
+            return;
+
+        if (SealedHere && hotspot.Examinable && !HotspotSealedException(hotspot))
+        {
+            GetTree().Root.SetInputAsHandled();
+            GameState.Instance?.NotifySealedInteraction();
+            return;
+        }
+
+        GetTree().Root.SetInputAsHandled();
+        Hotspots.SpawnRipple(position);
+
+        // Clarity reveals TileMap layers in Rooms 1-3. These rooms have no
+        // false tile surface; their puzzle language is the Memory Verbs.
+        if (ClaritySystem.IsArmed)
+        {
+            ulong now = Time.GetTicksMsec();
+            if (now - _lastClarityDeniedMsec > 1200)
+            {
+                _lastClarityDeniedMsec = now;
+                AudioManager.Play(Sfx.Denied, -10f, 1.05f);
+                GameState.Instance?.Toast(
+                    "Clarity finds no false surface to lift here. This room asks to be remembered differently.");
+            }
+            return;
+        }
+
+        OnHotspotClicked(hotspot);
+    }
+
+    public override void _Draw()
+    {
+        var screen = new Rect2(Vector2.Zero, new Vector2(1152, 648));
+        if (_backgroundTexture != null)
+            DrawTextureRect(_backgroundTexture, screen, false, _backgroundTint);
+        else
+            DrawRect(screen, new Color(0.03f, 0.025f, 0.02f));
+
+        DrawHoveredHotspotOutline();
+
+        DrawRoom();
+    }
+
+    /// <summary>The shared gold hover outline. Exposed for the one room
+    /// that replaces _Draw wholesale (Room 4's cropped door close-up), so
+    /// its custom painting still gets the ordinary hover affordance.</summary>
+    protected void DrawHoveredHotspotOutline()
+    {
+        if (_hovered == null)
+            return;
+
+        float alpha = Settings.ReduceMotionOrDefault()
+            ? 0.72f
+            : 0.62f + 0.22f * (float)Math.Sin(Time.GetTicksMsec() / 210.0);
+        DrawRect(_hovered.Rect, new Color(1f, 0.89f, 0.58f, 0.07f));
+        DrawRect(_hovered.Rect, new Color(1f, 0.89f, 0.58f, alpha), false, 2f);
+    }
+
+    // -------------------------------------------------------------- helpers
+
+    protected Hotspot GetHotspot(string id)
+    {
+        return id != null && _hotspotsById.TryGetValue(id, out var hotspot) ? hotspot : null;
+    }
+
+    /// <summary>Every painted rect belonging to one logical object. Most
+    /// objects have exactly one; a scattered set can share one ID.</summary>
+    protected List<Hotspot> GetHotspots(string id)
+    {
+        var result = new List<Hotspot>();
+        if (id == null)
+            return result;
+        foreach (var hotspot in _hotspots)
+        {
+            if (hotspot.Id == id)
+                result.Add(hotspot);
+        }
+        return result;
+    }
+
+    protected Hotspot FindHotspot(Vector2 position)
+    {
+        // Later hotspots are more specific (a desk drawer over the desk).
+        for (int i = _hotspots.Count - 1; i >= 0; i--)
+        {
+            if (_hotspots[i].Rect.HasPoint(position))
+                return _hotspots[i];
+        }
+        return null;
+    }
+
+    protected bool WasExamined(string objectId)
+    {
+        return RoomExamineTracker.GetClickedLayers(RoomName, objectId) != null;
+    }
+
+    /// <returns>True only for the first recorded look at this object.</returns>
+    protected bool RecordExamine(Hotspot hotspot)
+    {
+        if (hotspot == null)
+            return false;
+        var clicked = RoomExamineTracker.GetClickedLayers(RoomName, hotspot.Id);
+        int next = (clicked?.Count ?? 0) + 1;
+        RoomExamineTracker.RecordExamine(RoomName, hotspot.Id, $"Examine{next}");
+        return clicked == null;
+    }
+
+    protected bool AllRequiredExamined()
+    {
+        return RoomExamineTracker.HasRoomBeenFullyExamined(RoomName);
+    }
+
+    protected void GetProgress(out int done, out int total)
+    {
+        RoomExamineTracker.GetRoomProgress(RoomName, out done, out total, out _);
+    }
+
+    /// <summary>The room painting itself, for rooms (Room 5) that redraw
+    /// pieces of it changed.</summary>
+    protected Texture2D BackgroundTexture => _backgroundTexture;
+
+    protected void SetBackgroundTint(Color tint)
+    {
+        _backgroundTint = tint;
+        QueueRedraw();
+    }
+
+    protected async Task Say(string text, float duration = 4.5f, int fontSize = 24)
+    {
+        if (!GodotObject.IsInstanceValid(this) || string.IsNullOrWhiteSpace(text))
+            return;
+        await Dialogue.ShowText(this, text, duration, 576f, 324f, FontPath, fontSize);
+    }
+
+    protected async Task SaySequence(params string[] lines)
+    {
+        if (lines == null)
+            return;
+        foreach (var line in lines)
+        {
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            await Say(line, 5f, 24);
+        }
+    }
+
+    /// <summary>Speak a one-time lesson as part of the room's story. The flag
+    /// is saved only after the lines finish, so a quit/reload mid-lesson can
+    /// hear it again; Journal clues and H remain the permanent reminders.</summary>
+    protected async Task SayStoryLessonOnceAsync(string flag, params string[] lines)
+    {
+        var gs = GameState.Instance;
+        if (gs == null || string.IsNullOrWhiteSpace(flag) || gs.HasFlag(flag) || lines == null)
+            return;
+
+        await SaySequence(lines);
+        if (!GodotObject.IsInstanceValid(this))
+            return;
+
+        gs.SetFlag(flag, save: false);
+        gs.SaveGame($"story lesson: {flag}");
+    }
+
+    /// <summary>Entry-beat wrapper: briefly own the room so Mara can name what
+    /// this place is asking before the player starts clicking through it.</summary>
+    protected async Task PlayStoryLessonOnceAsync(string flag, params string[] lines)
+    {
+        var gs = GameState.Instance;
+        if (Busy || gs == null || string.IsNullOrWhiteSpace(flag) || gs.HasFlag(flag))
+            return;
+
+        Busy = true;
+        try
+        {
+            await WaitSeconds(0.35f);
+            if (!GodotObject.IsInstanceValid(this))
+                return;
+            await SayStoryLessonOnceAsync(flag, lines);
+        }
+        finally
+        {
+            if (GodotObject.IsInstanceValid(this))
+            {
+                Busy = false;
+                QueueRedraw();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Standard final-act examine: record first looks, replay a short repeat
+    /// line afterwards, and make repeated looking fray the memory just as it
+    /// does in the TileMap rooms.
+    /// </summary>
+    protected async Task ExamineObjectAsync(
+        Hotspot hotspot,
+        string[] firstLines,
+        string repeatLine)
+    {
+        if (hotspot == null || Busy)
+            return;
+
+        Busy = true;
+        try
+        {
+            bool first = RecordExamine(hotspot);
+            bool completedRequiredNow = first && AllRequiredExamined();
+            AudioManager.PlayVaried(hotspot.SfxId, -5f, hotspot.SfxPitch, 0.04f);
+            if (first)
+            {
+                await SaySequence(firstLines ?? Array.Empty<string>());
+                if (completedRequiredNow && GodotObject.IsInstanceValid(this))
+                    await OnRequiredExaminesCompletedAsync();
+            }
+            else
+            {
+                GameState.Instance?.RegisterRepeatExaminePenalty();
+                if (!string.IsNullOrWhiteSpace(repeatLine))
+                    await Say(repeatLine, 3.5f, 24);
+            }
+        }
+        finally
+        {
+            Busy = false;
+            QueueRedraw();
+        }
+    }
+
+    protected Label CreateLabel(
+        string text,
+        Vector2 position,
+        int fontSize,
+        Color color,
+        Vector2 size)
+    {
+        var label = new Label
+        {
+            Text = text ?? string.Empty,
+            Position = position,
+            Size = size,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.Word,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = 2600,
+        };
+        if (_font != null)
+            label.AddThemeFontOverride("font", _font);
+        label.AddThemeFontSizeOverride("font_size", fontSize);
+        label.AddThemeColorOverride("font_color", color);
+        AddChild(label);
+        return label;
+    }
+
+    protected async Task WaitSeconds(float seconds)
+    {
+        if (!IsInsideTree() || seconds <= 0f)
+            return;
+        await ToSignal(GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
+    }
+
+    // -------------------------------------------------------------- hover/UI
+
+    private void SetHovered(Hotspot next)
+    {
+        if (_hovered == next)
+            return;
+
+        if (_hoverCursorOwned)
+        {
+            CursorHelper.EndHover(this);
+            _hoverCursorOwned = false;
+        }
+
+        _hovered = next;
+        if (_hovered == null)
+        {
+            if (_hoverLabel != null)
+                _hoverLabel.Visible = false;
+            QueueRedraw();
+            return;
+        }
+
+        CursorHelper.BeginHover(this, _hovered.CursorPath, 32, 32);
+        _hoverCursorOwned = true;
+
+        ulong now = Time.GetTicksMsec();
+        if (now - _lastHoverTickMsec > 90)
+        {
+            _lastHoverTickMsec = now;
+            AudioManager.Play(Sfx.UiHover, -13f);
+        }
+
+        if (_hoverLabel != null)
+        {
+            _hoverLabel.Text = _hovered.DisplayName;
+            float x = Mathf.Clamp(_hovered.Center.X - 95f, 8f, 954f);
+            float y = Mathf.Clamp(_hovered.Rect.Position.Y - 42f, 44f, 600f);
+            _hoverLabel.Position = new Vector2(x, y);
+            _hoverLabel.Visible = true;
+        }
+        QueueRedraw();
+    }
+
+    private void ClearHover()
+    {
+        if (_hoverCursorOwned)
+        {
+            CursorHelper.EndHover(this);
+            _hoverCursorOwned = false;
+        }
+        _hovered = null;
+        if (_hoverLabel != null && GodotObject.IsInstanceValid(_hoverLabel))
+            _hoverLabel.Visible = false;
+    }
+
+    /// <summary>
+    /// GameUI is a root-viewport CanvasLayer above the room SubViewport.
+    /// Node _Input can otherwise claim a room click in the same press that
+    /// activates its Step Back / Memory Verb buttons.
+    /// </summary>
+    private bool IsOverUi(Vector2 position)
+    {
+        // Ask the HUD which actual buttons are live under this point. The
+        // previous blanket regions blocked the entire expanded Memory bar
+        // even when it had collapsed to its small tab, and blocked every
+        // point below y=606; together they made most of Room 5's painted
+        // floor photographs impossible to hover or click. Empty panel
+        // space and the bottom of the room are room space again.
+        var ui = GameUI.Instance;
+        if (ui != null)
+            return ui.IsPointOverInteractiveHud(position);
+
+        // One-frame/standalone fallback before the autoload is available:
+        // protect only the Bag icon's familiar rectangle, never a whole
+        // strip of the room painting.
+        return position.X >= 1070f && position.X <= 1144f &&
+               position.Y >= 136f && position.Y <= 208f;
+    }
+}

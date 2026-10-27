@@ -1,0 +1,72 @@
+using Godot;
+
+/// <summary>
+/// Central registry of named input actions.
+/// Actions are also declared in project.godot ([input]); this class is the
+/// belt-and-braces fallback that creates any missing action at runtime so a
+/// hand-merged or older project.godot can never leave the game uncontrollable.
+/// Use the constants instead of string literals everywhere.
+/// </summary>
+public static class InputSetup
+{
+    public const string PauseGame = "pause_game";
+    public const string AdvanceDialogue = "advance_dialogue";
+    public const string SkipDialogue = "skip_dialogue";
+    public const string ToggleClarity = "toggle_clarity";
+    public const string RevealObjective = "reveal_objective";
+    public const string OpenJournal = "open_journal";
+    public const string ToggleMemoryBar = "toggle_memory_bar";
+    public const string ToggleBag = "toggle_bag";
+    public const string RequestHint = "request_hint";
+    public const string NavBack = "nav_back";
+    public const string MemoryEcho = "memory_echo";
+    public const string MemoryAnchor = "memory_anchor";
+    public const string MemoryTrace = "memory_trace";
+    public const string MemoryRelease = "memory_release";
+
+    private static bool _ensured;
+
+    public static void Ensure()
+    {
+        if (_ensured)
+            return;
+        _ensured = true;
+
+        AddKeyAction(PauseGame, Key.Escape, Key.P);
+        AddKeyAction(AdvanceDialogue, Key.Space, Key.Enter, Key.KpEnter);
+        AddKeyAction(SkipDialogue, Key.End);
+        AddKeyAction(ToggleClarity, Key.C);
+        AddKeyAction(RevealObjective, Key.Tab);
+        AddKeyAction(OpenJournal, Key.J, Key.M);
+        AddKeyAction(ToggleMemoryBar, Key.V);
+        AddKeyAction(ToggleBag, Key.B, Key.I);
+        AddKeyAction(RequestHint, Key.H);
+        AddKeyAction(NavBack, Key.Q, Key.Backspace);
+        AddKeyAction(MemoryEcho, Key.E);
+        AddKeyAction(MemoryAnchor, Key.G);
+        AddKeyAction(MemoryTrace, Key.T);
+        AddKeyAction(MemoryRelease, Key.R);
+    }
+
+    private static void AddKeyAction(string action, params Key[] keys)
+    {
+        if (!InputMap.HasAction(action))
+            InputMap.AddAction(action);
+
+        foreach (var key in keys)
+        {
+            bool exists = false;
+            foreach (var existing in InputMap.ActionGetEvents(action))
+            {
+                if (existing is InputEventKey k && k.PhysicalKeycode == key)
+                {
+                    exists = true;
+                    break;
+                }
+            }
+
+            if (!exists)
+                InputMap.ActionAddEvent(action, new InputEventKey { PhysicalKeycode = key });
+        }
+    }
+}

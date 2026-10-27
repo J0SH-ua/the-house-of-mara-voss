@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cmarabrdgscn"]
+
+[ext_resource type="Script" uid="uid://cmarabrdg001" path="res://scripts/world/room6/BridgeRepair.cs" id="1"]
+
+[node name="BridgeRepair" type="Node2D"]
+script = ExtResource("1")

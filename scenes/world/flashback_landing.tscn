@@ -1,0 +1,6 @@
+[gd_scene format=4 uid="uid://cylumgvq6qtuq"]
+
+[ext_resource type="Script" uid="uid://cmaraflash001" path="res://scripts/world/room4/FlashbackLanding.cs" id="1_flash"]
+
+[node name="FlashbackLanding" type="Node2D" unique_id=1504000001]
+script = ExtResource("1_flash")

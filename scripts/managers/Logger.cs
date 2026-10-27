@@ -5,10 +5,30 @@ public static class Logger
 {
     public static void Log(LogLevel level, params object[] message)
     {
+        // DEBUG is development-only noise; keep release consoles clean.
+        if (level == LogLevel.DEBUG && !OS.IsDebugBuild())
+            return;
+
         var dateTime = DateTime.Now;
         var timestamp = $"[{dateTime:yyyy-MM-dd HH:mm:ss}]";
-        var callingMethod = new System.Diagnostics.StackTrace().GetFrame(2).GetMethod();
-        string logMessage = $"{timestamp} [{level}] [{callingMethod.DeclaringType.Name}] [{callingMethod.Name}] ";
+
+        // Stack inspection is best-effort: inlined/optimised frames can be
+        // missing, and logging must never throw while reporting something else.
+        string typeName = "?";
+        string methodName = "?";
+        try
+        {
+            var frame = new System.Diagnostics.StackTrace().GetFrame(2);
+            var callingMethod = frame?.GetMethod();
+            typeName = callingMethod?.DeclaringType?.Name ?? "?";
+            methodName = callingMethod?.Name ?? "?";
+        }
+        catch
+        {
+            // fall through with placeholders
+        }
+
+        string logMessage = $"{timestamp} [{level}] [{typeName}] [{methodName}] ";
         string color = level switch
         {
             LogLevel.DEBUG => "WHITE",

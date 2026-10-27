@@ -1,0 +1,6 @@
+[gd_scene format=4 uid="uid://cmarabedrmsc1"]
+
+[ext_resource type="Script" uid="uid://cmarabedrm001" path="res://scripts/world/prologue/BedroomPrologue.cs" id="1_bed"]
+
+[node name="BedroomPrologue" type="Node2D" unique_id=1501000001]
+script = ExtResource("1_bed")

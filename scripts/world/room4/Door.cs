@@ -49,6 +49,7 @@ public partial class Door : AnimatedSprite2D
 			return;
 		}
 
+		AudioManager.Play(Sfx.DoorCreak, -6f);
 		SceneManager.ChangeScene(TargetScenePath);
 		GetTree().Root.SetInputAsHandled();
 	}

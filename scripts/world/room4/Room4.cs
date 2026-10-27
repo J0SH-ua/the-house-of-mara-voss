@@ -1,9 +1,10 @@
+using System.Threading.Tasks;
 using Godot;
 
 public partial class Room4 : Node2D
 {
 	[ExportCategory("Door Transition")]
-	[Export(PropertyHint.File, "*.tscn")] public string DoorTargetScenePath = "res://scenes/ui/main_menu.tscn";
+	[Export(PropertyHint.File, "*.tscn")] public string DoorTargetScenePath = "res://scenes/world/Room_4_puzzle.tscn";
 	[Export] public NodePath DoorClickAreaPath = "Door/Area2D";
 
 	[Export] public bool DebugHoverDetection = true;
@@ -78,10 +79,26 @@ public partial class Room4 : Node2D
 	private Area2D _doorClickArea;
 	private Area2D _mirrorCollisionArea;
 	private Area2D _drawerCollisionArea;
+	private Area2D _pic11Area;
+	private Area2D _pic12Area;
+	private bool _mirrorBusy;
+	private bool _framesBusy;
+	private bool _drawerBusy;
+
+	private const string FlashbackScenePath = "res://scenes/world/flashback_landing.tscn";
+	private const string Room5ScenePath = "res://scenes/world/room_5.tscn";
+	private const string DoorOpenedFlag = "room4_door_opened";
+	private const string DoorwayLinesSeenFlag = "room4_doorway_lines_seen";
 	private bool _doorAnimationStarted = false;
 	private bool _doorUnlocked = false;
+	private bool _doorBusy;
 	private Label _sentenceLabel;
 	private CanvasLayer _sentenceLayer;
+	private bool _echoHintShown;
+	private bool _echoUseRegistered;
+	private bool _wasEchoArmed;
+	private bool _echoArmLessonShown;
+	private bool _echoOutOfOrderHintShown;
 	private static readonly Vector2 SentencePosition = new Vector2(400, 80);
 
 	public override void _Ready()
@@ -101,6 +118,16 @@ public partial class Room4 : Node2D
 		_drawerCollisionArea = GetNodeOrNull<Area2D>("Drawer/Drawer");
 		if (_drawerCollisionArea != null)
 			_drawerCollisionArea.InputPickable = true;
+
+		// Pic 11 and Pic 12 were always on this wall with nothing to say:
+		// the two frames Mara turned to the wall. Now they are the hallway's
+		// third kept thing, beside the mirror and the drawer.
+		_pic11Area = GetNodeOrNull<Area2D>("Pic 11");
+		if (_pic11Area != null)
+			_pic11Area.InputPickable = true;
+		_pic12Area = GetNodeOrNull<Area2D>("Pic 12");
+		if (_pic12Area != null)
+			_pic12Area.InputPickable = true;
 
 		_doorClickArea = GetNodeOrNull<Area2D>(DoorClickAreaPath);
 		if (_doorClickArea == null)
@@ -146,25 +173,251 @@ public partial class Room4 : Node2D
 			_sentenceLabel.AutowrapMode = TextServer.AutowrapMode.Word;
 			_sentenceLabel.Size = new Vector2(800, 160);
 		}
+
+		RestoreCompletedState();
+		_ = MaybePlayHallwayLessonAsync();
+	}
+
+	private async Task MaybePlayHallwayLessonAsync()
+	{
+		const string lessonFlag = "story_lesson_room4_hallway_echo";
+		var gs = GameState.Instance;
+		if (gs == null || gs.HasFlag(lessonFlag) || gs.HasFlag("room4_sentence_complete") || gs.IsShardRecovered(3))
+			return;
+
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+
+		Dialogue.BeginInputBlock();
+		try
+		{
+			await Dialogue.ShowText(this, "These photos aren't captions. They're one sentence Mum once said in this hall — broken across the wall so I wouldn't have to hear it all at once.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "Looking finds the words. They don't sound like anyone speaking. Not yet.", 5.0f, 576f, 324f, HoverFontPath, 24);
+		}
+		finally
+		{
+			Dialogue.EndInputBlock();
+		}
+
+		if (GodotObject.IsInstanceValid(this))
+		{
+			gs.SetFlag(lessonFlag, save: false);
+			gs.SaveGame("story lesson: hallway Echo");
+		}
+	}
+
+	private void RestoreCompletedState()
+	{
+		var gs = GameState.Instance;
+		if (gs == null || (!gs.HasFlag("room4_sentence_complete") && !gs.IsShardRecovered(3)))
+			return;
+
+		gs.SetFlag("room4_sentence_complete", save: false);
+		_currentSequenceIndex = HoverWords.Length;
+		_doorUnlocked = true;
+		_doorAnimationStarted = true;
+		if (_sentenceLabel != null)
+		{
+			_sentenceLabel.Text = string.Join(" ", HoverWords);
+			_sentenceLabel.Visible = true;
+			_sentenceLabel.Modulate = Colors.White;
+		}
+		if (_doorAnimation != null)
+		{
+			_doorAnimation.Visible = true;
+			var animations = _doorAnimation.SpriteFrames?.GetAnimationNames();
+			if (animations != null && animations.Length > 0)
+			{
+				_doorAnimation.Animation = animations[0];
+				_doorAnimation.Frame = Mathf.Max(0, _doorAnimation.SpriteFrames.GetFrameCount(animations[0]) - 1);
+			}
+		}
+	}
+
+	private void CompleteSentence()
+	{
+		_currentSequenceIndex = HoverWords.Length;
+		GameState.Instance?.SetFlag("room4_sentence_complete");
+		GameState.Instance?.UnlockClue("hallway_sentence");
+		GameState.Instance?.CollectShard(3);
+		GameState.Instance?.MarkRoomCompleted("Room4");
+		MemoryVerbSystem.Cancel(silent: true);
+		TriggerDoorAnimation();
+		_ = TeachAnchorAsync();
+	}
+
+	private async Task TeachAnchorAsync()
+	{
+		const string lessonFlag = "story_lesson_anchor_awakens";
+		var gs = GameState.Instance;
+		if (gs == null || gs.HasFlag(lessonFlag))
+			return;
+
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+
+		Dialogue.BeginInputBlock();
+		try
+		{
+			await Dialogue.ShowText(this, "It doesn't rescue me. It gives me one sentence that stays still when I say it back: She would have loved to see how far you've come.", 5.5f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "That stillness has a name now, the way listening did. Anchor.", 5.0f, 576f, 324f, HoverFontPath, 24);
+			await Dialogue.ShowText(this, "Somewhere down the hall, brass is listening.", 4.5f, 576f, 324f, HoverFontPath, 24);
+		}
+		finally
+		{
+			Dialogue.EndInputBlock();
+		}
+
+		if (GodotObject.IsInstanceValid(this))
+		{
+			gs.SetFlag(lessonFlag, save: false);
+			gs.SaveGame("story lesson: Anchor awakens");
+		}
 	}
 
 	private async void OnMirrorCollisionPressed()
 	{
-		var globalPosition = _mirrorCollisionArea.GlobalPosition;
-		await Dialogue.ShowText(this, "The hallway stretches back in the mirror. All those photographs, reversed. Ida at fourteen, mirrored, looking in the other direction.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
-		await Dialogue.ShowText(this, "The mirror is showing something different. A different version of this hallway. One where more has been taken down.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
-		await Dialogue.ShowText(this, "That's not this hallway. That's somewhere else.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
-		await Dialogue.ShowText(this, "There is a woman in the mirror. She is sitting on a floor. She is not here.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 28);
+		if (_mirrorBusy)
+			return;
+		_mirrorBusy = true;
+		try
+		{
+			bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "Mirror");
+			RoomExamineTracker.RecordExamine("Room4", "Mirror");
+			AudioManager.Play(Sfx.ClarifyReveal, -12f, 0.8f);
+			var globalPosition = _mirrorCollisionArea.GlobalPosition;
+
+			if (facedBefore)
+			{
+				// The second honest look: the mirror stops showing the
+				// evening and lets Mara stand in it.
+				await Dialogue.ShowText(this, "She hasn't moved. She never will. That's not what she's for. This isn't a picture the mirror's showing me. It's a place it's been keeping.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
+				await Dialogue.ShowText(this, "I lean in — the way I've refused to for twelve years — and the glass gives like cold water.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				AudioManager.Play(Sfx.ClarifyReveal, -8f, 0.65f);
+				SceneManager.ChangeScene(FlashbackScenePath);
+				return;
+			}
+
+			await Dialogue.ShowText(this, "The hall stretches back in the mirror. All the photos backwards. Ida at fourteen, mirrored, looking the other way.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
+			await Dialogue.ShowText(this, "No — the mirror's showing something else. This hall, but different. More taken down.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 20);
+			await Dialogue.ShowText(this, "That's not this hallway. That's somewhere else.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
+			await Dialogue.ShowText(this, "There's a woman in the mirror. Sitting on a floor. She's not here.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 28);
+			await Dialogue.ShowText(this, "She's on a landing. Under a light left on for someone who never came home. If I look again — really look — I think it would let me stand in that evening. It's waiting to be allowed.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 22);
+		}
+		finally
+		{
+			_mirrorBusy = false;
+		}
 	}
 
 	private async void OnDrawerCollisionPressed()
 	{
-		var globalPosition = _drawerCollisionArea.GlobalPosition;
-		await Dialogue.ShowText(this, "A hall table drawer. Old wood, slightly sticky.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
-		await Dialogue.ShowText(this, "These were here. In the truth of the house, these tools were always here. Someone who lived here was a locksmith, or careful, or both.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 32);
+		if (_drawerBusy)
+			return;
+		_drawerBusy = true;
+		try
+		{
+			bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "HallDrawer");
+			var gs = GameState.Instance;
+			bool needsLockpickSet = gs != null && !gs.HasFlag("item_lockpick_set");
+			RoomExamineTracker.RecordExamine("Room4", "HallDrawer");
+			AudioManager.Play(Sfx.DrawerOpen, -7f);
+			var globalPosition = _drawerCollisionArea.GlobalPosition;
+
+			if (facedBefore && !needsLockpickSet)
+			{
+				gs?.RegisterRepeatExaminePenalty();
+				await Dialogue.ShowText(this, "Blank keys, still bright. The practical thing underneath them is already in Mara's hands now.", 4.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				return;
+			}
+
+			if (!facedBefore)
+			{
+				await Dialogue.ShowText(this, "The hall drawer. Old wood, a bit sticky. I've opened it a hundred times in here and never once seen inside. The house is gentle like that. I've let it be.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "Inside — blank keys on a ring, bright as new pennies. Dad cut keys for half of Eldfen at this table. He kept the uncut ones here, ready.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "One has a string tag, in a kid's careful letters: FOR WHEN I'M TALLER. He never got to cut hers. The house keeps them bright so I won't have to see them dull.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+			}
+			else
+			{
+				// A drawer faced before the roll existed gets this one
+				// honest second look without a repeat-examine penalty.
+				await Dialogue.ShowText(this, "Under the blank keys. I saw the bright ring every time and let the house stop my eyes there. Not this time.", 5.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+			}
+
+			if (gs == null || gs.HasFlag("item_lockpick_set"))
+				return;
+
+			AudioManager.Play(Sfx.PhotoPickup, -9f, 0.92f);
+			AudioManager.Play(Sfx.KeyType, -12f, 1.2f);
+			await Dialogue.ShowText(this, "Under the keys is an oilcloth roll, tied twice. Dad's handwriting on the cloth: MARA DO NOT — and then, in smaller letters, — lose these.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+			if (!GodotObject.IsInstanceValid(this)) return;
+			await Dialogue.ShowText(this, "His proper lockpicks. Seven of them. Slender steel, oiled and clean, each one in its pocket. I held the lamp while he opened half the street's doors with these. I was listening, even when I pretended I was only holding the light.", 6.0f, globalPosition.X, globalPosition.Y, HoverFontPath, 24);
+			if (!GodotObject.IsInstanceValid(this)) return;
+
+			gs.SetFlag("item_lockpick_set", save: false);
+			gs.UnlockClue("father_lockpicks");
+			gs.Toast("Father's lockpick set — kept in Mara's bag (B). The Journal (J) remembers how he taught her to listen.");
+		}
+		finally
+		{
+			_drawerBusy = false;
+		}
 	}
 
-	private bool TryHandleMirrorCollision(InputEventMouseButton mouseButton)
+	private async void OnTurnedFramesPressed(Area2D frameArea)
+	{
+		if (_framesBusy)
+			return;
+		_framesBusy = true;
+		try
+		{
+			bool facedBefore = RoomExamineTracker.HasObjectBeenFullyExamined("Room4", "TurnedFrames");
+			RoomExamineTracker.RecordExamine("Room4", "TurnedFrames");
+			AudioManager.Play(Sfx.PhotoPickup, -8f);
+			var pos = frameArea.GlobalPosition;
+
+			if (facedBefore)
+			{
+				GameState.Instance?.RegisterRepeatExaminePenalty();
+				await Dialogue.ShowText(this, "Two frames, still facing the wall. Some things Mara is allowed to approach in her own order.", 4.0f, pos.X, pos.Y, HoverFontPath, 24);
+				return;
+			}
+
+			await Dialogue.ShowText(this, "Two frames at the end of the hall, turned to the wall. Not taken down. Turned — like a face you can't stop seeing but can't bear to meet.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "Brown paper backs. Old tape. On one, in Mum's pencil: 'later.' On the other, nothing. Later is twelve years long now.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+			await Dialogue.ShowText(this, "I don't turn them round. Not yet. But I read Mum's word, and for the first time there's something on my clock besides four o'clock. Later. I'm allowed a later.", 6.0f, pos.X, pos.Y, HoverFontPath, 22);
+		}
+		finally
+		{
+			_framesBusy = false;
+		}
+	}
+
+	private bool TryHandleTurnedFramesCollision()
+	{
+		if (Dialogue.IsInputBlocked)
+			return false;
+
+		Vector2 globalMouse = GetGlobalMousePosition();
+		foreach (var area in new[] { _pic11Area, _pic12Area })
+		{
+			if (area != null && IsInsideArea2D(area, globalMouse, 6f))
+			{
+				OnTurnedFramesPressed(area);
+				GetTree().Root.SetInputAsHandled();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private bool TryHandleMirrorCollision()
 	{
 		if (Dialogue.IsInputBlocked || _mirrorCollisionArea == null)
 			return false;
@@ -178,7 +431,7 @@ public partial class Room4 : Node2D
 		return true;
 	}
 
-	private bool TryHandleDrawerCollision(InputEventMouseButton mouseButton)
+	private bool TryHandleDrawerCollision()
 	{
 		if (Dialogue.IsInputBlocked || _drawerCollisionArea == null)
 			return false;
@@ -190,6 +443,87 @@ public partial class Room4 : Node2D
 		OnDrawerCollisionPressed();
 		GetTree().Root.SetInputAsHandled();
 		return true;
+	}
+
+	/// <summary>The brass door is an exit, not one of the hallway's
+	/// examinables, so Room 4 going sealed must never swallow it —
+	/// the flashlight trek comes back through here in the dark long
+	/// after the room itself has gone quiet. While the three-key
+	/// work is unfinished, the door leads to its close-up. Once all
+	/// three keys have turned, the door is simply open: clicking it
+	/// in the hall takes Mara straight through.</summary>
+	private bool TryHandleDoorCollision()
+	{
+		if (Dialogue.IsInputBlocked || Dialogue.IsShowing || _doorBusy ||
+			_doorClickArea == null)
+			return false;
+
+		var gs = GameState.Instance;
+		bool opened = gs?.HasFlag(DoorOpenedFlag) == true;
+		bool sentenceReady = _doorUnlocked ||
+			gs?.HasFlag("room4_sentence_complete") == true ||
+			gs?.IsShardRecovered(3) == true;
+		if (!opened && !sentenceReady)
+			return false;
+
+		if (!IsInsideArea2D(_doorClickArea, GetGlobalMousePosition(), 0f))
+			return false;
+
+		GetTree().Root.SetInputAsHandled();
+		_ = UseDoorAsync(opened);
+		return true;
+	}
+
+	private async Task UseDoorAsync(bool opened)
+	{
+		if (_doorBusy)
+			return;
+		_doorBusy = true;
+		try
+		{
+			// An opened three-key door stays an ordinary open door:
+			// no close-up to re-solve, no walk, no blackout exception.
+			if (opened)
+			{
+				AudioManager.Play(Sfx.DoorCreak, -7f);
+				SceneManager.ChangeScene(Room5ScenePath);
+				return;
+			}
+
+			if (string.IsNullOrWhiteSpace(DoorTargetScenePath))
+				return;
+
+			var gs = GameState.Instance;
+			// The threshold keeps its lines for the first approach
+			// only; coming back to finish the key work is wordless.
+			// Older saves prove a previous approach by the door
+			// close-up's own once-only lesson.
+			if (gs == null || (!gs.HasFlag(DoorwayLinesSeenFlag) &&
+				!gs.HasFlag("story_lesson_room4_door_keys")))
+			{
+				gs?.SetFlag(DoorwayLinesSeenFlag, save: false);
+				await Dialogue.ShowText(this, "\"She used to run this hallway. Slide on the wooden floor in her socks — she'd get a running start from the kitchen doorway and coast all the way to the mirror at the end.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 20);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "\"She could make it from one end to the other in eleven seconds. She counted. She made everyone count.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "\"She made me count. I counted. Eleven seconds. I still know the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
+				if (!GodotObject.IsInstanceValid(this)) return;
+				await Dialogue.ShowText(this, "Beyond the door is not the end of the house. It is the room Mara has been keeping between then and now.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 28);
+				if (!GodotObject.IsInstanceValid(this)) return;
+			}
+
+			if (gs != null && !gs.IsShardRecovered(3))
+				gs.CollectShard(3);
+			gs?.MarkRoomCompleted("Room4");
+			gs?.SaveGame("room 4 complete");
+			AudioManager.Play(Sfx.DoorCreak, -7f);
+			SceneManager.ChangeScene(DoorTargetScenePath);
+		}
+		finally
+		{
+			if (GodotObject.IsInstanceValid(this))
+				_doorBusy = false;
+		}
 	}
 
 	private void EnsureRuntimeHoverLabel()
@@ -231,6 +565,17 @@ public partial class Room4 : Node2D
 
 	public override void _Process(double delta)
 	{
+		// A finished hallway, revisited from further on, keeps its words.
+		if (GameState.Instance?.IsRoomSealed("Room4") == true)
+		{
+			if (_currentHoveredIndex != -1)
+			{
+				HideRuntimeLabel();
+				_currentHoveredIndex = -1;
+			}
+			return;
+		}
+
 		if (Dialogue.IsInputBlocked)
 		{
 			if (_currentHoveredIndex != -1)
@@ -240,6 +585,14 @@ public partial class Room4 : Node2D
 			}
 			return;
 		}
+
+		bool echoArmedNow = MemoryVerbSystem.IsArmed(MemoryVerb.Echo);
+		if (echoArmedNow && !_wasEchoArmed && !_echoArmLessonShown && _currentSequenceIndex < HoverWords.Length)
+		{
+			_echoArmLessonShown = true;
+			GameState.Instance?.Toast("Echo settles over the hall like a voice from another room.");
+		}
+		_wasEchoArmed = echoArmedNow;
 
 		Vector2 mousePosition = GetGlobalMousePosition();
 		int hoveredIndex = GetHoveredIndex(mousePosition);
@@ -256,46 +609,48 @@ public partial class Room4 : Node2D
 			ShowRuntimeLabel(_currentHoveredIndex);
 	}
 
-	public override async void _Input(InputEvent @event)
+	public override void _Input(InputEvent @event)
 	{
 		if (SceneManager.IsChanging)
 			return;
 
-		if (@event is not InputEventMouseButton mouseButton)
+		// A click, or F: the house's hand, for the thing under the
+		// cursor. Same reach, same rules, either way.
+		bool pressed = (@event is InputEventMouseButton mouseButton && mouseButton.Pressed &&
+			mouseButton.ButtonIndex == MouseButton.Left)
+			|| (@event is InputEventKey key && key.Pressed && !key.Echo &&
+				key.PhysicalKeycode == Key.F);
+		if (!pressed)
 			return;
 
-		if (!mouseButton.Pressed || mouseButton.ButtonIndex != MouseButton.Left)
+		if (GameState.Instance?.IsRoomSealed("Room4") == true)
+		{
+			// Exits never seal. The brass door in particular is
+			// the only way onward from the blackout's trek home,
+			// so it is heard before the quiet-room refusal.
+			if (TryHandleDoorCollision())
+				return;
+			// One practical retrieval survives sealing: a save that
+			// faced this drawer before Father's roll lived under
+			// its keys may still come back and look underneath.
+			if (GameState.Instance.HasFlag("item_lockpick_set") == false &&
+				TryHandleDrawerCollision())
+				return;
+			GameState.Instance.NotifySealedInteraction();
+			GetTree().Root.SetInputAsHandled();
+			return;
+		}
+
+		if (TryHandleMirrorCollision())
 			return;
 
-		if (TryHandleMirrorCollision(mouseButton))
+		if (TryHandleDrawerCollision())
 			return;
 
-		if (TryHandleDrawerCollision(mouseButton))
+		if (TryHandleTurnedFramesCollision())
 			return;
 
-		if (!_doorUnlocked)
-			return;
-
-		if (_doorAnimation == null || !_doorAnimation.Visible)
-			return;
-
-		if (_doorClickArea == null)
-			return;
-
-		Vector2 globalMouse = GetGlobalMousePosition();
-		if (!IsInsideArea2D(_doorClickArea, globalMouse, 0f))
-			return;
-
-		if (string.IsNullOrWhiteSpace(DoorTargetScenePath))
-			return;
-
-		await Dialogue.ShowText(this, "\"She used to run this hallway. Slide on the wooden floor in her socks — she'd get a running start from the kitchen doorway and coast all the way to the mirror at the end.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 20);
-		await Dialogue.ShowText(this, "\"She could make it from one end to the other in eleven seconds. She counted. She made everyone count.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		await Dialogue.ShowText(this, "\"She made Mara count. Mara counted. Eleven seconds. She still knows the number. Some numbers stay.\"", 6.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
-		await Dialogue.ShowText(this, "Part 1 of \"The House of Mara Voss\" End.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 32);
-
-		SceneManager.ChangeScene(DoorTargetScenePath);
-		GetTree().Root.SetInputAsHandled();
+		TryHandleDoorCollision();
 	}
 
 	private int GetHoveredIndex(Vector2 mousePosition)
@@ -340,8 +695,48 @@ public partial class Room4 : Node2D
 			.SetTrans(Tween.TransitionType.Sine)
 			.SetEase(Tween.EaseType.Out);
 
-		if (HoverWords[index] == HoverWords[_currentSequenceIndex])
+		if (_currentSequenceIndex >= HoverWords.Length)
+			return;
+
+		// Ordinary looking can find the words; only Echo hears them as a
+		// sentence. Teach that once, then let the hover labels remain.
+		if (!MemoryVerbSystem.IsArmed(MemoryVerb.Echo))
 		{
+			if (!_echoHintShown)
+			{
+				_echoHintShown = true;
+				AudioManager.Play(Sfx.Denied, -12f, 0.8f);
+				GameState.Instance?.Toast("The words are separate when you only look.");
+			}
+			return;
+		}
+
+		if (index != _currentSequenceIndex)
+		{
+			AudioManager.Play(Sfx.WordChime, -13f, 0.72f);
+			if (!_echoOutOfOrderHintShown)
+			{
+				_echoOutOfOrderHintShown = true;
+				GameState.Instance?.Toast("That word belongs later.");
+			}
+		}
+
+		// Compare by index, not word text, so repeated words can't satisfy
+		// the sequence out of order.
+		if (index == _currentSequenceIndex)
+		{
+			// Each correct word chimes one step higher — an F natural-minor
+			// ladder (0,2,3,5,7,8,10,12,14,15 st) to match the score's key.
+			float[] steps = [1f, 1.122f, 1.189f, 1.335f, 1.498f, 1.587f, 1.782f, 2f, 2.245f, 2.378f];
+			float pitch = _currentSequenceIndex < steps.Length ? steps[_currentSequenceIndex] : 1f;
+			AudioManager.Play(Sfx.WordChime, -7f, pitch);
+			if (!_echoUseRegistered)
+			{
+				_echoUseRegistered = true;
+				MemoryVerbSystem.RegisterUse(MemoryVerb.Echo);
+			}
+			GameState.Instance?.Toast($"\"{HoverWords[index]}\"  ({_currentSequenceIndex + 1}/{HoverWords.Length})");
+
 			if (_sentenceLabel != null)
 			{
 				if (_currentSequenceIndex == 0)
@@ -356,12 +751,7 @@ public partial class Room4 : Node2D
 			_currentSequenceIndex++;
 
 			if (_currentSequenceIndex >= HoverWords.Length)
-			{
-				TriggerDoorAnimation();
-				_currentSequenceIndex = 0;
-				if (_sentenceLabel != null)
-					_sentenceLabel.Text = string.Empty;
-			}
+				CompleteSentence();
 		}
 	}
 
@@ -415,9 +805,11 @@ public partial class Room4 : Node2D
 
 	private void TriggerDoorAnimation()
 	{
-		if (_doorAnimation == null)
+		if (_doorAnimation == null || _doorUnlocked)
 			return;
 
+		AudioManager.Play(Sfx.DoorCreak, -6f);
+		AudioManager.Play(Sfx.PuzzleSolve, -9f);
 		_doorAnimation.Visible = true;
 		_doorAnimationStarted = true;
 
@@ -439,6 +831,8 @@ public partial class Room4 : Node2D
 
 			_doorAnimation.Frame = Mathf.Max(0, frameCount - 1);
 			_doorUnlocked = true;
+			AudioManager.Play(Sfx.DoorUnlock, -6f);
+			GameState.Instance?.Toast("Somewhere down the hall, a door decides to be a door again.");
 		})).SetDelay(5.0 / animSpeed);
 	}
 }

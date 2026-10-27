@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cmarajarscn"]
+
+[ext_resource type="Script" uid="uid://cmarajar0001" path="res://scripts/world/room3/jars/JarCloseup.cs" id="1"]
+
+[node name="JarCloseup" type="Node2D"]
+script = ExtResource("1")

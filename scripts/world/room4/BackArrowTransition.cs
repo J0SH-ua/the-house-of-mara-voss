@@ -64,6 +64,7 @@ public partial class BackArrowTransition : Sprite2D
             return;
         }
 
+        AudioManager.Play(Sfx.PageTurn, -9f);
         SceneManager.ChangeScene(TargetScenePath);
         GetTree().Root.SetInputAsHandled();
     }
@@ -88,6 +89,7 @@ public partial class BackArrowTransition : Sprite2D
             return;
         }
 
+        AudioManager.Play(Sfx.PageTurn, -9f);
         SceneManager.ChangeScene(TargetScenePath);
         GetTree().Root.SetInputAsHandled();
     }
