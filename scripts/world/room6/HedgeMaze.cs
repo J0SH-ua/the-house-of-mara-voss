@@ -40,7 +40,9 @@ using Godot;
 /// less ground shows under her boots; a jump lifts her, so the
 /// whole maze falls away and comes back. Crouching is a tap - one
 /// press of C to go down and stand, one press to come back up.
-/// The torch has a button of its own, the way his did: F lets the
+/// Page Up and Page Down tilt her view without changing her heading;
+/// the developer mouse-camera tool can look vertically as well as turn.
+/// The torch has a button of its own, the way his did: L lets the
 /// light off and brings it back. Looking behind her is a thing she
 /// *holds*, not a thing she taps: keep Caps Lock down and the view
 /// turns all the way round at a calm, even rate, and lets go and it
@@ -83,10 +85,9 @@ public partial class HedgeMaze : Node2D
     private const float ScreenWidth = 1152f;
     private const float ScreenHeight = 648f;
 
-    // The horizon sits still, but Mara's eye does not: a crouch
-    // drops it and a jump lifts it, so the maze leans in over her
-    // and falls away under her. Heights are in the same world units
-    // the maze grid uses.
+    // 324 is level gaze. Her crouch and jump move the eye; Page Up,
+    // Page Down and the dev mouse-camera tilt the horizon itself.
+    // Heights are in the same world units the maze grid uses.
     private const float Horizon = 324f;
     private const float ColumnWidth = 8f;
     private const int ColumnCount = 144;
@@ -171,6 +172,9 @@ public partial class HedgeMaze : Node2D
     private const float TorchRiseDistance = 430f;
     // How fast the view turns when a developer puts it on the mouse.
     private const float MouseTurnScale = 0.006f;
+    private const float MousePitchScale = 0.0015f;
+    private const float LookPitchSpeed = 0.75f;
+    private const float MaxLookPitch = 0.32f;
     private static readonly Vector2 TorchSpriteGrip = new(0.4349f, 0.4884f);
     private static readonly Vector2 TorchSpriteLens = new(0.8368f, 0.1681f);
 
@@ -241,10 +245,13 @@ public partial class HedgeMaze : Node2D
     private float _wheelDelta;
     private readonly List<Vector2> _litSpans = new();
     private float _lastMouseX;
+    private float _lastMouseY;
     private float _mouseDeltaX;
+    private float _mouseDeltaY;
     private Label _devLabel;
     private Vector2 _velocity = Vector2.Zero;
     private float _yaw = Mathf.Pi;
+    private float _lookPitchRadians;
     private float _lookBackAmount;
     private bool _lookBackHeld;
     private bool _moving;
@@ -426,6 +433,7 @@ public partial class HedgeMaze : Node2D
             _yaw = Mathf.Pi; // west, along the corridor she wakes beside
         }
         _velocity = Vector2.Zero;
+        _lookPitchRadians = 0f;
         _lookBackAmount = 0f;
         _lookBackHeld = false;
         _exitArmed = true;
@@ -442,8 +450,8 @@ public partial class HedgeMaze : Node2D
             new Vector2(560, 530), new Vector2(568, 34), 25,
             new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Right);
         _promptLabel = MakeLabel(
-            "W/S walk · A/D turn · mouse aims the torch · L torch on/off\nSHIFT run · C crouch (tap) · SPACE jump · F use · HOLD CAPS LOCK to look back",
-            new Vector2(480, 566), new Vector2(648, 56), 17,
+            "W/S walk · A/D turn · PAGE UP/DOWN look · mouse aims light\nSHIFT run · C crouch · SPACE jump · L torch · F use · HOLD CAPS to look back",
+            new Vector2(456, 566), new Vector2(672, 56), 17,
             new Color(0.92f, 0.89f, 0.78f, 0.92f), HorizontalAlignment.Right);
 
         bool labelsVisible = !_playWakeIntro;
@@ -696,7 +704,8 @@ public partial class HedgeMaze : Node2D
         bool movementKey = capsLock || shift ||
             keyEvent.PhysicalKeycode is
                 Key.W or Key.A or Key.S or Key.D or Key.C or Key.Space or
-                Key.Left or Key.Right or Key.Up or Key.Down or Key.L or Key.F;
+                Key.Left or Key.Right or Key.Up or Key.Down or Key.Pageup or Key.Pagedown or
+                Key.L or Key.F;
         if (!movementKey)
             return;
 
@@ -766,9 +775,11 @@ public partial class HedgeMaze : Node2D
 
         // How far the mouse has travelled since last frame, for a
         // developer who wants the camera on the mouse.
-        float mouseX = GetGlobalMousePosition().X;
-        _mouseDeltaX = mouseX - _lastMouseX;
-        _lastMouseX = mouseX;
+        Vector2 mousePosition = GetGlobalMousePosition();
+        _mouseDeltaX = mousePosition.X - _lastMouseX;
+        _mouseDeltaY = mousePosition.Y - _lastMouseY;
+        _lastMouseX = mousePosition.X;
+        _lastMouseY = mousePosition.Y;
 
         UpdateBeam(dt);
         UpdateCrouch(dt, free);
@@ -778,6 +789,7 @@ public partial class HedgeMaze : Node2D
         if (free)
         {
             UpdateTurning(dt);
+            UpdateLookPitch(dt);
             UpdateMovement(dt);
             CheckExit();
         }
@@ -1021,6 +1033,9 @@ public partial class HedgeMaze : Node2D
                 if (_freeCamera)
                     _cameraYaw = NormalizeAngle(_cameraYaw + mouseTurn);
             }
+            _lookPitchRadians = Mathf.Clamp(
+                _lookPitchRadians - _mouseDeltaY * MousePitchScale * mouseSensitivity,
+                -MaxLookPitch, MaxLookPitch);
             return;
         }
 
@@ -1036,6 +1051,21 @@ public partial class HedgeMaze : Node2D
             turn += 1f;
         if (turn != 0f)
             _yaw = NormalizeAngle(_yaw + turn * TurnSpeed * dt);
+    }
+
+    private void UpdateLookPitch(float dt)
+    {
+        float direction = 0f;
+        if (Input.IsPhysicalKeyPressed(Key.Pageup))
+            direction += 1f;
+        if (Input.IsPhysicalKeyPressed(Key.Pagedown))
+            direction -= 1f;
+        if (direction == 0f)
+            return;
+
+        _lookPitchRadians = Mathf.Clamp(
+            _lookPitchRadians + direction * LookPitchSpeed * dt,
+            -MaxLookPitch, MaxLookPitch);
     }
 
     private void UpdateMovement(float dt)
@@ -1348,6 +1378,7 @@ public partial class HedgeMaze : Node2D
     /// half-turn, so the view eases round and settles again instead
     /// of snapping the way a tap would.</summary>
     private float ViewYaw => NormalizeAngle(_yaw + _lookBackAmount * Mathf.Pi);
+    private float LookHorizon => Horizon + ProjectionScale * Mathf.Tan(_lookPitchRadians);
 
     private float BeamFlicker() => Settings.ReduceMotionOrDefault()
         ? 1f
@@ -1419,7 +1450,8 @@ public partial class HedgeMaze : Node2D
         // eyes, or from a developer camera that has left her behind.
         float viewYaw = _cameraYaw;
 
-        DrawRect(new Rect2(0, 0, ScreenWidth, Horizon), SkyColorAt(Horizon * 0.5f), true);
+        float horizon = LookHorizon;
+        DrawRect(new Rect2(0, 0, ScreenWidth, horizon), SkyColorAt(horizon * 0.5f), true);
         DrawGroundBase(viewYaw);
         DrawWalls(viewYaw);
         DrawGroundTufts(viewYaw);
@@ -1471,13 +1503,14 @@ public partial class HedgeMaze : Node2D
         Vector2 textureSize = new(_grassTexture.GetWidth(), _grassTexture.GetHeight());
 
         const int bands = 20;
-        float bandHeight = (ScreenHeight - Horizon) / bands;
+        float horizon = LookHorizon;
+        float bandHeight = (ScreenHeight - horizon) / bands;
         for (int band = 0; band < bands; band++)
         {
-            float y0 = Horizon + band * bandHeight;
+            float y0 = horizon + band * bandHeight;
             float y1 = Mathf.Min(y0 + bandHeight, ScreenHeight);
-            float depthFar = Mathf.Clamp(eyePixels / Mathf.Max(y0 - Horizon, 1f), 0.25f, 30f);
-            float depthNear = Mathf.Clamp(eyePixels / Mathf.Max(y1 - Horizon, 1f), 0.25f, 30f);
+            float depthFar = Mathf.Clamp(eyePixels / Mathf.Max(y0 - horizon, 1f), 0.25f, 30f);
+            float depthNear = Mathf.Clamp(eyePixels / Mathf.Max(y1 - horizon, 1f), 0.25f, 30f);
 
             Vector2 farLeft = _cameraPosition + dir * depthFar - right * (halfWidth * depthFar);
             Vector2 farRight = _cameraPosition + dir * depthFar + right * (halfWidth * depthFar);
@@ -1520,11 +1553,12 @@ public partial class HedgeMaze : Node2D
     /// moment before the painted grass is available.</summary>
     private void DrawFlatGround()
     {
-        for (float y = Horizon; y < ScreenHeight; y += 12f)
+        float horizon = LookHorizon;
+        for (float y = horizon; y < ScreenHeight; y += 12f)
         {
             float height = Mathf.Min(12f, ScreenHeight - y);
             float centre = y + height * 0.5f;
-            float depth = ProjectionScale * _eyeHeight / Mathf.Max(centre - Horizon, 1f);
+            float depth = ProjectionScale * _eyeHeight / Mathf.Max(centre - horizon, 1f);
             float light = SurfaceLight(depth);
             DrawRect(new Rect2(0, y, ScreenWidth, height),
                 ScaleColor(new Color(0.055f, 0.15f, 0.06f), light), true);
@@ -1564,7 +1598,7 @@ public partial class HedgeMaze : Node2D
             {
                 _shortDepthByColumn[column] = float.MaxValue;
             }
-            _skyLimitByColumn[column] = Mathf.Clamp(skyLimit, 0f, Horizon);
+            _skyLimitByColumn[column] = Mathf.Clamp(skyLimit, 0f, LookHorizon);
         }
     }
 
@@ -1591,7 +1625,7 @@ public partial class HedgeMaze : Node2D
         crown = 0f;
         float wallTop = WallTopUnits(hit.Tile);
         float groundLineHeight = ProjectionScale / depth;
-        float bottom = Horizon + groundLineHeight * _eyeHeight;
+        float bottom = LookHorizon + groundLineHeight * _eyeHeight;
         float top = bottom - groundLineHeight * (wallTop - _eyeHeight) * 1.06f;
 
         // The rays down this column: the left edge, the middle and
@@ -1817,7 +1851,7 @@ public partial class HedgeMaze : Node2D
                     if (depth > _depthByColumn[column] || depth > _shortDepthByColumn[column])
                         continue;
 
-                    float screenY = Horizon + ProjectionScale * _eyeHeight / depth;
+                    float screenY = LookHorizon + ProjectionScale * _eyeHeight / depth;
                     if (screenY > ScreenHeight + 4f)
                         continue;
 
@@ -1985,7 +2019,7 @@ public partial class HedgeMaze : Node2D
                 continue; // it is behind her
 
             float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * FocalLength;
-            float groundY = Horizon + ProjectionScale * _eyeHeight / depth;
+            float groundY = LookHorizon + ProjectionScale * _eyeHeight / depth;
             float heightPx = prop.HeightUnits * ProjectionScale / depth;
             centre = new Vector2(screenX, groundY - heightPx * 0.82f);
 
@@ -2014,7 +2048,7 @@ public partial class HedgeMaze : Node2D
         {
             float moonX = ScreenWidth * 0.5f +
                 Mathf.Tan(moonRelative) / tanHalfFov * ScreenWidth * 0.5f;
-            var moon = new Vector2(moonX, 88f);
+            var moon = new Vector2(moonX, 88f + LookHorizon - Horizon);
             DrawSkyDisc(moon, 31f, new Color(0.72f, 0.8f, 0.92f, 0.13f));
             DrawSkyDisc(moon, 19f, new Color(0.78f, 0.84f, 0.92f, 0.72f));
             DrawSkyDisc(moon + new Vector2(7, -3), 15f, new Color(0.018f, 0.03f, 0.055f, 0.82f));
@@ -2073,9 +2107,10 @@ public partial class HedgeMaze : Node2D
     /// <summary>The flat night the sky was before it was painted.</summary>
     private void DrawFlatSky()
     {
-        for (float y = 0f; y < Horizon; y += SkyBand)
+        float horizon = LookHorizon;
+        for (float y = 0f; y < horizon; y += SkyBand)
         {
-            float bandBottom = Mathf.Min(y + SkyBand, Horizon);
+            float bandBottom = Mathf.Min(y + SkyBand, horizon);
             Color color = SkyColorAt((y + bandBottom) * 0.5f);
             int runStart = -1;
             for (int column = 0; column <= ColumnCount; column++)
@@ -2471,7 +2506,7 @@ public partial class HedgeMaze : Node2D
             return false;
 
         float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * FocalLength;
-        float groundY = Horizon + ProjectionScale * _eyeHeight / depth;
+        float groundY = LookHorizon + ProjectionScale * _eyeHeight / depth;
         float heightPx = prop.HeightUnits * ProjectionScale / depth;
         float aspect = (float)prop.Texture.GetWidth() / Mathf.Max(prop.Texture.GetHeight(), 1);
         float widthPx = heightPx * aspect;
