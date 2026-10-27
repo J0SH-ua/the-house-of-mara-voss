@@ -139,12 +139,15 @@ public partial class HedgeMaze : Node2D
     // and swung about her grip to follow the circle of light. The
     // ember of the torch and the place her hands hold it are fixed
     // points inside that sprite (measured by tools/build_hedge_art.py).
-    private const float TorchSpriteWidth = 248f;
-    private const float TorchRestX = 176f;
-    private const float TorchRestY = 596f;
-    private const float TorchRiseDistance = 330f;
-    private static readonly Vector2 TorchSpriteGrip = new(0.4133f, 0.4941f);
-    private static readonly Vector2 TorchSpriteLens = new(0.8382f, 0.1679f);
+    // It is drawn as big as the house draws its held hand elsewhere,
+    // and it sits wholly on the screen: the hands, the fingers and
+    // the sleeve of her jumper all stay in frame.
+    private const float TorchSpriteWidth = 320f;
+    private const float TorchRestX = 215f;
+    private const float TorchRestY = 450f;
+    private const float TorchRiseDistance = 430f;
+    private static readonly Vector2 TorchSpriteGrip = new(0.4349f, 0.4884f);
+    private static readonly Vector2 TorchSpriteLens = new(0.8368f, 0.1681f);
     private const float TorchMinRotation = -1.6f;
     private const float TorchMaxRotation = 0.85f;
 
@@ -1661,8 +1664,51 @@ public partial class HedgeMaze : Node2D
         offset.Y += _landDip * _landDip * 16f;
         offset.Y += _handRise * TorchRiseDistance;
 
-        grip = new Vector2(TorchRestX, TorchRestY) + offset;
         torchAngle = _torchRotation;
+        Vector2 rest = new Vector2(TorchRestX, TorchRestY) + offset;
+
+        // The torch swings about her grip to follow the light, and a
+        // swing can throw a hand off the edge of the screen. When she
+        // is holding the torch out (not putting it away), the whole
+        // sprite — the hands, the fingers and the sleeve of her
+        // jumper — is nudged back inside the frame.
+        if (_handRise < 0.01f)
+        {
+            float width = TorchSpriteWidth;
+            float height = _torchSpriteHeight;
+            Vector2 pivot = new(TorchSpriteGrip.X * width, TorchSpriteGrip.Y * height);
+            Vector2[] corners =
+            {
+                Vector2.Zero,
+                new Vector2(width, 0f),
+                new Vector2(width, height),
+                new Vector2(0f, height),
+            };
+            float minX = float.MaxValue;
+            float maxX = float.MinValue;
+            float minY = float.MaxValue;
+            float maxY = float.MinValue;
+            foreach (Vector2 corner in corners)
+            {
+                Vector2 turned = (corner - pivot).Rotated(torchAngle);
+                minX = Mathf.Min(minX, turned.X);
+                maxX = Mathf.Max(maxX, turned.X);
+                minY = Mathf.Min(minY, turned.Y);
+                maxY = Mathf.Max(maxY, turned.Y);
+            }
+
+            const float margin = 6f;
+            if (rest.X + minX < margin)
+                rest.X = margin - minX;
+            else if (rest.X + maxX > ScreenWidth - margin)
+                rest.X = ScreenWidth - margin - maxX;
+            if (rest.Y + minY < margin)
+                rest.Y = margin - minY;
+            else if (rest.Y + maxY > ScreenHeight - margin)
+                rest.Y = ScreenHeight - margin - maxY;
+        }
+
+        grip = rest;
         lens = grip + TorchLensOffset.Rotated(torchAngle);
     }
 
@@ -1676,21 +1722,26 @@ public partial class HedgeMaze : Node2D
 
     /// <summary>GameUI's held-item light rule: the hand is only as
     /// bright as the torch light actually landing near it, with a
-    /// little back-spill because this time the torch is in it.</summary>
+    /// little back-spill because this time the torch is in it. The
+    /// back-spill is generous: this is a *lit* torch, and the wool of
+    /// her sleeve has to be there to be seen at all.</summary>
     private float HandLightLevel(Vector2 grip)
     {
         if (!_flashlightOn)
-            return 0.2f;
+            return 0.34f;
         float distance = _beamPosition.DistanceTo(grip);
         float falloff = 1f - Mathf.Clamp((distance - 110f) / 330f, 0f, 1f);
-        return Mathf.Clamp((0.46f + 0.54f * falloff) * BeamFlicker(), 0f, 1f);
+        return Mathf.Clamp((0.72f + 0.28f * falloff) * BeamFlicker(), 0f, 1f);
     }
 
     private static Color TorchTint(float level) =>
         new(level, level * 0.96f, level * 0.84f, 1f);
 
-    /// <summary>The faint shaft of the held-torch beam, from the lens
-    /// in her hand to the circle on the hedges.</summary>
+    /// <summary>The light itself, thrown from the ember in her hand
+    /// to the circle she has put on the hedges. It is the same cone
+    /// the other dark rooms draw — a run of widening discs for the
+    /// shaft and a hot pool where it lands — so the torch here
+    /// behaves like the torch everywhere else in the house.</summary>
     private void DrawBeamShaft()
     {
         if (!_hasFlashlight || !_flashlightOn || _handRise >= 0.995f)
@@ -1699,15 +1750,33 @@ public partial class HedgeMaze : Node2D
         GetHandPose(out _, out _, out Vector2 lens);
         float strength = BeamFlicker() * (1f - _handRise);
         var warm = new Color(1f, 0.88f, 0.6f);
-        const int discs = 18;
+
+        // The shaft: the house's own run of widening discs, thinning
+        // as the light travels from her hand to the far wall.
+        const int discs = 40;
         for (int i = 1; i <= discs; i++)
         {
             float t = i / (float)discs;
             Vector2 position = lens.Lerp(_beamPosition, t);
-            float radius = Mathf.Lerp(6f, 66f, t * t * (3f - 2f * t));
-            float alpha = Mathf.Lerp(0.1f, 0.022f, t) * strength;
+            float radius = Mathf.Lerp(7f, 118f, t * t * (3f - 2f * t));
+            float alpha = Mathf.Lerp(0.13f, 0.035f, t) * strength;
             DrawCircle(position, radius, new Color(warm.R, warm.G, warm.B, alpha));
         }
+
+        // The pool it lands in: a stepped, slightly squashed pool of
+        // light, hottest at the middle, the way his big torch burned
+        // through every bulb they owned. It sits inside the circle of
+        // light, so the chunky dark around it stays chunky.
+        DrawSetTransform(_beamPosition, 0f, new Vector2(1f, 0.74f));
+        DrawCircle(Vector2.Zero, 138f, new Color(warm.R, warm.G, warm.B, 0.08f * strength));
+        DrawCircle(Vector2.Zero, 100f, new Color(warm.R, warm.G, warm.B, 0.10f * strength));
+        DrawCircle(Vector2.Zero, 64f, new Color(warm.R, warm.G, warm.B, 0.12f * strength));
+        DrawCircle(Vector2.Zero, 34f, new Color(1f, 0.93f, 0.72f, 0.16f * strength));
+        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+
+        // The lamp itself, glinting in her hand.
+        DrawCircle(lens, 17f, new Color(1f, 0.94f, 0.74f, 0.4f * strength));
+        DrawCircle(lens, 8f, new Color(1f, 0.98f, 0.86f, 0.6f * strength));
     }
 
     /// <summary>Her hands round Father's torch: one sprite of its own,
