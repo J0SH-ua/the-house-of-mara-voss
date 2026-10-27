@@ -140,22 +140,12 @@ public partial class BrassKey1 : Area2D
 			return;
 
 		_collecting = true;
-		bool firstTime;
-		if (GameState.Instance != null)
-		{
-			firstTime = GameState.Instance.CollectShard(0, FragmentText);
-		}
-		else
-		{
-			firstTime = !Globals.SHARDS_COLLECTED[0];
-			Globals.SHARDS_COLLECTED[0] = true;
-		}
+		bool firstTime = gs != null
+			? !gs.IsShardRecovered(0)
+			: !Globals.SHARDS_COLLECTED[0];
 
-		// It leaves the drawer the instant it is hers — the palm
-		// reveal plays over a drawer that is already empty.
-		if (firstTime)
-			HideTaken(_brassSprite, _brassShape);
-
+		// Keep the key uncollected and visible through its spoken memory.
+		// The fragment/held moment starts only after the dialogue ends.
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 		if (firstTime)
@@ -168,6 +158,19 @@ public partial class BrassKey1 : Area2D
 		{
 			// Passing through again on a later visit — keep it brief.
 			await Dialogue.ShowText(this, "\"That's not something you notice until it's gone.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
+		}
+
+		if (!GodotObject.IsInstanceValid(this) || !IsInsideTree())
+			return;
+
+		if (firstTime)
+		{
+			if (gs != null)
+				firstTime = gs.CollectShard(0, FragmentText);
+			else
+				Globals.SHARDS_COLLECTED[0] = true;
+			if (firstTime)
+				HideTaken(_brassSprite, _brassShape);
 		}
 
 		// The fragment opens the way on; it does not take it for her.

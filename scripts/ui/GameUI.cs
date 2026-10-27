@@ -37,6 +37,7 @@ public partial class GameUI : CanvasLayer
     private Control _objectivePanel;
     private Control _statusPanel;
     private TextureRect _gameplayTorchHand;
+    private Panel _gameplayTorchLensIndicator;
     private float _torchHandWalkTime;
     private Vector2 _torchHandSway;
     private Label _controlsLabel;
@@ -1833,8 +1834,8 @@ public partial class GameUI : CanvasLayer
         _verbPanel.AnchorBottom = 1f;
         _verbPanel.OffsetLeft = -78;
         _verbPanel.OffsetRight = 78;
-        _verbPanel.OffsetTop = -76;
-        _verbPanel.OffsetBottom = -20;
+        _verbPanel.OffsetTop = -58;
+        _verbPanel.OffsetBottom = -2;
         _verbPanel.ClipContents = true;
 
         var row = new HBoxContainer
@@ -1993,7 +1994,7 @@ public partial class GameUI : CanvasLayer
             _memoryBarTween.Kill();
 
         float halfWidth = width * 0.5f;
-        _verbPanel.OffsetTop = expanded ? -68f : -84f;
+        _verbPanel.OffsetTop = expanded ? -50f : -66f;
         _verbPanel.Modulate = new Color(1f, 1f, 1f, 0.62f);
         _memoryBarTween = CreateTween();
         _memoryBarTween.SetPauseMode(Tween.TweenPauseMode.Process);
@@ -2001,7 +2002,7 @@ public partial class GameUI : CanvasLayer
         _memoryBarTween.SetEase(expanded ? Tween.EaseType.Out : Tween.EaseType.In);
         _memoryBarTween.TweenProperty(_verbPanel, "offset_left", -halfWidth, 0.2f);
         _memoryBarTween.Parallel().TweenProperty(_verbPanel, "offset_right", halfWidth, 0.2f);
-        _memoryBarTween.Parallel().TweenProperty(_verbPanel, "offset_top", -76f, 0.2f);
+        _memoryBarTween.Parallel().TweenProperty(_verbPanel, "offset_top", -58f, 0.2f);
         _memoryBarTween.Parallel().TweenProperty(_verbPanel, "modulate:a", 1f, 0.2f);
     }
 
@@ -4552,9 +4553,27 @@ public partial class GameUI : CanvasLayer
         _gameplayTorchHand.OffsetRight = 0f;
         _gameplayTorchHand.OffsetTop = -320f * texture.GetHeight() / Mathf.Max(texture.GetWidth(), 1f);
         _gameplayTorchHand.OffsetBottom = 0f;
-        // Layer 1 puts the hand over the room's darkness, but beneath
-        // the speech bubble (2) and the HUD proper (90).
+        _gameplayTorchLensIndicator = new Panel
+        {
+            Name = "FlashlightLensOnIndicator",
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+        };
+        var lensStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(1f, 0.97f, 0.82f, 0.96f),
+            BorderColor = new Color(1f, 0.84f, 0.48f, 0.9f),
+        };
+        lensStyle.SetBorderWidthAll(1);
+        lensStyle.SetCornerRadiusAll(8);
+        _gameplayTorchLensIndicator.AddThemeStyleboxOverride("panel", lensStyle);
+        // Keep the lit lens as a sibling, not a child, so the hand's
+        // beam-based dimming cannot wash out the on-state indicator.
+        // Layer 1 puts both over the room's darkness, below the speech
+        // bubble (2) and the HUD proper (90).
         _blackoutLayer.AddChild(_gameplayTorchHand);
+        _blackoutLayer.AddChild(_gameplayTorchLensIndicator);
     }
 
     private void UpdateGameplayFlashlightHand(float delta)
@@ -4596,8 +4615,7 @@ public partial class GameUI : CanvasLayer
             _torchHandWalkTime += delta * Mathf.Tau / stepSeconds;
 
         Vector2 bob = walking && !reducedMotion
-            ? new Vector2(Mathf.Sin(_torchHandWalkTime * 0.5f) * 3.5f,
-                Mathf.Abs(Mathf.Sin(_torchHandWalkTime)) * 2.25f)
+            ? new Vector2(Mathf.Sin(_torchHandWalkTime) * 3.5f, 0f)
             : Vector2.Zero;
         Vector2 viewSize = GetViewport().GetVisibleRect().Size;
         Vector2 mouse = GetViewport().GetMousePosition();
@@ -4620,6 +4638,19 @@ public partial class GameUI : CanvasLayer
         _gameplayTorchHand.OffsetRight = -rightInset + _torchHandSway.X;
         _gameplayTorchHand.OffsetTop = -height - bottomInset + _torchHandSway.Y;
         _gameplayTorchHand.OffsetBottom = -bottomInset + _torchHandSway.Y;
+        if (_gameplayTorchLensIndicator != null)
+        {
+            const float lensX = 0.16f;
+            const float lensY = 0.15f;
+            _gameplayTorchLensIndicator.Size = new Vector2(12f, 12f) * handScale;
+            Vector2 handTopLeft = new(
+                viewSize.X - width - rightInset + _torchHandSway.X,
+                viewSize.Y - height - bottomInset + _torchHandSway.Y);
+            _gameplayTorchLensIndicator.Position = handTopLeft + new Vector2(
+                width * lensX - _gameplayTorchLensIndicator.Size.X * 0.5f,
+                height * lensY - _gameplayTorchLensIndicator.Size.Y * 0.5f);
+            _gameplayTorchLensIndicator.Visible = show;
+        }
 
         Node activeRoom = SceneManager.Instance?.CurrentScene;
         Vector2 beamCenter = _blackoutOverlay?.FlashlightBeamPosition ?? mouse;

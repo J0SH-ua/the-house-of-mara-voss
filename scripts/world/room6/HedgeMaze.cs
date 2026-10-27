@@ -2401,6 +2401,16 @@ public partial class HedgeMaze : Node2D
                 -TorchSpriteGrip.Y * spriteHeight,
                 spriteWidth, spriteHeight),
             false, TorchTint(level));
+        if (_flashlightOn)
+        {
+            // A tiny on-state glint stays inside the lens itself: it
+            // signals that the torch is open without adding another pool.
+            Vector2 lens = new(
+                (TorchSpriteLens.X - TorchSpriteGrip.X) * spriteWidth,
+                (TorchSpriteLens.Y - TorchSpriteGrip.Y) * spriteHeight);
+            DrawCircle(lens, 12f * handScale, new Color(1f, 0.9f, 0.62f, 0.22f));
+            DrawCircle(lens, 6f * handScale, new Color(1f, 0.98f, 0.84f, 0.9f));
+        }
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
     }

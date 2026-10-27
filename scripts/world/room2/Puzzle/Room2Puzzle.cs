@@ -51,7 +51,8 @@ public partial class Room2Puzzle : Area2D
 		if (_padlock != null)
 		{
 			_padlock.Visible = true;
-			_padlock.Position += new Vector2(-72f, 0f);
+			// Keep the close-up and every input box centered; the typed
+			// letters alone are nudged left inside their boxes below.
 			_padlockHome = _padlock.Position;
 		}
 
@@ -63,7 +64,10 @@ public partial class Room2Puzzle : Area2D
 		};
 		inputStyle.SetBorderWidthAll(2);
 		inputStyle.SetCornerRadiusAll(3);
-		inputStyle.SetContentMarginAll(5);
+		inputStyle.ContentMarginLeft = 5f;
+		inputStyle.ContentMarginRight = 21f;
+		inputStyle.ContentMarginTop = 5f;
+		inputStyle.ContentMarginBottom = 5f;
 		var focusStyle = new StyleBoxFlat
 		{
 			BgColor = new Color(0.96f, 0.88f, 0.7f, 1f),
@@ -71,7 +75,10 @@ public partial class Room2Puzzle : Area2D
 		};
 		focusStyle.SetBorderWidthAll(3);
 		focusStyle.SetCornerRadiusAll(3);
-		focusStyle.SetContentMarginAll(4);
+		focusStyle.ContentMarginLeft = 4f;
+		focusStyle.ContentMarginRight = 20f;
+		focusStyle.ContentMarginTop = 4f;
+		focusStyle.ContentMarginBottom = 4f;
 		var title = GetNodeOrNull<Label>("Padlock/Title");
 		if (title != null && inputFont != null)
 		{
