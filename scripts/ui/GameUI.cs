@@ -8275,7 +8275,7 @@ public partial class GameUI : CanvasLayer
 
     /// <summary>New Game → the original memory cutscene plays first, over the
     /// bedroom's first open; Mara's first-person waking follows it. The
-    /// how-to-play cards are offered after Mara wakes in the bedroom. Continue skips this.</summary>
+    /// pointed HUD tour starts after the waking dialogue; Continue skips this.</summary>
     private void MaybePlayCutsceneThenTutorial(string scenePath)
     {
         var gs = GameState.Instance;
@@ -8298,7 +8298,9 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        MaybeAutoShowTutorial(scenePath);
+        if (scenePath != null && scenePath.EndsWith("/bedroom_prologue.tscn") &&
+            GameState.Instance?.HasFlag("prologue_awake") == true)
+            TryStartPrologueTutorial();
     }
 
     /// <summary>"…The kitchen?" — Mara names the wrongness out loud, then
