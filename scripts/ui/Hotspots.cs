@@ -3,7 +3,7 @@ using Godot;
 
 /// <summary>
 /// A soft pulsing ring drawn over an interactive hotspot.
-/// Two flavours: a looping pulse (hold-Tab reveal, hints) and a one-shot
+/// Two flavours: a looping pulse (authored hints) and a one-shot
 /// expanding ripple (examine click feedback). Drawn with _Draw so it needs
 /// no textures and works in any room's SubViewport coordinate space.
 /// </summary>

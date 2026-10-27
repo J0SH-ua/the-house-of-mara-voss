@@ -33,10 +33,12 @@ public partial class Settings : Node
     public bool ReduceMotion { get; set; } = false;
     /// <summary>0..1 master strength of corruption screen/audio distortion.</summary>
     public float CorruptionIntensity { get; set; } = 1.0f;
-    /// <summary>Allow Tab to reveal remaining hotspots.</summary>
-    public bool HotspotHints { get; set; } = true;
     /// <summary>Suppress the auto-opening tutorial after it has been seen once.</summary>
     public bool TutorialSeen { get; set; } = false;
+    /// <summary>Whether the first-room HUD callout tour has been completed.</summary>
+    public bool HouseHudTourSeen { get; set; } = false;
+    /// <summary>Whether the first-entry maze HUD callout tour has been completed.</summary>
+    public bool MazeHudTourSeen { get; set; } = false;
     /// <summary>Comma-separated ending ids found across runs (persistent meta-progress).</summary>
     public string EndingsSeen { get; set; } = string.Empty;
 
@@ -55,7 +57,6 @@ public partial class Settings : Node
     public static bool AutoAdvanceOrDefault() => Instance?.AutoAdvanceDialogue ?? false;
     public static bool ReduceMotionOrDefault() => Instance?.ReduceMotion ?? false;
     public static float CorruptionIntensityOrDefault() => Instance?.CorruptionIntensity ?? 1.0f;
-    public static bool HotspotHintsOrDefault() => Instance?.HotspotHints ?? true;
 
     // ------------------------------------------------------------ persistence
 
@@ -76,8 +77,9 @@ public partial class Settings : Node
         Fullscreen = cfg.GetValue("display", "fullscreen", Fullscreen).AsBool();
         ReduceMotion = cfg.GetValue("accessibility", "reduce_motion", ReduceMotion).AsBool();
         CorruptionIntensity = (float)cfg.GetValue("accessibility", "corruption_intensity", CorruptionIntensity).AsDouble();
-        HotspotHints = cfg.GetValue("accessibility", "hotspot_hints", HotspotHints).AsBool();
         TutorialSeen = cfg.GetValue("gameplay", "tutorial_seen", TutorialSeen).AsBool();
+        HouseHudTourSeen = cfg.GetValue("gameplay", "house_hud_tour_seen", HouseHudTourSeen).AsBool();
+        MazeHudTourSeen = cfg.GetValue("gameplay", "maze_hud_tour_seen", MazeHudTourSeen).AsBool();
         EndingsSeen = cfg.GetValue("gameplay", "endings_seen", EndingsSeen).AsString();
     }
 
@@ -95,8 +97,9 @@ public partial class Settings : Node
         cfg.SetValue("display", "fullscreen", Fullscreen);
         cfg.SetValue("accessibility", "reduce_motion", ReduceMotion);
         cfg.SetValue("accessibility", "corruption_intensity", CorruptionIntensity);
-        cfg.SetValue("accessibility", "hotspot_hints", HotspotHints);
         cfg.SetValue("gameplay", "tutorial_seen", TutorialSeen);
+        cfg.SetValue("gameplay", "house_hud_tour_seen", HouseHudTourSeen);
+        cfg.SetValue("gameplay", "maze_hud_tour_seen", MazeHudTourSeen);
         cfg.SetValue("gameplay", "endings_seen", EndingsSeen);
 
         cfg.Save(ConfigPath);

@@ -13,7 +13,7 @@ public static class InputSetup
     public const string AdvanceDialogue = "advance_dialogue";
     public const string SkipDialogue = "skip_dialogue";
     public const string ToggleClarity = "toggle_clarity";
-    public const string RevealHotspots = "reveal_hotspots";
+    public const string RevealObjective = "reveal_objective";
     public const string OpenJournal = "open_journal";
     public const string ToggleBag = "toggle_bag";
     public const string RequestHint = "request_hint";
@@ -35,7 +35,7 @@ public static class InputSetup
         AddKeyAction(AdvanceDialogue, Key.Space, Key.Enter, Key.KpEnter);
         AddKeyAction(SkipDialogue, Key.End);
         AddKeyAction(ToggleClarity, Key.C);
-        AddKeyAction(RevealHotspots, Key.Tab);
+        AddKeyAction(RevealObjective, Key.Tab);
         AddKeyAction(OpenJournal, Key.J, Key.M);
         AddKeyAction(ToggleBag, Key.B, Key.I);
         AddKeyAction(RequestHint, Key.H);

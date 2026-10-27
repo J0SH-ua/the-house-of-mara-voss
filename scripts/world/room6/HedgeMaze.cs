@@ -231,7 +231,6 @@ public partial class HedgeMaze : Node2D
     private float _torchSpriteWidth = TorchSpriteBaseWidth;
     private float _torchSpriteHeight = TorchSpriteBaseWidth;
     private Label _titleLabel;
-    private Label _promptLabel;
     private Label _exitLabel;
 
     private Vector2 _playerPosition = new(13.5f, 17.5f);
@@ -246,8 +245,6 @@ public partial class HedgeMaze : Node2D
     private bool _devMapOverlay;
     private float _wheelDelta;
     private readonly List<Vector2> _litSpans = new();
-    private float _lastMouseX;
-    private float _lastMouseY;
     private float _mouseDeltaX;
     private float _mouseDeltaY;
     private Label _devLabel;
@@ -446,20 +443,14 @@ public partial class HedgeMaze : Node2D
         // Bottom-right: her left hand owns the bottom-left corner, and
         // the HUD's objective and status chips own the top.
         _exitLabel = MakeLabel(string.Empty,
-            new Vector2(560, 498), new Vector2(568, 30), 20,
+            new Vector2(560, 498), new Vector2(568, 30), 10,
             new Color(0.96f, 0.9f, 0.72f, 0.95f), HorizontalAlignment.Right);
         _titleLabel = MakeLabel("Inside the green walls",
-            new Vector2(560, 530), new Vector2(568, 34), 25,
+            new Vector2(560, 530), new Vector2(568, 34), 13,
             new Color(0.88f, 0.94f, 0.82f, 0.95f), HorizontalAlignment.Right);
-        _promptLabel = MakeLabel(
-            "W/S move · A/D strafe · ←/→ turn · PAGE UP/DOWN look\nSHIFT run · C crouch · SPACE jump · L torch · F use · HOLD CAPS to look back",
-            new Vector2(322, 564), new Vector2(820, 44), 16,
-            new Color(0.92f, 0.89f, 0.78f, 0.92f), HorizontalAlignment.Right);
-
         bool labelsVisible = !_playWakeIntro;
         _exitLabel.Visible = labelsVisible;
         _titleLabel.Visible = labelsVisible;
-        _promptLabel.Visible = labelsVisible;
     }
 
     private Label MakeLabel(string text, Vector2 position, Vector2 size, int fontSize,
@@ -510,9 +501,6 @@ public partial class HedgeMaze : Node2D
                     _exitLabel.Visible = true;
                 if (_titleLabel != null)
                     _titleLabel.Visible = true;
-                if (_promptLabel != null)
-                    _promptLabel.Visible = true;
-
                 var gs = GameState.Instance;
                 if (gs != null)
                 {
@@ -568,6 +556,8 @@ public partial class HedgeMaze : Node2D
         {
             Dialogue.EndInputBlock();
         }
+
+        GameUI.Instance?.TryStartMazeHudTour();
     }
 
     private async Task WakeEyelidsAsync()
@@ -670,6 +660,19 @@ public partial class HedgeMaze : Node2D
         if (GetTree().Paused ||
             (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()))
             return;
+
+        // Captured mouse-look reports relative motion even when the cursor
+        // would otherwise run into a screen edge. Never infer this delta
+        // from the cursor's absolute position while the mode is enabled.
+        var gameState = GameState.Instance;
+        if (@event is InputEventMouseMotion motion && gameState != null &&
+            gameState.DevToolsEnabled && gameState.DevMouseCamera)
+        {
+            _mouseDeltaX += motion.Relative.X;
+            _mouseDeltaY += motion.Relative.Y;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
 
         // The mouse wheel raises and lowers the developer camera. It
         // comes as button presses, the way the house reads it
@@ -775,14 +778,6 @@ public partial class HedgeMaze : Node2D
         float dt = Mathf.Min((float)delta, 0.05f);
         bool free = InputFree();
 
-        // How far the mouse has travelled since last frame, for a
-        // developer who wants the camera on the mouse.
-        Vector2 mousePosition = GetGlobalMousePosition();
-        _mouseDeltaX = mousePosition.X - _lastMouseX;
-        _mouseDeltaY = mousePosition.Y - _lastMouseY;
-        _lastMouseX = mousePosition.X;
-        _lastMouseY = mousePosition.Y;
-
         UpdateBeam(dt);
         UpdateCrouch(dt, free);
         UpdateJump(dt);
@@ -806,6 +801,8 @@ public partial class HedgeMaze : Node2D
         UpdateGait(dt);
         UpdateLabels(dt);
         UpdateDevTools(dt, free);
+        _mouseDeltaX = 0f;
+        _mouseDeltaY = 0f;
         QueueRedraw();
     }
 
@@ -1183,15 +1180,6 @@ public partial class HedgeMaze : Node2D
     private void UpdateLabels(float dt)
     {
         UpdateExitHint();
-        if (_promptLabel == null)
-            return;
-
-        // The same courtesy the walked journeys give "Hold W to walk":
-        // dim while she is moving, back to full while she stands.
-        float target = _moving ? 0.4f : 0.95f;
-        var modulate = _promptLabel.Modulate;
-        modulate.A = Mathf.MoveToward(modulate.A, target, dt * 2.2f);
-        _promptLabel.Modulate = modulate;
     }
 
     private bool CanStand(Vector2 position)
