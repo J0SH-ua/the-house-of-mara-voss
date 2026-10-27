@@ -2491,6 +2491,55 @@ public partial class GameState : Node
                $"Clarity used: {ClarifiesUsed}   ·   Memory verbs used: {VerbUses}   ·   Memory integrity: {TierDisplayName(CurrentTier)}   ·   Clues noted: {_unlockedClues.Count}";
     }
 
+    // --------------------------------------------------------- developer tools
+
+    // Developer tools are ordinary run state, never saved and never
+    // part of the game's own manners. They are off until a
+    // developer asks for them, and the master switch gates the
+    // rest: a coordinate readout, a free camera that leaves Mara's
+    // body behind, a free flashlight, walking straight through the
+    // hedges, and a plan of the place.
+    private bool _devToolsEnabled;
+    private bool _devShowCoordinates;
+    private bool _devFreeCamera;
+    private bool _devFreeFlashlight;
+    private bool _devNoClip;
+    private bool _devShowMap;
+
+    public event Action DeveloperToolsChanged;
+
+    public bool DevToolsEnabled => _devToolsEnabled;
+    public bool DevShowCoordinates => _devShowCoordinates;
+    public bool DevFreeCamera => _devFreeCamera;
+    public bool DevFreeFlashlight => _devFreeFlashlight;
+    public bool DevNoClip => _devNoClip;
+    public bool DevShowMap => _devShowMap;
+
+    /// <summary>Turn the whole toolset on or off. Everything the
+    /// maze reads is gated on this, so one switch puts everything
+    /// back the way the game is meant to be played.</summary>
+    public void SetDevToolsEnabled(bool value)
+    {
+        if (_devToolsEnabled == value)
+            return;
+        _devToolsEnabled = value;
+        DeveloperToolsChanged?.Invoke();
+    }
+
+    public void SetDevShowCoordinates(bool value) => SetDevFlag(ref _devShowCoordinates, value);
+    public void SetDevFreeCamera(bool value) => SetDevFlag(ref _devFreeCamera, value);
+    public void SetDevFreeFlashlight(bool value) => SetDevFlag(ref _devFreeFlashlight, value);
+    public void SetDevNoClip(bool value) => SetDevFlag(ref _devNoClip, value);
+    public void SetDevShowMap(bool value) => SetDevFlag(ref _devShowMap, value);
+
+    private void SetDevFlag(ref bool field, bool value)
+    {
+        if (field == value)
+            return;
+        field = value;
+        DeveloperToolsChanged?.Invoke();
+    }
+
     // --------------------------------------------------------- developer mode
 
     /// <summary>Begin a throwaway testing session. The current

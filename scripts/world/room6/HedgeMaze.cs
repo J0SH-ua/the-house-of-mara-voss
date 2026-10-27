@@ -210,6 +210,16 @@ public partial class HedgeMaze : Node2D
     private Label _exitLabel;
 
     private Vector2 _playerPosition = new(13.5f, 17.5f);
+
+    // Where the view is actually coming from. Normally this is her
+    // own two eyes; a developer camera can leave her body behind
+    // and fly about the hedges on its own.
+    private Vector2 _cameraPosition = new(13.5f, 17.5f);
+    private float _cameraYaw;
+    private float _cameraHeight = BaseEyeHeight;
+    private bool _freeCamera;
+    private bool _devMapOverlay;
+    private Label _devLabel;
     private Vector2 _velocity = Vector2.Zero;
     private float _yaw = Mathf.Pi;
     private float _lookBackAmount;
@@ -542,6 +552,13 @@ public partial class HedgeMaze : Node2D
     {
         if (!_hasFlashlight)
             return;
+        var gs = GameState.Instance;
+        if (gs?.DevToolsEnabled == true && gs.DevFreeFlashlight)
+        {
+            // A developer has the torch held on; it will not go out.
+            AudioManager.Play(Sfx.FlashlightClick, -12f);
+            return;
+        }
         _flashlightOn = !_flashlightOn;
         AudioManager.Play(Sfx.FlashlightClick, _flashlightOn ? -7f : -9f);
         QueueRedraw();
@@ -651,7 +668,125 @@ public partial class HedgeMaze : Node2D
 
         UpdateGait(dt);
         UpdateLabels(dt);
+        UpdateDevTools(dt, free);
         QueueRedraw();
+    }
+
+    // ------------------------------------------------------ developer tools
+
+    /// <summary>The developer tools, all of them switched off unless
+    /// the Dev panel says otherwise: where she is, a camera that can
+    /// leave her behind, a torch that will not go out, and hedges
+    /// that can be walked through.</summary>
+    private void UpdateDevTools(float dt, bool free)
+    {
+        var gs = GameState.Instance;
+        bool tools = gs != null && gs.DevToolsEnabled;
+        bool wantFreeCamera = tools && gs.DevFreeCamera;
+        bool wantMap = tools && gs.DevShowMap;
+        bool wantCoordinates = tools && gs.DevShowCoordinates;
+
+        if (wantFreeCamera != _freeCamera)
+        {
+            _freeCamera = wantFreeCamera;
+            if (_freeCamera)
+            {
+                // Start the camera where she is standing, looking
+                // the way she is looking.
+                _cameraPosition = _playerPosition;
+                _cameraYaw = ViewYaw;
+                _cameraHeight = _eyeHeight;
+            }
+        }
+        if (wantMap != _devMapOverlay)
+        {
+            _devMapOverlay = wantMap;
+            QueueRedraw();
+        }
+
+        if (_freeCamera)
+        {
+            UpdateFreeCamera(dt, free);
+        }
+        else
+        {
+            _cameraPosition = _playerPosition;
+            _cameraYaw = ViewYaw;
+        }
+
+        // The torch can be held on for a developer, whatever the F
+        // button says.
+        if (tools && gs.DevFreeFlashlight)
+            _flashlightOn = true;
+
+        UpdateDevReadout(wantCoordinates);
+    }
+
+    /// <summary>The free camera: W/S flies it where the view looks, A
+    /// and D turn it, the left and right arrows walk it sideways,
+    /// and the mouse wheel lifts it over the hedge tops. It goes
+    /// through everything. (E, T and R are left alone — they belong
+    /// to the Memory Verbs.)</summary>
+    private void UpdateFreeCamera(float dt, bool free)
+    {
+        if (!free)
+            return;
+
+        float turn = 0f;
+        if (Input.IsPhysicalKeyPressed(Key.A))
+            turn -= 1f;
+        if (Input.IsPhysicalKeyPressed(Key.D))
+            turn += 1f;
+        if (turn != 0f)
+            _cameraYaw = NormalizeAngle(_cameraYaw + turn * TurnSpeed * dt);
+
+        Vector2 dir = new(Mathf.Cos(_cameraYaw), Mathf.Sin(_cameraYaw));
+        Vector2 right = new(-dir.Y, dir.X);
+        Vector2 move = Vector2.Zero;
+        if (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up))
+            move += dir;
+        if (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down))
+            move -= dir;
+        if (Input.IsPhysicalKeyPressed(Key.Left))
+            move += right;
+        if (Input.IsPhysicalKeyPressed(Key.Right))
+            move -= right;
+        if (move.LengthSquared() > 0f)
+            _cameraPosition += move.Normalized() * 6f * dt;
+
+        float wheel = Input.GetMouseWheelDelta();
+        if (wheel != 0f)
+            _cameraHeight = Mathf.Clamp(_cameraHeight + wheel * 0.6f, 0.05f, 8f);
+    }
+
+    /// <summary>The readout: where she is, where the camera is, and
+    /// how the place is running.</summary>
+    private void UpdateDevReadout(bool wantCoordinates)
+    {
+        if (_devLabel == null)
+        {
+            _devLabel = MakeLabel(string.Empty, new Vector2(26, 30), new Vector2(430, 96), 16,
+                new Color(0.72f, 0.92f, 0.72f, 0.92f), HorizontalAlignment.Left);
+            _devLabel.Visible = false;
+        }
+
+        _devLabel.Visible = wantCoordinates;
+        if (!wantCoordinates)
+            return;
+
+        int cellX = Mathf.FloorToInt(_playerPosition.X);
+        int cellY = Mathf.FloorToInt(_playerPosition.Y);
+        float fps = Engine.GetFramesPerSecond();
+        string line1 = $"x {_playerPosition.X:0.00}  y {_playerPosition.Y:0.00}   cell {cellX},{cellY}   " +
+            $"heading {Mathf.Round(_yaw * Mathf.RadToDeg) % 360}°";
+        string line2 = $"camera x {_cameraPosition.X:0.00}  y {_cameraPosition.Y:0.00}   " +
+            $"eye {_eyeHeight:0.00}   fps {fps}" +
+            (_freeCamera ? "   FREE CAMERA" : string.Empty) +
+            (_flashlightOn ? "   torch on" : "   torch off");
+        string line3 = _freeCamera
+            ? "free camera: W/S forward and back · A/D turn · ←/→ sideways · wheel raises and lowers"
+            : string.Empty;
+        _devLabel.Text = line1 + "\n" + line2 + (line3.Length > 0 ? "\n" + line3 : string.Empty);
     }
 
     /// <summary>The beam is Mara's hand on the torch: it follows the
@@ -703,10 +838,12 @@ public partial class HedgeMaze : Node2D
     /// settles back when she lands.</summary>
     private void UpdateEyeHeight(float dt)
     {
-        float target = BaseEyeHeight
-            - _crouchAmount * CrouchEyeDrop
-            + _jumpHeight * JumpEyeScale
-            + _landDip * LandingEyeDip;
+        float target = _freeCamera
+            ? _cameraHeight
+            : BaseEyeHeight
+                - _crouchAmount * CrouchEyeDrop
+                + _jumpHeight * JumpEyeScale
+                + _landDip * LandingEyeDip;
         float weight = Mathf.Clamp(1f - Mathf.Exp(-EyeHeightResponse * dt), 0f, 1f);
         _eyeHeight = Mathf.Lerp(_eyeHeight, target, weight);
     }
@@ -731,6 +868,11 @@ public partial class HedgeMaze : Node2D
 
     private void UpdateTurning(float dt)
     {
+        // While the developer camera has the keys, her body keeps
+        // its heading and stays where it is.
+        if (_freeCamera)
+            return;
+
         float turn = 0f;
         if (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left))
             turn -= 1f;
@@ -742,6 +884,14 @@ public partial class HedgeMaze : Node2D
 
     private void UpdateMovement(float dt)
     {
+        if (_freeCamera)
+        {
+            _velocity = Vector2.Zero;
+            _moving = false;
+            _running = false;
+            return;
+        }
+
         float forward = 0f;
         if (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up))
             forward += 1f;
@@ -768,14 +918,19 @@ public partial class HedgeMaze : Node2D
         if (forward == 0f && _velocity.LengthSquared() < 0.0004f)
             _velocity = Vector2.Zero;
 
+        // Free roam walks her straight through the hedges; otherwise
+        // she stops at them the way she always has.
+        bool noClip = GameState.Instance?.DevNoClip == true &&
+            GameState.Instance.DevToolsEnabled;
+
         Vector2 candidateX = _playerPosition + new Vector2(_velocity.X * dt, 0f);
-        if (CanStand(candidateX))
+        if (noClip || CanStand(candidateX))
             _playerPosition.X = candidateX.X;
         else
             _velocity.X = 0f;
 
         Vector2 candidateY = _playerPosition + new Vector2(0f, _velocity.Y * dt);
-        if (CanStand(candidateY))
+        if (noClip || CanStand(candidateY))
             _playerPosition.Y = candidateY.Y;
         else
             _velocity.Y = 0f;
@@ -954,19 +1109,19 @@ public partial class HedgeMaze : Node2D
     {
         shortHit = default;
         Vector2 dir = new(Mathf.Cos(angle), Mathf.Sin(angle));
-        int mapX = Mathf.FloorToInt(_playerPosition.X);
-        int mapY = Mathf.FloorToInt(_playerPosition.Y);
+        int mapX = Mathf.FloorToInt(_cameraPosition.X);
+        int mapY = Mathf.FloorToInt(_cameraPosition.Y);
 
         float deltaX = Mathf.Abs(dir.X) < 0.00001f ? 100000f : Mathf.Abs(1f / dir.X);
         float deltaY = Mathf.Abs(dir.Y) < 0.00001f ? 100000f : Mathf.Abs(1f / dir.Y);
         int stepX = dir.X < 0f ? -1 : 1;
         int stepY = dir.Y < 0f ? -1 : 1;
         float sideX = stepX < 0
-            ? (_playerPosition.X - mapX) * deltaX
-            : (mapX + 1f - _playerPosition.X) * deltaX;
+            ? (_cameraPosition.X - mapX) * deltaX
+            : (mapX + 1f - _cameraPosition.X) * deltaX;
         float sideY = stepY < 0
-            ? (_playerPosition.Y - mapY) * deltaY
-            : (mapY + 1f - _playerPosition.Y) * deltaY;
+            ? (_cameraPosition.Y - mapY) * deltaY
+            : (mapY + 1f - _cameraPosition.Y) * deltaY;
 
         float distance = 0f;
         int side = 0;
@@ -992,7 +1147,7 @@ public partial class HedgeMaze : Node2D
             if (!IsSolid(tile))
                 continue;
 
-            Vector2 hitPoint = _playerPosition + dir * distance;
+            Vector2 hitPoint = _cameraPosition + dir * distance;
             float wallX = side == 0
                 ? hitPoint.Y - Mathf.Floor(hitPoint.Y)
                 : hitPoint.X - Mathf.Floor(hitPoint.X);
@@ -1067,7 +1222,9 @@ public partial class HedgeMaze : Node2D
 
     public override void _Draw()
     {
-        float viewYaw = ViewYaw;
+        // The view comes from wherever the camera is: from her own
+        // eyes, or from a developer camera that has left her behind.
+        float viewYaw = _cameraYaw;
 
         DrawRect(new Rect2(0, 0, ScreenWidth, Horizon), SkyColorAt(Horizon * 0.5f), true);
         DrawGroundBase(viewYaw);
@@ -1086,6 +1243,7 @@ public partial class HedgeMaze : Node2D
         DrawRect(new Rect2(0, 0, 24, ScreenHeight), new Color(0, 0, 0, 0.22f), true);
         DrawRect(new Rect2(1128, 0, 24, ScreenHeight), new Color(0, 0, 0, 0.22f), true);
         DrawEyelids();
+        DrawDevMap();
     }
 
     private static Color SkyColorAt(float y)
@@ -1126,10 +1284,10 @@ public partial class HedgeMaze : Node2D
             float depthFar = Mathf.Clamp(eyePixels / Mathf.Max(y0 - Horizon, 1f), 0.25f, 30f);
             float depthNear = Mathf.Clamp(eyePixels / Mathf.Max(y1 - Horizon, 1f), 0.25f, 30f);
 
-            Vector2 farLeft = _playerPosition + dir * depthFar - right * (halfWidth * depthFar);
-            Vector2 farRight = _playerPosition + dir * depthFar + right * (halfWidth * depthFar);
-            Vector2 nearRight = _playerPosition + dir * depthNear + right * (halfWidth * depthNear);
-            Vector2 nearLeft = _playerPosition + dir * depthNear - right * (halfWidth * depthNear);
+            Vector2 farLeft = _cameraPosition + dir * depthFar - right * (halfWidth * depthFar);
+            Vector2 farRight = _cameraPosition + dir * depthFar + right * (halfWidth * depthFar);
+            Vector2 nearRight = _cameraPosition + dir * depthNear + right * (halfWidth * depthNear);
+            Vector2 nearLeft = _cameraPosition + dir * depthNear - right * (halfWidth * depthNear);
 
             var points = new Vector2[]
             {
@@ -1266,18 +1424,18 @@ public partial class HedgeMaze : Node2D
         if (hit.Side == 0)
         {
             float faceX = dirCentre.X > 0f ? hit.Cell.X : hit.Cell.X + 1f;
-            float across = faceX - _playerPosition.X;
-            float yLeft = _playerPosition.Y + across * (dirLeft.Y / dirLeft.X);
-            float yRight = _playerPosition.Y + across * (dirRight.Y / dirRight.X);
+            float across = faceX - _cameraPosition.X;
+            float yLeft = _cameraPosition.Y + across * (dirLeft.Y / dirLeft.X);
+            float yRight = _cameraPosition.Y + across * (dirRight.Y / dirRight.X);
             uLeft = yLeft * texScale;
             uRight = yRight * texScale;
         }
         else
         {
             float faceY = dirCentre.Y > 0f ? hit.Cell.Y : hit.Cell.Y + 1f;
-            float across = faceY - _playerPosition.Y;
-            float xLeft = _playerPosition.X + across * (dirLeft.X / dirLeft.Y);
-            float xRight = _playerPosition.X + across * (dirRight.X / dirRight.Y);
+            float across = faceY - _cameraPosition.Y;
+            float xLeft = _cameraPosition.X + across * (dirLeft.X / dirLeft.Y);
+            float xRight = _cameraPosition.X + across * (dirRight.X / dirRight.Y);
             uLeft = xLeft * texScale;
             uRight = xRight * texScale;
         }
@@ -1425,8 +1583,8 @@ public partial class HedgeMaze : Node2D
         Vector2 dir = new(Mathf.Cos(viewYaw), Mathf.Sin(viewYaw));
         Vector2 right = new(-dir.Y, dir.X);
         float focal = ScreenWidth * 0.5f / Mathf.Tan(FieldOfView * 0.5f);
-        int px = Mathf.FloorToInt(_playerPosition.X);
-        int py = Mathf.FloorToInt(_playerPosition.Y);
+        int px = Mathf.FloorToInt(_cameraPosition.X);
+        int py = Mathf.FloorToInt(_cameraPosition.Y);
 
         for (int cy = py - 8; cy <= py + 8; cy++)
         {
@@ -1440,7 +1598,7 @@ public partial class HedgeMaze : Node2D
                     var world = new Vector2(
                         cx + 0.08f + 0.84f * Hash01(cx, cy, 11 + k * 7),
                         cy + 0.08f + 0.84f * Hash01(cx, cy, 23 + k * 13));
-                    Vector2 rel = world - _playerPosition;
+                    Vector2 rel = world - _cameraPosition;
                     float depth = rel.Dot(dir);
                     if (depth < 0.18f || depth > 8.5f)
                         continue;
@@ -1811,6 +1969,57 @@ public partial class HedgeMaze : Node2D
             float flicker = BeamFlicker();
             DrawCircle(lens, 13f, new Color(1f, 0.94f, 0.74f, 0.42f * flicker));
             DrawCircle(lens, 6f, new Color(1f, 0.98f, 0.86f, 0.7f * flicker));
+        }
+    }
+
+    /// <summary>A plan of the maze for a developer: the hedges as they
+    /// stand, her as a mark on them, and the free camera as another
+    /// mark with a line between the two.</summary>
+    private void DrawDevMap()
+    {
+        if (!_devMapOverlay)
+            return;
+
+        const float cell = 7f;
+        int columns = 0;
+        foreach (string row in MapRows)
+            columns = Mathf.Max(columns, row.Length);
+
+        float width = columns * cell;
+        float height = MapRows.Length * cell;
+        Vector2 origin = new(26f, 136f);
+
+        DrawRect(new Rect2(origin - new Vector2(5f, 5f), new Vector2(width + 10f, height + 10f)),
+            new Color(0f, 0f, 0f, 0.5f), true);
+        for (int y = 0; y < MapRows.Length; y++)
+        {
+            string row = MapRows[y];
+            for (int x = 0; x < row.Length; x++)
+            {
+                Color color;
+                switch (row[x])
+                {
+                    case '#': color = new Color(0.1f, 0.28f, 0.12f, 0.95f); break;
+                    case 'P': color = new Color(0.44f, 0.44f, 0.48f, 0.95f); break;
+                    case 'F': color = new Color(0.2f, 0.42f, 0.52f, 0.95f); break;
+                    case 'T': color = new Color(0.18f, 0.44f, 0.2f, 0.95f); break;
+                    case 'S': color = new Color(0.85f, 0.8f, 0.45f, 0.95f); break;
+                    case 'B': color = new Color(0.88f, 0.58f, 0.38f, 0.95f); break;
+                    case 'X': color = new Color(0.88f, 0.4f, 0.4f, 0.95f); break;
+                    default: continue;
+                }
+                DrawRect(new Rect2(origin + new Vector2(x * cell, y * cell),
+                    new Vector2(cell, cell)), color, true);
+            }
+        }
+
+        Vector2 her = origin + _playerPosition * cell;
+        DrawCircle(her, 3.4f, new Color(1f, 0.95f, 0.7f, 0.95f));
+        if (_freeCamera)
+        {
+            Vector2 cam = origin + _cameraPosition * cell;
+            DrawLine(her, cam, new Color(0.5f, 0.85f, 1f, 0.55f), 1.5f);
+            DrawCircle(cam, 2.8f, new Color(0.5f, 0.85f, 1f, 0.95f));
         }
     }
 
