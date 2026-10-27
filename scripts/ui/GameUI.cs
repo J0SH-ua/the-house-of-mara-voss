@@ -4641,7 +4641,6 @@ public partial class GameUI : CanvasLayer
         bool show = _context == UiContext.Game
             && gs?.HasFlag("item_flashlight") == true
             && isDark
-            && !_heldShowing
             && !SceneManager.IsChanging
             && !AnyPanelOpen();
         bool beamCanLightHand = gs != null && gs.HasFlag("item_flashlight") &&
@@ -7419,7 +7418,8 @@ public partial class GameUI : CanvasLayer
 
         // The hand rises into frame from below, the fragment already
         // resting in the palm, close enough to touch.
-        float handW = 470f;
+        // Match the smaller hand used in the first-door held-item cutscene.
+        float handW = 370f;
         float handH = handW * HeldHandAspect;
         Vector2 handRest = new Vector2(cx - handW / 2f, view.Y - handH * 0.92f);
         _heldHand.Size = new Vector2(handW, handH);
