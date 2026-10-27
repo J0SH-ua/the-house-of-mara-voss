@@ -92,8 +92,11 @@ public partial class HedgeMaze : Node2D
     private const float ColumnWidth = 8f;
     private const int ColumnCount = 144;
     private const float FieldOfView = 1.08f;
-    private const float ProjectionScale = 680f;
+    private static float ProjectionScale => FocalLength;
     private const float MaxProjectedVerticalAngle = 1.35f;
+    private const int WallVerticalSegments = 8;
+    private const int PropVerticalSegments = 8;
+    private const float MaxPropInteractionDistance = 1.8f;
     private const float BaseEyeHeight = 0.37f;
     private const float CrouchEyeDrop = 0.16f;
     private const float LandingEyeDip = 0.055f;
@@ -176,7 +179,7 @@ public partial class HedgeMaze : Node2D
     private const float MouseTurnScale = 0.006f;
     private const float MousePitchScale = 0.0015f;
     private const float LookPitchSpeed = 0.75f;
-    private const float MaxLookPitch = 0.32f;
+    private const float MaxLookPitch = 0.24f;
     private static readonly Vector2 TorchSpriteGrip = new(0.4349f, 0.4884f);
     private static readonly Vector2 TorchSpriteLens = new(0.8368f, 0.1681f);
 
@@ -686,7 +689,7 @@ public partial class HedgeMaze : Node2D
         }
 
         // Clicking is using, the way it is everywhere else in the
-        // house: whatever she is looking at, she reaches for.
+        // house: she reaches for the visible thing only when it is close.
         if (@event is InputEventMouseButton click &&
             click.ButtonIndex == MouseButton.Left && click.Pressed)
         {
@@ -695,6 +698,12 @@ public partial class HedgeMaze : Node2D
             {
                 GetViewport().SetInputAsHandled();
                 _ = InteractWithPropAsync(clicked);
+                return;
+            }
+            if (InputFree() && PropUnderMouse(requireReach: false) != null)
+            {
+                GetViewport().SetInputAsHandled();
+                GameUI.Instance?.ShowToast("Mara needs to move closer to reach that.", 2.2f, true);
                 return;
             }
         }
@@ -732,13 +741,15 @@ public partial class HedgeMaze : Node2D
             ToggleFlashlight();
         }
 
-        // F is the house's hand: use whatever she is looking at.
+        // F is the house's hand: use the thing she is looking at when it is within reach.
         if (keyEvent.PhysicalKeycode == Key.F && keyEvent.Pressed &&
             !keyEvent.Echo && InputFree())
         {
             MazeProp looked = PropUnderMouse();
             if (looked != null)
                 _ = InteractWithPropAsync(looked);
+            else if (PropUnderMouse(requireReach: false) != null)
+                GameUI.Instance?.ShowToast("Mara needs to move closer to reach that.", 2.2f, true);
         }
 
         // Looking behind her is a hold, not a tap, so there is nothing
@@ -1659,8 +1670,10 @@ public partial class HedgeMaze : Node2D
         float wallTop = WallTopUnits(hit.Tile);
         float bottom = ProjectWorldY(0f, depth);
         float top = ProjectWorldY(wallTop, depth);
-        float pitchCos = Mathf.Max(Mathf.Cos(_lookPitchRadians), 0.1f);
-        float groundLineHeight = ProjectionScale / (depth * pitchCos * pitchCos);
+        float groundAngle = Mathf.Atan2(-_eyeHeight, depth) - _lookPitchRadians;
+        float groundDerivative = depth / Mathf.Max(depth * depth + _eyeHeight * _eyeHeight, 0.001f);
+        float groundLineHeight = ProjectionScale * groundDerivative /
+            Mathf.Max(Mathf.Cos(groundAngle) * Mathf.Cos(groundAngle), 0.1f);
 
         // The rays down this column: the left edge, the middle and
         // the right edge of it.
@@ -1730,24 +1743,35 @@ public partial class HedgeMaze : Node2D
         if (hit.Tile == 'F')
             shade = new Color(shade.R * 0.72f, shade.G * 0.86f, shade.B, shade.A);
 
-        float vTop = 0f;
-        float vBottom = wallTop * texScale;
         Vector2 textureSize = new(texture.GetWidth(), texture.GetHeight());
-        var points = new Vector2[]
+        var points = new Vector2[4];
+        var uvs = new Vector2[4];
+        var colors = new[] { shade, shade, shade, shade };
+        // A single flat quad maps vertical texture coordinates linearly
+        // even though a pitched pinhole camera projects height nonlinearly.
+        // Divide the wall into short world-height bands so the UVs follow
+        // the camera projection instead of stretching the whole hedge.
+        for (int band = 0; band < WallVerticalSegments; band++)
         {
-            new Vector2(screenX, top),
-            new Vector2(screenX + ColumnWidth + 1f, top),
-            new Vector2(screenX + ColumnWidth + 1f, bottom),
-            new Vector2(screenX, bottom),
-        };
-        var uvs = new Vector2[]
-        {
-            Norm(new Vector2(uLeft, vTop), textureSize),
-            Norm(new Vector2(uRight, vTop), textureSize),
-            Norm(new Vector2(uRight, vBottom), textureSize),
-            Norm(new Vector2(uLeft, vBottom), textureSize),
-        };
-        DrawPolygon(points, new Color[] { shade, shade, shade, shade }, uvs, texture);
+            float bottomHeight = wallTop * band / WallVerticalSegments;
+            float topHeight = wallTop * (band + 1) / WallVerticalSegments;
+            float bandTop = ProjectWorldY(topHeight, depth);
+            float bandBottom = ProjectWorldY(bottomHeight, depth);
+            if (bandBottom <= bandTop)
+                continue;
+
+            float vTop = (wallTop - topHeight) * texScale;
+            float vBottom = (wallTop - bottomHeight) * texScale;
+            points[0] = new Vector2(screenX, bandTop);
+            points[1] = new Vector2(screenX + ColumnWidth + 1f, bandTop);
+            points[2] = new Vector2(screenX + ColumnWidth + 1f, bandBottom);
+            points[3] = new Vector2(screenX, bandBottom);
+            uvs[0] = Norm(new Vector2(uLeft, vTop), textureSize);
+            uvs[1] = Norm(new Vector2(uRight, vTop), textureSize);
+            uvs[2] = Norm(new Vector2(uRight, vBottom), textureSize);
+            uvs[3] = Norm(new Vector2(uLeft, vBottom), textureSize);
+            DrawPolygon(points, colors, uvs, texture);
+        }
 
         if (hit.Tile is '#' or 'T')
         {
@@ -2467,11 +2491,47 @@ public partial class HedgeMaze : Node2D
             // it belongs rather than squeezed into the gap.
             float textureWidth = prop.Texture.GetWidth();
             float textureHeight = prop.Texture.GetHeight();
-            float sliceStart = (visible.Position.X - rect.Position.X) / Mathf.Max(rect.Size.X, 0.001f);
-            float sliceWidth = visible.Size.X / Mathf.Max(rect.Size.X, 0.001f);
-            var source = new Rect2(textureWidth * sliceStart, 0f,
-                textureWidth * sliceWidth, textureHeight);
-            DrawTextureRectRegion(prop.Texture, visible, source, tint);
+            float aspect = textureWidth / Mathf.Max(textureHeight, 1f);
+            float worldWidth = prop.HeightUnits * aspect;
+            Vector2 direction = new(Mathf.Cos(_cameraYaw), Mathf.Sin(_cameraYaw));
+            Vector2 right = new(-direction.Y, direction.X);
+            Vector2 relative = prop.Position - _cameraPosition;
+            float lateral = relative.Dot(right);
+            float horizontalDepth = relative.Dot(direction);
+            float pitchSin = Mathf.Sin(_lookPitchRadians);
+            float pitchCos = Mathf.Cos(_lookPitchRadians);
+
+            // Slice the billboard into world-height bands too. Each band
+            // gets its own pitched projection and camera-space width, so
+            // looking up/down does not turn a prop into a stretched card.
+            for (int band = 0; band < PropVerticalSegments; band++)
+            {
+                float bottomHeight = prop.HeightUnits * band / PropVerticalSegments;
+                float topHeight = prop.HeightUnits * (band + 1) / PropVerticalSegments;
+                float middleHeight = (bottomHeight + topHeight) * 0.5f - _eyeHeight;
+                float cameraDepth = horizontalDepth * pitchCos + middleHeight * pitchSin;
+                if (cameraDepth <= 0.1f)
+                    continue;
+
+                float bandCenterX = ScreenWidth * 0.5f + lateral / cameraDepth * FocalLength;
+                float bandWidth = worldWidth * FocalLength / cameraDepth;
+                float bandTop = ProjectWorldY(topHeight, horizontalDepth);
+                float bandBottom = ProjectWorldY(bottomHeight, horizontalDepth);
+                var projectedBand = new Rect2(
+                    bandCenterX - bandWidth * 0.5f, bandTop, bandWidth, bandBottom - bandTop);
+                Rect2 visibleBand = VisiblePartOfRect(projectedBand, horizontalDepth);
+                if (visibleBand.Size.X <= 0.5f || visibleBand.Size.Y <= 0f)
+                    continue;
+
+                float sliceStart = (visibleBand.Position.X - projectedBand.Position.X) /
+                    Mathf.Max(projectedBand.Size.X, 0.001f);
+                float sliceWidth = visibleBand.Size.X / Mathf.Max(projectedBand.Size.X, 0.001f);
+                float sourceTop = (1f - topHeight / prop.HeightUnits) * textureHeight;
+                float sourceBottom = (1f - bottomHeight / prop.HeightUnits) * textureHeight;
+                var source = new Rect2(textureWidth * sliceStart, sourceTop,
+                    textureWidth * sliceWidth, sourceBottom - sourceTop);
+                DrawTextureRectRegion(prop.Texture, visibleBand, source, tint);
+            }
 
             // A thin warm line around the thing she is looking at,
             // so she knows F will reach it.
@@ -2564,16 +2624,24 @@ public partial class HedgeMaze : Node2D
         Vector2 right = new(-dir.Y, dir.X);
         Vector2 rel = prop.Position - _cameraPosition;
         depth = rel.Dot(dir);
-        if (depth < 0.4f || depth > 9f)
+        if (depth < 0.15f || depth > 9f)
             return false;
 
-        float screenX = ScreenWidth * 0.5f + rel.Dot(right) / depth * FocalLength;
+        float aspect = (float)prop.Texture.GetWidth() / Mathf.Max(prop.Texture.GetHeight(), 1);
+        float centreHeight = prop.HeightUnits * 0.5f - _eyeHeight;
+        float pitchSin = Mathf.Sin(_lookPitchRadians);
+        float pitchCos = Mathf.Cos(_lookPitchRadians);
+        float cameraDepth = depth * pitchCos + centreHeight * pitchSin;
+        if (cameraDepth <= 0.1f)
+            return false;
+
+        float screenX = ScreenWidth * 0.5f + rel.Dot(right) / cameraDepth * FocalLength;
         float groundY = ProjectWorldY(0f, depth);
         float topY = ProjectWorldY(prop.HeightUnits, depth);
-        float heightPx = Mathf.Max(groundY - topY, 1f);
-        float aspect = (float)prop.Texture.GetWidth() / Mathf.Max(prop.Texture.GetHeight(), 1);
-        float widthPx = heightPx * aspect;
-        rect = new Rect2(screenX - widthPx * 0.5f, groundY - heightPx, widthPx, heightPx);
+        float widthPx = prop.HeightUnits * aspect * FocalLength / cameraDepth;
+        float rectTop = Mathf.Min(topY, groundY);
+        float heightPx = Mathf.Max(Mathf.Abs(groundY - topY), 1f);
+        rect = new Rect2(screenX - widthPx * 0.5f, rectTop, widthPx, heightPx);
 
         // A thing off the side of the frame is not there to be
         // looked at, and its column would be the wrong one to
@@ -2583,7 +2651,7 @@ public partial class HedgeMaze : Node2D
 
     /// <summary>The thing she is looking at, if she is looking at
     /// one.</summary>
-    private MazeProp PropUnderMouse()
+    private MazeProp PropUnderMouse(bool requireReach = true)
     {
         var gs = GameState.Instance;
         Vector2 mouse = gs != null && gs.DevToolsEnabled && gs.DevMouseCamera
@@ -2593,7 +2661,8 @@ public partial class HedgeMaze : Node2D
         float bestDepth = float.MaxValue;
         foreach (MazeProp prop in _props)
         {
-            if (prop.Taken)
+            if (prop.Taken || (requireReach &&
+                prop.Position.DistanceTo(_cameraPosition) > MaxPropInteractionDistance))
                 continue;
             if (!PropRect(prop, out Rect2 rect, out float depth))
                 continue;
@@ -2612,7 +2681,7 @@ public partial class HedgeMaze : Node2D
     /// picked up, the rest are only looked at.</summary>
     private async Task InteractWithPropAsync(MazeProp prop)
     {
-        if (prop.Taken)
+        if (prop.Taken || prop.Position.DistanceTo(_cameraPosition) > MaxPropInteractionDistance)
             return;
 
         // The house's own ripple, where her hand went out.

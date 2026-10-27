@@ -15,6 +15,7 @@ public static class InputSetup
     public const string ToggleClarity = "toggle_clarity";
     public const string RevealObjective = "reveal_objective";
     public const string OpenJournal = "open_journal";
+    public const string ToggleMemoryBar = "toggle_memory_bar";
     public const string ToggleBag = "toggle_bag";
     public const string RequestHint = "request_hint";
     public const string NavBack = "nav_back";
@@ -37,6 +38,7 @@ public static class InputSetup
         AddKeyAction(ToggleClarity, Key.C);
         AddKeyAction(RevealObjective, Key.Tab);
         AddKeyAction(OpenJournal, Key.J, Key.M);
+        AddKeyAction(ToggleMemoryBar, Key.V);
         AddKeyAction(ToggleBag, Key.B, Key.I);
         AddKeyAction(RequestHint, Key.H);
         AddKeyAction(NavBack, Key.Q, Key.Backspace);

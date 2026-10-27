@@ -26,6 +26,7 @@ public partial class GameUI : CanvasLayer
     private const string GameManagerScenePath = "res://scenes/managers/game_manager.tscn";
 
     private Font _font;
+    private readonly List<Control> _menuCenters = new();
 
     // HUD
     private Control _hud;
@@ -38,6 +39,8 @@ public partial class GameUI : CanvasLayer
     private float _topHudHoldTimer;
     private float _topHudAlpha;
     private const float TopHudHoldSeconds = 2.4f;
+    private const float GameplayHudScale = 0.70f;
+    private const float MenuUiScale = 0.80f;
     private const float TopHudFadeInSeconds = 0.16f;
     private const float TopHudFadeOutSeconds = 0.22f;
     private Label _objectiveLabel;
@@ -793,7 +796,7 @@ public partial class GameUI : CanvasLayer
                 _controlsChip.OffsetBottom = -176f;
                 if (_controlsLabel != null)
                 {
-                    _controlsLabel.Text = "W/S move · A/D strafe · ←/→ turn · Page Up/Down look\nShift run · C crouch · Space jump · L torch · F use\nHold Caps Lock to look back · Tab shows this help";
+                    _controlsLabel.Text = "W/S move · A/D strafe · ←/→ turn · PgUp/PgDn look\nShift run · C crouch · Space jump · L torch · F use\nCaps hold-look back · V MEMORY tab · Tab objective/help";
                     _controlsLabel.AddThemeFontSizeOverride("font_size", 16);
                 }
             }
@@ -832,6 +835,7 @@ public partial class GameUI : CanvasLayer
         RefreshRememberButton();
         RefreshMemoryVerbBar();
         ApplyGameplayHudScale();
+        ApplyMenuUiScale();
         UpdateHudTourLayout();
         SyncMazeMouseMode();
         UpdateCollapsePulse();
@@ -880,9 +884,8 @@ public partial class GameUI : CanvasLayer
     }
 
 
-    /// <summary>The gameplay HUD was drawn for a much larger on-screen
-    /// footprint. Render the key overlay controls at half size without
-    /// moving their anchored edges; modal panels remain full-size for reading.</summary>
+    /// <summary>Scale gameplay HUD controls to the requested 70% footprint
+    /// without moving their anchored edges; menu panels are scaled separately.</summary>
     private void ApplyGameplayHudScale()
     {
         SetHudScale(_objectivePanel, new Vector2(0f, 0f));
@@ -904,7 +907,43 @@ public partial class GameUI : CanvasLayer
         if (control == null)
             return;
         control.PivotOffset = new Vector2(control.Size.X * pivot.X, control.Size.Y * pivot.Y);
-        control.Scale = new Vector2(0.5f, 0.5f);
+        control.Scale = Vector2.One * GameplayHudScale;
+    }
+
+    private void RegisterMenuCenter(Control center)
+    {
+        if (center != null && !_menuCenters.Contains(center))
+            _menuCenters.Add(center);
+    }
+
+    /// <summary>Menu/dialog surfaces are intentionally 20% smaller than
+    /// their authored layout while their dim backdrops remain full-screen.</summary>
+    private void ApplyMenuUiScale()
+    {
+        for (int i = _menuCenters.Count - 1; i >= 0; i--)
+        {
+            Control center = _menuCenters[i];
+            if (center == null || !GodotObject.IsInstanceValid(center))
+            {
+                _menuCenters.RemoveAt(i);
+                continue;
+            }
+            if (center.Size.X <= 0f || center.Size.Y <= 0f)
+                continue;
+            center.PivotOffset = center.Size * 0.5f;
+            center.Scale = Vector2.One * MenuUiScale;
+        }
+
+        SetMenuCornerScale(_menuSettingsButton, new Vector2(1f, 1f));
+        SetMenuCornerScale(_menuHowToButton, new Vector2(1f, 1f));
+    }
+
+    private static void SetMenuCornerScale(Control control, Vector2 pivot)
+    {
+        if (control == null || control.Size.X <= 0f || control.Size.Y <= 0f)
+            return;
+        control.PivotOffset = new Vector2(control.Size.X * pivot.X, control.Size.Y * pivot.Y);
+        control.Scale = Vector2.One * MenuUiScale;
     }
 
     /// <summary>Use a first-person pointer mode only while Mara is actively
@@ -1060,7 +1099,7 @@ public partial class GameUI : CanvasLayer
             case 1:
                 title = "THE MEMORY TAB";
                 body = _hudTourIsMaze
-                    ? "This tab stays at the bottom. Click MEMORY to expand or collapse the learned verbs and Journal; E, G, T and R are their shortcuts."
+                    ? "This tab stays at the bottom. Press V or click MEMORY to expand/collapse the learned verbs and Journal; E, G, T and R are their shortcuts."
                     : "This tab stays at the bottom. Click MEMORY to expand or collapse it; new memory verbs appear here as Mara learns them.";
                 break;
             default:
@@ -1395,6 +1434,17 @@ public partial class GameUI : CanvasLayer
 
         if (GetTree().Paused)
             return;
+
+        if (@event.IsActionPressed(InputSetup.ToggleMemoryBar) &&
+            SceneManager.Instance?.CurrentScene is HedgeMaze &&
+            !FocusIsTextEditing() && !Dialogue.IsShowing && !Dialogue.IsInputBlocked && !AnyPanelOpen())
+        {
+            _memoryVerbBarExpanded = !_memoryVerbBarExpanded;
+            RefreshMemoryVerbBar();
+            AudioManager.Play(Sfx.UiClick, -8f);
+            GetViewport().SetInputAsHandled();
+            return;
+        }
 
         // A click nothing claimed. Claimed clicks (examines, doors,
         // triggers) call SetInputAsHandled and never reach here. In an
@@ -1799,16 +1849,17 @@ public partial class GameUI : CanvasLayer
         if (_verbToggleButton != null)
         {
             _verbToggleButton.Visible = anyUnlocked || keepTabVisible;
+            string shortcutHint = inMaze ? "  V" : string.Empty;
             _verbToggleButton.Text = showExpanded
-                ? "MEMORY  −"
+                ? $"MEMORY  −{shortcutHint}"
                 : activeVerb != MemoryVerb.None
-                    ? $"◆ {MemoryVerbSystem.DisplayName(activeVerb)}  +"
-                    : "MEMORY  +";
+                    ? $"◆ {MemoryVerbSystem.DisplayName(activeVerb)}  +{shortcutHint}"
+                    : $"MEMORY  +{shortcutHint}";
             _verbToggleButton.TooltipText = showExpanded
-                ? "Collapse the Memory Verb bar"
+                ? $"Collapse the Memory Verb bar{(inMaze ? " (V)" : string.Empty)}"
                 : activeVerb != MemoryVerb.None
-                    ? $"{MemoryVerbSystem.DisplayName(activeVerb)} is held — expand the Memory Verb bar"
-                    : "Expand the Memory Verb bar";
+                    ? $"{MemoryVerbSystem.DisplayName(activeVerb)} is held — expand the Memory Verb bar{(inMaze ? " (V)" : string.Empty)}"
+                    : $"Expand the Memory Verb bar{(inMaze ? " (V)" : string.Empty)}";
             _verbToggleButton.AddThemeColorOverride("font_color", activeVerb != MemoryVerb.None
                 ? new Color(1f, 0.9f, 0.62f)
                 : new Color(0.88f, 0.78f, 0.60f));
@@ -2629,6 +2680,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _confirmPanel.AddChild(center);
 
         var panel = MakePanel();
@@ -3269,6 +3321,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _bagPanel.AddChild(center);
 
         var panel = MakePanel();
@@ -4018,9 +4071,9 @@ public partial class GameUI : CanvasLayer
         if (objectivePanel.Visible)
         {
             // The objective chip fits its text rather than clipping line two.
-            float objectiveH = MeasureHudTextHeight(_objectiveLabel.Text, 258f, 11);
+            float objectiveH = MeasureHudTextHeight(_objectiveLabel.Text, 516f, 21);
             objectivePanel.OffsetBottom = objectivePanel.OffsetTop
-                + Mathf.Max(objectiveH, 13f) + 12f;
+                + Mathf.Max(objectiveH, 25f) + 20f;
         }
 
         // Clarity pips (ColorRects — no font-glyph roulette).
@@ -4537,6 +4590,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer { Name = "Center" };
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _pausePanel.AddChild(center);
 
         var panel = MakePanel();
@@ -4607,6 +4661,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _settingsPanel.AddChild(center);
 
         var panel = MakePanel();
@@ -4670,6 +4725,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _devPanel.AddChild(center);
 
         var panel = MakePanel();
@@ -4962,6 +5018,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _journalPanel.AddChild(center);
 
         var panel = MakePanel();
@@ -5153,6 +5210,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _tutorialPanel.AddChild(center);
 
         var panel = MakePanel();
@@ -5460,6 +5518,7 @@ public partial class GameUI : CanvasLayer
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        RegisterMenuCenter(center);
         _recollectionPanel.AddChild(center);
 
         var panelStyle = new StyleBoxFlat
