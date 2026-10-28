@@ -3231,6 +3231,8 @@ public partial class GameUI : CanvasLayer
         var gs = GameState.Instance;
         if (gs == null || _heldBusy || _heldShowing || Dialogue.IsShowing || _heldRoot == null)
             return;
+        if (TryBlockVentCrawlBagAction())
+            return;
 
         var item = FindPracticalItem(BuildPracticalItemViews(gs), _bagSelectedItemId);
         if (item != null)
@@ -3576,7 +3578,12 @@ public partial class GameUI : CanvasLayer
         _bagPhotoButton = MakeButton("Look at the photograph");
         _bagPhotoButton.Visible = false;
         _bagPhotoButton.FocusMode = Control.FocusModeEnum.None;
-        _bagPhotoButton.Pressed += () => ShowPhotograph(OnBagPhotographClosed);
+        _bagPhotoButton.Pressed += () =>
+        {
+            if (TryBlockVentCrawlBagAction())
+                return;
+            ShowPhotograph(OnBagPhotographClosed);
+        };
         detail.AddChild(_bagPhotoButton);
 
         // Everything she carries can be taken back into her hand
@@ -3632,12 +3639,38 @@ public partial class GameUI : CanvasLayer
         AddChild(_bagPanel);
     }
 
+    private static readonly string[] VentCrawlBagBlockedLines =
+    [
+        "Uh, it's too tight in here. I can't reach my bag.",
+        "I should get out of here first to inspect. It's too tight.",
+        "It's too tight to move.",
+    ];
+
+    private int _lastVentCrawlBagBlockedLine = -1;
+
+    private bool TryBlockVentCrawlBagAction()
+    {
+        if (SceneManager.Instance?.CurrentScene is not VentCrawl)
+            return false;
+
+        int index = _lastVentCrawlBagBlockedLine < 0
+            ? (int)(GD.Randi() % (uint)VentCrawlBagBlockedLines.Length)
+            : (_lastVentCrawlBagBlockedLine + 1 +
+                (int)(GD.Randi() % (uint)(VentCrawlBagBlockedLines.Length - 1)))
+                % VentCrawlBagBlockedLines.Length;
+        _lastVentCrawlBagBlockedLine = index;
+        ShowMaraAside(VentCrawlBagBlockedLines[index]);
+        return true;
+    }
+
     public void OpenBag(bool fromPause = false)
     {
         if (_context != UiContext.Game || _bagPanel == null || _endingPlaying ||
             _cutscenePlaying || _shatterPlaying)
             return;
         if (!fromPause && Dialogue.IsShowing)
+            return;
+        if (TryBlockVentCrawlBagAction())
             return;
 
         MemoryVerbSystem.Cancel(silent: true);
@@ -7397,9 +7430,7 @@ public partial class GameUI : CanvasLayer
         _heldHand.Size = new Vector2(handW, handH);
         _heldHand.Position = handRest + new Vector2(0f, 180f);
         _heldHand.Modulate = Colors.White;
-        // In the narrow vent the palm would crowd the held object and
-        // conflict with the separate flashlight hand, so show the item alone.
-        _heldHand.Visible = SceneManager.Instance?.CurrentScene is not VentCrawl;
+        _heldHand.Visible = true;
 
         Vector2 palm = handRest + new Vector2(handW * HeldPalmX, handH * HeldPalmY);
         _heldIcon.Texture = GD.Load<Texture2D>(iconPath);
@@ -7742,6 +7773,8 @@ public partial class GameUI : CanvasLayer
         _maraAsideLabel.VerticalAlignment = VerticalAlignment.Center;
         _maraAsideLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         _maraAsideLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _maraAsideLabel.ZAsRelative = false;
+        _maraAsideLabel.ZIndex = 120;
         _maraAsideLabel.Modulate = new Color(1, 1, 1, 0);
 
         var chip = new StyleBoxFlat
