@@ -8682,4 +8682,3 @@ public partial class GameUI : CanvasLayer
         ShowHudTour(isMaze: false);
     }
 }
-
