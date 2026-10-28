@@ -61,6 +61,7 @@ public partial class HedgeMaze : Node2D
     // The torch she actually carries in here: both hands round the
     // cloth-bound head, as one sprite, in the house's own pixel art.
     private const string TorchHandsTexturePath = "res://assets/images/core/hand_flashlight_flipped.png";
+    private const string TorchLensLitTexturePath = "res://assets/images/core/hand_flashlight_lens_lit.png";
     private const string HedgeWallTexturePath = "res://assets/images/hedge/hedge_wall.png";
     private const string HedgeBaseTexturePath = "res://assets/images/hedge/hedge_base.png";
     private const string NightSkyTexturePath = "res://assets/images/hedge/night_sky.png";
@@ -233,6 +234,7 @@ public partial class HedgeMaze : Node2D
 
     private FontFile _font;
     private Texture2D _torchHandsTexture;
+    private Texture2D _torchLensLitTexture;
     private Texture2D _hedgeTexture;
     private Texture2D _hedgeBaseTexture;
     private Texture2D _skyTexture;
@@ -331,6 +333,7 @@ public partial class HedgeMaze : Node2D
     {
         _font = GD.Load<FontFile>(FontPath);
         _torchHandsTexture = GD.Load<Texture2D>(TorchHandsTexturePath);
+        _torchLensLitTexture = GD.Load<Texture2D>(TorchLensLitTexturePath);
         _hedgeTexture = GD.Load<Texture2D>(HedgeWallTexturePath);
         _hedgeBaseTexture = GD.Load<Texture2D>(HedgeBaseTexturePath);
         _skyTexture = GD.Load<Texture2D>(NightSkyTexturePath);
@@ -2401,15 +2404,15 @@ public partial class HedgeMaze : Node2D
                 -TorchSpriteGrip.Y * spriteHeight,
                 spriteWidth, spriteHeight),
             false, TorchTint(level));
-        if (_flashlightOn)
+        if (_flashlightOn && _torchLensLitTexture != null)
         {
-            // A tiny on-state glint stays inside the lens itself: it
-            // signals that the torch is open without adding another pool.
-            Vector2 lens = new(
-                (TorchSpriteLens.X - TorchSpriteGrip.X) * spriteWidth,
-                (TorchSpriteLens.Y - TorchSpriteGrip.Y) * spriteHeight);
-            DrawCircle(lens, 12f * handScale, new Color(1f, 0.9f, 0.62f, 0.22f));
-            DrawCircle(lens, 6f * handScale, new Color(1f, 0.98f, 0.84f, 0.9f));
+            // Reuse the painted lit-lens state used by the held torch in
+            // the other rooms, aligned to the same grip and sprite scale.
+            DrawTextureRect(_torchLensLitTexture,
+                new Rect2(-TorchSpriteGrip.X * spriteWidth,
+                    -TorchSpriteGrip.Y * spriteHeight,
+                    spriteWidth, spriteHeight),
+                false, Colors.White);
         }
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 

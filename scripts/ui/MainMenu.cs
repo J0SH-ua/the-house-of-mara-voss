@@ -518,6 +518,30 @@ public partial class MainMenu : Control
 
 	private void OnQuitPressed()
 	{
+		if (GameUI.Instance != null)
+		{
+			GameUI.Instance.ShowConfirm(
+				"Are you sure you want to exit the game?",
+				QuitGame,
+				"Exit",
+				"Stay");
+			return;
+		}
+
+		// The confirmation UI is an autoload in normal play. Keep the
+		// quit action safe if the menu is ever run on its own in-editor.
+		var confirmation = new ConfirmationDialog
+		{
+			Title = "Exit the game",
+			DialogText = "Are you sure you want to exit the game?",
+		};
+		confirmation.Confirmed += QuitGame;
+		AddChild(confirmation);
+		confirmation.PopupCentered();
+	}
+
+	private void QuitGame()
+	{
 		Logger.Info("Quitting game from main menu.");
 		Settings.Instance?.Save();
 		GetTree().Quit();

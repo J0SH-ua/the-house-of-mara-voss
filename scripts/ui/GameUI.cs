@@ -7397,6 +7397,9 @@ public partial class GameUI : CanvasLayer
         _heldHand.Size = new Vector2(handW, handH);
         _heldHand.Position = handRest + new Vector2(0f, 180f);
         _heldHand.Modulate = Colors.White;
+        // In the narrow vent the palm would crowd the held object and
+        // conflict with the separate flashlight hand, so show the item alone.
+        _heldHand.Visible = SceneManager.Instance?.CurrentScene is not VentCrawl;
 
         Vector2 palm = handRest + new Vector2(handW * HeldPalmX, handH * HeldPalmY);
         _heldIcon.Texture = GD.Load<Texture2D>(iconPath);
