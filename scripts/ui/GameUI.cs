@@ -25,6 +25,7 @@ public partial class GameUI : CanvasLayer
 
     private const string FontPath = "res://assets/fonts/CormorantGaramond-VariableFont_wght.ttf";
     private const string CorruptionShaderPath = "res://assets/shaders/corruption.gdshader";
+    private const string HeldInspectionLightShaderPath = "res://assets/shaders/held_inspection_light.gdshader";
     private const string MainMenuScenePath = "res://scenes/ui/main_menu.tscn";
     private const string GameManagerScenePath = "res://scenes/managers/game_manager.tscn";
 
@@ -426,6 +427,7 @@ public partial class GameUI : CanvasLayer
     private bool _heldShowing;
     private float _heldAge;
     private TextureRect _heldHand;
+    private ShaderMaterial _heldInspectionLightMaterial;
     private int _heldPhase;    // 0 = resting in her hand, 1 = held up to the light
     private bool _heldBusy;    // showing, or still flying to the bag
 
@@ -7341,6 +7343,18 @@ public partial class GameUI : CanvasLayer
         };
         _heldSceneRoot.AddChild(_heldIcon);
 
+        // The native blackout canvas is already drawn over this layer in
+        // rooms that use it. The under-house rooms draw darkness beneath UI,
+        // so their real beam position also drives a local-only mask on these
+        // two sprites (never on the inspection background).
+        var heldLightShader = GD.Load<Shader>(HeldInspectionLightShaderPath);
+        if (heldLightShader != null)
+        {
+            _heldInspectionLightMaterial = new ShaderMaterial { Shader = heldLightShader };
+            _heldHand.Material = _heldInspectionLightMaterial;
+            _heldIcon.Material = _heldInspectionLightMaterial;
+        }
+
         _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
         _heldName.HorizontalAlignment = HorizontalAlignment.Center;
         _heldName.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -7455,6 +7469,7 @@ public partial class GameUI : CanvasLayer
         _heldRoot.Visible = true;
         _heldSceneRoot.Modulate = new Color(1, 1, 1, 0);
         _heldSceneRoot.Visible = true;
+        UpdateHeldTorchLighting();
         AudioManager.Play(Sfx.PhotoPickup, -12f);
 
         _heldTween?.Kill();
@@ -7575,7 +7590,7 @@ public partial class GameUI : CanvasLayer
     }
 
     /// <summary>Read the same beam position and radius the active dark
-    /// scene uses. The held overlay never draws its own light.</summary>
+    /// scene uses so any held-sprite shading stays locked to that beam.</summary>
     private bool TryGetMainFlashlightBeam(out Vector2 centre, out float radius)
     {
         var gs = GameState.Instance;
@@ -7623,9 +7638,10 @@ public partial class GameUI : CanvasLayer
         return false;
     }
 
-    /// <summary>Track whether the real room beam is active for the
-    /// inspection hint. The hand and item stay unfiltered; the room's
-    /// existing darkness pass naturally falls over them.</summary>
+    /// <summary>Track the actual room beam for both the inspection hint
+    /// and the held sprites. The blackout canvas naturally falls over the
+    /// hand and item in its rooms; under the house, where the scene's dark
+    /// is behind GameUI, a matching local mask shades only those sprites.</summary>
     private void UpdateHeldTorchLighting()
     {
         if (_heldHand == null || _heldIcon == null)
@@ -7637,9 +7653,35 @@ public partial class GameUI : CanvasLayer
         string sceneFile = SceneFileName(SceneManager.CurrentScenePath);
         bool placeDark = sceneFile is
             "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn" or "hedge_maze.tscn";
-        bool torchLit = (blackoutDark || placeDark) &&
-            TryGetMainFlashlightBeam(out _, out _);
-        _heldTorchLit = torchLit && _heldShowing;
+        bool beamActive = TryGetMainFlashlightBeam(out Vector2 centre, out float radius);
+        _heldTorchLit = (blackoutDark || placeDark) && beamActive && _heldShowing;
+
+        if (_heldInspectionLightMaterial == null)
+            return;
+
+        Node activeRoom = SceneManager.Instance?.CurrentScene;
+        bool sceneDarknessSitsBehindUi = activeRoom is Basement or VentCrawl or HedgeMaze;
+        Vector2 viewSize = GetViewport().GetVisibleRect().Size;
+        bool applyLocalDarkness = (_heldSceneRoot?.Visible ?? false) && sceneDarknessSitsBehindUi &&
+            viewSize.X > 0f && viewSize.Y > 0f;
+        bool flashlightOn = applyLocalDarkness && beamActive;
+        float shadowBrightness = activeRoom is HedgeMaze ? 0.15f
+            : activeRoom is VentCrawl ? 0.048f : 0.072f;
+        float penumbraBrightness = activeRoom is HedgeMaze ? 0.58f
+            : activeRoom is VentCrawl ? 0.32f : 0.4f;
+
+        _heldInspectionLightMaterial.SetShaderParameter("darkness_active", applyLocalDarkness);
+        _heldInspectionLightMaterial.SetShaderParameter("beam_active", flashlightOn);
+        Vector2 shaderViewSize = new(
+            Mathf.Max(viewSize.X, 1f), Mathf.Max(viewSize.Y, 1f));
+        _heldInspectionLightMaterial.SetShaderParameter("beam_center_uv", new Vector2(
+            Mathf.Clamp(centre.X / shaderViewSize.X, 0f, 1f),
+            Mathf.Clamp(centre.Y / shaderViewSize.Y, 0f, 1f)));
+        _heldInspectionLightMaterial.SetShaderParameter("viewport_size", shaderViewSize);
+        _heldInspectionLightMaterial.SetShaderParameter("beam_radius", radius);
+        _heldInspectionLightMaterial.SetShaderParameter("penumbra_width", 58f);
+        _heldInspectionLightMaterial.SetShaderParameter("shadow_brightness", shadowBrightness);
+        _heldInspectionLightMaterial.SetShaderParameter("penumbra_brightness", penumbraBrightness);
     }
 
     private void UpdateFragmentHeld(double delta)
@@ -7647,7 +7689,7 @@ public partial class GameUI : CanvasLayer
         if (_heldBusy)
         {
             _heldAge += (float)delta;
-            if (_heldShowing)
+            if (_heldSceneRoot?.Visible ?? false)
                 UpdateHeldTorchLighting();
             return;
         }
