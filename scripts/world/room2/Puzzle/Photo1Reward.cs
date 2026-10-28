@@ -240,6 +240,7 @@ public partial class Photo1Reward : Area2D
 		await Dialogue.ShowText(this, "Something about holding this makes the whole room feel watched. The room itself, then. Let me look at the room itself.", 5.0f, GlobalPosition.X, GlobalPosition.Y, FontPath, 24);
 		if (!GodotObject.IsInstanceValid(this))
 			return;
+		HideTakenPhotograph();
 		GameState.Instance?.SetFlag("difference_wind_pending", save: false);
 		SceneManager.ChangeScene("res://scenes/world/room_2.tscn");
 	}
@@ -287,11 +288,8 @@ public partial class Photo1Reward : Area2D
 			Globals.SHARDS_COLLECTED[1] = true;
 		}
 
-		// The drawer empties at the moment of taking, not after the
-		// lines and the held-up study of the print are over. Those
-		// beats play over a keeping-place that is already bare.
-		HideTakenPhotograph();
-
+		// Keep the print visible through Mara's dialogue and held-up
+		// study. It leaves the drawer only after this moment is complete.
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 		if (firstTime)
@@ -325,6 +323,9 @@ public partial class Photo1Reward : Area2D
 
 		// Passing through again on a later visit — keep it brief.
 		await Dialogue.ShowText(this, "\"Someone else breathing. Someone turning a page.\"", 2.5f, GlobalPosition.X, GlobalPosition.Y, FontPath, 26);
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+		HideTakenPhotograph();
 
 		// Having the fragment opens the way on; taking it is the
 		// Leave button's work now (top right of the screen) — and the

@@ -10,6 +10,7 @@ public partial class Room2Puzzle : Area2D
 {
 	private const string TargetWord = "HOME";
 	private const string NextScenePath = "res://scenes/world/room_3.tscn";
+	private const float LetterInputLeftShift = 16f;
 
 	private Node2D _padlock;
 	private LineEdit[] _letterBoxes;
@@ -51,8 +52,8 @@ public partial class Room2Puzzle : Area2D
 		if (_padlock != null)
 		{
 			_padlock.Visible = true;
-			// Keep the close-up and every input box centered; the typed
-			// letters alone are nudged left inside their boxes below.
+			// Keep the close-up centered; the letter-entry row is nudged
+			// left slightly so its final character stays inside the lock art.
 			_padlockHome = _padlock.Position;
 		}
 
@@ -97,6 +98,9 @@ public partial class Room2Puzzle : Area2D
 				continue;
 			}
 
+			// Keep the four-letter entry centered over the lock art, but
+			// a touch farther left so the final character no longer clips.
+			box.Position -= new Vector2(LetterInputLeftShift, 0f);
 			box.MaxLength = 1;
 			box.Alignment = HorizontalAlignment.Center;
 			if (inputFont != null)
