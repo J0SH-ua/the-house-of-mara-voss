@@ -3654,6 +3654,8 @@ public partial class GameUI : CanvasLayer
     {
         if (SceneManager.Instance?.CurrentScene is not VentCrawl)
             return false;
+        if (Dialogue.IsShowing)
+            return true;
 
         int index = _lastVentCrawlBagBlockedLine < 0
             ? (int)(GD.Randi() % (uint)VentCrawlBagBlockedLines.Length)
@@ -3661,7 +3663,8 @@ public partial class GameUI : CanvasLayer
                 (int)(GD.Randi() % (uint)(VentCrawlBagBlockedLines.Length - 1)))
                 % VentCrawlBagBlockedLines.Length;
         _lastVentCrawlBagBlockedLine = index;
-        ShowMaraAside(VentCrawlBagBlockedLines[index]);
+        _ = Dialogue.ShowText(this, VentCrawlBagBlockedLines[index],
+            5.5f, 576f, 324f, fontSize: 24, forceAboveUi: true);
         return true;
     }
 
@@ -7815,8 +7818,6 @@ public partial class GameUI : CanvasLayer
         _maraAsideLabel.VerticalAlignment = VerticalAlignment.Center;
         _maraAsideLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         _maraAsideLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
-        _maraAsideLabel.ZAsRelative = false;
-        _maraAsideLabel.ZIndex = 120;
         _maraAsideLabel.Modulate = new Color(1, 1, 1, 0);
 
         var chip = new StyleBoxFlat

@@ -13,7 +13,9 @@ uniform float shadow_brightness = 0.06;
 uniform float penumbra_brightness = 0.36;
 
 void fragment() {
-    vec4 sprite = texture(TEXTURE, UV) * COLOR;
+    // Fragment COLOR already includes the default texture and modulation.
+    // Keep the original hand/item colors unchanged in the lit part of the beam.
+    vec4 sprite = COLOR;
     float brightness = 1.0;
 
     if (darkness_active) {

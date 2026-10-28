@@ -301,7 +301,8 @@ public partial class Dialogue : Control
         string fontPath = null,
         int? fontSize = null,
         Color? textColor = null,
-        float? typewriterSpeed = null)
+        float? typewriterSpeed = null,
+        bool forceAboveUi = false)
     {
         if (caller == null || !GodotObject.IsInstanceValid(caller) || string.IsNullOrWhiteSpace(text))
             return;
@@ -321,11 +322,14 @@ public partial class Dialogue : Control
         _activeCount++;
         BeginInputBlock();
 
+        var dialogueProcessMode = forceAboveUi
+            ? ProcessModeEnum.Always
+            : ProcessModeEnum.Pausable;
         var container = new SubViewportContainer
         {
             Name = "DialogueContainer",
             Stretch = true,
-            ProcessMode = ProcessModeEnum.Pausable,
+            ProcessMode = dialogueProcessMode,
         };
         container.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
@@ -351,14 +355,14 @@ public partial class Dialogue : Control
 
         dialogue.Initialize();
         subViewport.AddChild(dialogue);
-        // Canvas layer 2: above GameUI's ambient-life weather (layer 1),
-        // so no animated sprite ever clips over the speech bubble — and
-        // still below GameUI itself (90), whose menus must win.
+        // Ordinary speech uses canvas layer 2: above the room and below
+        // GameUI (90). A blocked-action line may opt above the UI so it can
+        // still be read when the player tries the action from a paused menu.
         var layer = new CanvasLayer
         {
             Name = "DialogueLayer",
-            Layer = 2,
-            ProcessMode = ProcessModeEnum.Pausable,
+            Layer = forceAboveUi ? 100 : 2,
+            ProcessMode = dialogueProcessMode,
         };
         layer.AddChild(container);
         root.AddChild(layer);
