@@ -588,8 +588,8 @@ public partial class Basement : MemoryRoomBase
         // Two square-edged darkness passes: a broad penumbra, then the
         // true dark outside the beam itself. Chunky strips, no shader —
         // the same visual language as the rest of the code-drawn rooms.
-        DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.002f, 0.002f, 0.004f, 0.42f));
-        DrawDarkOutside(beam, radius, new Color(0.001f, 0.001f, 0.003f, 0.74f));
+        DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.002f, 0.002f, 0.004f, 0.60f));
+        DrawDarkOutside(beam, radius, new Color(0.001f, 0.001f, 0.003f, 0.82f));
 
     }
 

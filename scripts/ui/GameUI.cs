@@ -414,8 +414,7 @@ public partial class GameUI : CanvasLayer
     ];
 
     private Control _heldRoot;
-    private ColorRect _heldDim;
-    private TextureRect _heldGlow;
+    private Control _heldSceneRoot;
     private TextureRect _heldIcon;
     private Label _heldName;
     private Label _heldLine;
@@ -7276,24 +7275,19 @@ public partial class GameUI : CanvasLayer
         _heldRoot = new Control { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         _heldRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
-        _heldDim = new ColorRect
+        // Draw the hand and held item immediately before the room's native
+        // blackout pass. The real beam then falls over them in its normal
+        // draw order; no inspection-only filter touches the room.
+        _heldSceneRoot = new Control
         {
-            Color = new Color(0.02f, 0.015f, 0.01f, 0.62f),
-            MouseFilter = Control.MouseFilterEnum.Stop,
-        };
-        _heldDim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _heldRoot.AddChild(_heldDim);
-
-        _heldGlow = new TextureRect
-        {
-            Texture = GD.Load<Texture2D>("res://assets/images/bgs/amb_glow.png"),
-            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-            StretchMode = TextureRect.StretchModeEnum.Scale,
-            TextureFilter = CanvasItem.TextureFilterEnum.Linear,
+            Name = "HeldItemSceneLayer",
+            Visible = false,
             MouseFilter = Control.MouseFilterEnum.Ignore,
-            Modulate = new Color(1f, 0.82f, 0.5f, 0.4f),
         };
-        _heldRoot.AddChild(_heldGlow);
+        _heldSceneRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _blackoutLayer.AddChild(_heldSceneRoot);
+        if (_blackoutOverlay != null)
+            _blackoutLayer.MoveChild(_heldSceneRoot, _blackoutOverlay.GetIndex());
 
         _heldHand = new TextureRect
         {
@@ -7303,7 +7297,7 @@ public partial class GameUI : CanvasLayer
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        _heldRoot.AddChild(_heldHand);
+        _heldSceneRoot.AddChild(_heldHand);
 
         _heldIcon = new TextureRect
         {
@@ -7312,7 +7306,7 @@ public partial class GameUI : CanvasLayer
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        _heldRoot.AddChild(_heldIcon);
+        _heldSceneRoot.AddChild(_heldIcon);
 
         _heldName = MakeLabel(string.Empty, 30, new Color(0.97f, 0.9f, 0.76f));
         _heldName.HorizontalAlignment = HorizontalAlignment.Center;
@@ -7411,10 +7405,6 @@ public partial class GameUI : CanvasLayer
         _heldIcon.Scale = new Vector2(0.55f, 0.55f);
         _heldIcon.Position = palm - _heldIcon.PivotOffset + new Vector2(0f, 180f);
 
-        _heldGlow.Size = new Vector2(330f, 330f);
-        _heldGlow.Position = palm - new Vector2(165f, 165f) + new Vector2(0f, 180f);
-        _heldGlow.Modulate = new Color(1f, 0.82f, 0.5f, 0.4f);
-
         // Blackout light is earned, then aimed by the player.
         // UpdateHeldTorchLighting owns the whole question: until
         // Dad's flashlight has actually been clicked into the Bag
@@ -7429,17 +7419,18 @@ public partial class GameUI : CanvasLayer
 
         _heldRoot.Modulate = new Color(1, 1, 1, 0);
         _heldRoot.Visible = true;
+        _heldSceneRoot.Modulate = new Color(1, 1, 1, 0);
+        _heldSceneRoot.Visible = true;
         AudioManager.Play(Sfx.PhotoPickup, -12f);
 
         _heldTween?.Kill();
         _heldTween = CreateTween();
         _heldTween.SetParallel(true);
         _heldTween.TweenProperty(_heldRoot, "modulate:a", 1f, 0.4f);
+        _heldTween.TweenProperty(_heldSceneRoot, "modulate:a", 1f, 0.4f);
         _heldTween.TweenProperty(_heldHand, "position", handRest, 0.65f)
             .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
         _heldTween.TweenProperty(_heldIcon, "position", palm - _heldIcon.PivotOffset, 0.65f)
-            .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
-        _heldTween.TweenProperty(_heldGlow, "position", palm - new Vector2(165f, 165f), 0.65f)
             .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
         _heldTween.TweenProperty(_heldHint, "modulate:a", 0.75f, 0.4f).SetDelay(0.55f);
     }
@@ -7475,9 +7466,6 @@ public partial class GameUI : CanvasLayer
             .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.InOut);
         _heldTween.TweenProperty(_heldIcon, "scale", Vector2.One, 0.55f)
             .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.InOut);
-        _heldTween.TweenProperty(_heldGlow, "position",
-            new Vector2(cx - 215f, view.Y * 0.42f - 215f), 0.55f);
-        _heldTween.TweenProperty(_heldGlow, "size", new Vector2(430f, 430f), 0.55f);
         _heldTween.TweenProperty(_heldName, "modulate:a", 1f, 0.4f).SetDelay(0.15f);
         _heldTween.TweenProperty(_heldLine, "modulate:a", 1f, 0.4f).SetDelay(0.2f);
         _heldTween.TweenProperty(_heldHint, "modulate:a", 0.75f, 0.4f).SetDelay(0.3f);
@@ -7507,10 +7495,13 @@ public partial class GameUI : CanvasLayer
         _heldTween.TweenProperty(_heldIcon, "scale", new Vector2(0.12f, 0.12f), 0.55f)
             .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.In);
         _heldTween.TweenProperty(_heldRoot, "modulate:a", 0f, 0.55f);
+        _heldTween.TweenProperty(_heldSceneRoot, "modulate:a", 0f, 0.55f);
         _heldTween.Chain().TweenCallback(Callable.From(() =>
         {
             if (_heldRoot != null)
                 _heldRoot.Visible = false;
+            if (_heldSceneRoot != null)
+                _heldSceneRoot.Visible = false;
             _heldBusy = false; // bagged — the house may move on now
             _heldShowingItem = false;
             _heldCurrentItem = null;
@@ -7598,33 +7589,12 @@ public partial class GameUI : CanvasLayer
         return false;
     }
 
-    private float HeldTorchLightLevel(Vector2 centre)
-    {
-        if (!TryGetMainFlashlightBeam(out Vector2 beamCentre, out float beamRadius))
-            return 0.16f;
-        float distance = beamCentre.DistanceTo(centre);
-        float falloff = 1f - Mathf.Clamp(
-            (distance - beamRadius * 0.35f) / Mathf.Max(beamRadius * 0.65f, 1f), 0f, 1f);
-        return Mathf.Lerp(0.16f, 1f, falloff);
-    }
-
-    private static Color HeldTorchTint(float level, float alpha) =>
-        new Color(level, level, level, alpha);
-
-    /// <summary>All darkness light for the held moment, in one
-    /// place. The house blackout is one kind of dark; a place
-    /// whose own light is the torch is another. The basement,
-    /// duct and breaker box stay flashlight places even after
-    /// backup power returns above, and the night hedge walls
-    /// never had any other light to offer her hand. No
-    /// bagged flashlight: near-black dim, no decorative glow,
-    /// hand and held thing cold silhouettes. Bagged flashlight:
-    /// the same dim, but the beam is the player's — the mouse
-    /// aims it, and the hand and held thing are only as bright
-    /// as the light actually landing on them.</summary>
+    /// <summary>Track whether the real room beam is active for the
+    /// inspection hint. The hand and item stay unfiltered; the room's
+    /// existing darkness pass naturally falls over them.</summary>
     private void UpdateHeldTorchLighting()
     {
-        if (_heldRoot == null || _heldHand == null || _heldIcon == null)
+        if (_heldHand == null || _heldIcon == null)
             return;
 
         var gs = GameState.Instance;
@@ -7633,43 +7603,9 @@ public partial class GameUI : CanvasLayer
         string sceneFile = SceneFileName(SceneManager.CurrentScenePath);
         bool placeDark = sceneFile is
             "basement.tscn" or "vent_crawl.tscn" or "breaker_box.tscn" or "hedge_maze.tscn";
-        bool heldDark = blackoutDark || placeDark;
-        bool torchLit = heldDark &&
+        bool torchLit = (blackoutDark || placeDark) &&
             TryGetMainFlashlightBeam(out _, out _);
         _heldTorchLit = torchLit && _heldShowing;
-
-        // Keep the inspection backdrop steady. Only Mara's hand and the
-        // object in it respond to the flashlight, not the room behind them.
-        if (_heldDim != null)
-            _heldDim.Color = heldDark
-                ? new Color(0.005f, 0.005f, 0.008f, 0.88f)
-                : new Color(0.02f, 0.015f, 0.01f, 0.62f);
-        if (_heldGlow != null)
-            _heldGlow.Visible = !heldDark;
-
-        float handAlpha = _heldHand.Modulate.A;
-        float iconAlpha = _heldIcon.Modulate.A;
-        if (!heldDark)
-        {
-            _heldHand.Modulate = new Color(1f, 1f, 1f, handAlpha);
-            _heldIcon.Modulate = new Color(1f, 1f, 1f, iconAlpha);
-            return;
-        }
-
-        if (!_heldTorchLit)
-        {
-            _heldHand.Modulate = new Color(0.14f, 0.17f, 0.23f, handAlpha);
-            _heldIcon.Modulate = new Color(0.14f, 0.17f, 0.23f, iconAlpha);
-            return;
-        }
-
-        Vector2 palmCentre = _heldHand.Position + new Vector2(
-            _heldHand.Size.X * HeldPalmX, _heldHand.Size.Y * HeldPalmY);
-        Vector2 iconCentre = _heldIcon.Position + _heldIcon.PivotOffset;
-        _heldHand.Modulate = HeldTorchTint(
-            HeldTorchLightLevel(palmCentre), handAlpha);
-        _heldIcon.Modulate = HeldTorchTint(
-            HeldTorchLightLevel(iconCentre), iconAlpha);
     }
 
     private void UpdateFragmentHeld(double delta)

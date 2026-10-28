@@ -461,8 +461,8 @@ public partial class VentCrawl : Node2D
             radius *= gs.DevFlashlightScale;
             falloffScale = gs.DevFlashlightScale;
         }
-        DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.004f, 0.004f, 0.006f, 0.62f));
-        DrawDarkOutside(beam, radius, new Color(0.003f, 0.003f, 0.005f, 0.78f));
+        DrawDarkOutside(beam, radius + 58f * falloffScale, new Color(0.004f, 0.004f, 0.006f, 0.68f));
+        DrawDarkOutside(beam, radius, new Color(0.003f, 0.003f, 0.005f, 0.85f));
     }
 
     private void DrawDarkOutside(Vector2 beam, float radius, Color dark)
