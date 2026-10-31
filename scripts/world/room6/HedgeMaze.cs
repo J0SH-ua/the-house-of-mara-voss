@@ -166,7 +166,18 @@ public partial class HedgeMaze : Node2D
     private const float StrongBeamRadius = 208f;
     public Vector2 FlashlightBeamPosition => _beamPosition;
     public float FlashlightBeamRadius => BeamRadiusNow();
-    public bool FlashlightBeamActive => _hasFlashlight && _flashlightOn;
+    public bool FlashlightSwitchOn
+    {
+        get
+        {
+            var gs = GameState.Instance;
+            bool developerOn = gs?.DevToolsEnabled == true && gs.DevFreeFlashlight;
+            return _hasFlashlight && (_flashlightOn || developerOn) &&
+                (developerOn || gs?.HasFlag("house_flashlight_off") != true);
+        }
+    }
+    public bool FlashlightBeamActive => FlashlightSwitchOn &&
+        (GameState.Instance?.FlashlightLightVisible ?? true);
 
     /// <summary>Coordinates suitable for pasting into a dev note. When
     /// the free camera is away from Mara, include both positions.</summary>
@@ -399,7 +410,8 @@ public partial class HedgeMaze : Node2D
         var gs = GameState.Instance;
         _playWakeIntro = gs?.HasFlag(IntroPendingFlag) ?? false;
         _hasFlashlight = gs?.HasFlag("item_flashlight") ?? false;
-        _flashlightOn = !_playWakeIntro && _hasFlashlight;
+        _flashlightOn = !_playWakeIntro && _hasFlashlight &&
+            gs?.HasFlag("house_flashlight_off") != true && (gs?.FlashlightHasCharge ?? true);
         _eyeOpen = _playWakeIntro ? 0f : 1f;
         _handRise = 1f;
 
@@ -708,8 +720,25 @@ public partial class HedgeMaze : Node2D
             AudioManager.Play(Sfx.FlashlightClick, -12f);
             return;
         }
-        _flashlightOn = !_flashlightOn;
-        AudioManager.Play(Sfx.FlashlightClick, _flashlightOn ? -7f : -9f);
+
+        if (FlashlightSwitchOn)
+        {
+            _flashlightOn = false;
+            gs?.SetFlag("house_flashlight_off", save: false);
+        }
+        else
+        {
+            if (gs != null && !gs.TryPrepareFlashlight())
+            {
+                _flashlightOn = false;
+                gs.Toast("The flashlight has no charge. Find a spare cell.");
+                QueueRedraw();
+                return;
+            }
+            _flashlightOn = true;
+            gs?.ClearFlag("house_flashlight_off", save: false);
+        }
+        AudioManager.Play(Sfx.FlashlightClick, FlashlightSwitchOn ? -7f : -9f);
         QueueRedraw();
     }
 
@@ -1067,7 +1096,7 @@ public partial class HedgeMaze : Node2D
         string line2 = $"camera x {_cameraPosition.X:0.00}  y {_cameraPosition.Y:0.00}   " +
             $"eye {_eyeHeight:0.00}   fps {fps}" +
             (_freeCamera ? "   FREE CAMERA" : string.Empty) +
-            (_flashlightOn ? "   torch on" : "   torch off");
+            (FlashlightBeamActive ? "   torch on" : "   torch off");
         string line3 = _freeCamera
             ? "free camera: W/S forward/back · A/D strafe · ←/→ turn · wheel raises/lowers · F12 copies"
             : "F12 copies coordinates";
@@ -1415,8 +1444,10 @@ public partial class HedgeMaze : Node2D
             text = "Looking behind her";
         else if (_crouchAmount >= 0.45f)
             text = "Crouching";
-        else if (_hasFlashlight && !_flashlightOn)
-            text = "The torch is off — L to switch it on";
+        else if (_hasFlashlight && !FlashlightSwitchOn)
+            text = GameState.Instance?.FlashlightHasCharge == false
+                ? "The torch is empty — find a spare cell"
+                : "The torch is off — L to switch it on";
 
         if (text != _exitHintCache)
         {
@@ -1565,9 +1596,11 @@ public partial class HedgeMaze : Node2D
     {
         var gs = GameState.Instance;
         float radius = gs?.HasFlag("basement_battery_taken") == true ? StrongBeamRadius : BeamRadius;
-        // a spare battery makes the circle reach much further
+        // A spare cell has always made the circle reach further.
         if (gs != null && (gs.HasFlag(SpareBatteryFlag) || gs.HasFlag(LockboxBatteriesFlag)))
             radius = StrongBeamRadius;
+        if (gs != null && gs.FlashlightBatteryLow)
+            radius *= Mathf.Lerp(0.72f, 1f, gs.FlashlightBatteryFraction / GameState.FlashlightLowThreshold);
         // and a developer can make the torch as big as they like
         if (gs != null && gs.DevToolsEnabled)
             radius *= gs.DevFlashlightScale;
@@ -1592,7 +1625,7 @@ public partial class HedgeMaze : Node2D
     /// depth. The circle itself decides where on screen it lands.</summary>
     private float TorchReach(float depth)
     {
-        if (!_flashlightOn)
+        if (!FlashlightBeamActive)
             return 0f;
         return Mathf.Clamp(1.15f - depth / 7f, 0f, 1f) * BeamFlicker();
     }
@@ -2113,7 +2146,7 @@ public partial class HedgeMaze : Node2D
         if (lampOn)
             _lampHoles.Add(new LightHole(lampCentre, lampRadius));
 
-        if (!_hasFlashlight || !_flashlightOn)
+        if (!FlashlightBeamActive)
         {
             // Moonlit silhouettes only.
             if (!lampOn)
@@ -2147,7 +2180,7 @@ public partial class HedgeMaze : Node2D
         // The flashlight circle is already the clear patch left by the
         // darkness pass. Keep only the developer reticle when the torch is off;
         // no extra warm rings or item glows sit inside the beam.
-        if (_hasFlashlight && _flashlightOn)
+        if (FlashlightBeamActive)
             return;
 
         var gs = GameState.Instance;
@@ -2465,7 +2498,7 @@ public partial class HedgeMaze : Node2D
     /// right, and no other way.</summary>
     private float TorchSlide()
     {
-        if (!_flashlightOn)
+        if (!FlashlightBeamActive)
             return 0f;
         float t = Mathf.Clamp((_beamPosition.X - 180f) / 620f, 0f, 1f);
         return t * TorchSlideRange;
@@ -2495,7 +2528,7 @@ public partial class HedgeMaze : Node2D
     /// on it; the torch adds no separate warm pool of light.</summary>
     private float HandLightLevel(Vector2 grip)
     {
-        if (!_flashlightOn)
+        if (!FlashlightBeamActive)
             return 0.16f;
         float radius = BeamRadiusNow();
         float distance = _beamPosition.DistanceTo(grip);
@@ -2515,7 +2548,7 @@ public partial class HedgeMaze : Node2D
     /// the light has a direction without becoming a second sun.</summary>
     private void DrawBeamShaft()
     {
-        if (!_hasFlashlight || !_flashlightOn || _handRise >= 0.995f)
+        if (!FlashlightBeamActive || _handRise >= 0.995f)
             return;
 
         GetHandPose(out _, out _, out Vector2 lens);
@@ -2576,7 +2609,7 @@ public partial class HedgeMaze : Node2D
                 -TorchSpriteGrip.Y * spriteHeight,
                 spriteWidth, spriteHeight),
             false, TorchTint(level));
-        if (_flashlightOn && _torchLensLitTexture != null)
+        if (FlashlightBeamActive && _torchLensLitTexture != null)
         {
             // Reuse the painted lit-lens state used by the held torch in
             // the other rooms, aligned to the same grip and sprite scale.

@@ -55,6 +55,8 @@ public partial class GameUI : CanvasLayer
     private ProgressBar _integrityBar;
     private HBoxContainer _clarityPips;
     private Label _shardLabel;
+    private Label _flashlightBatteryLabel;
+    private ProgressBar _flashlightBatteryBar;
 
     // Bag / inventory (global replacement for the old per-room inventory sprites)
     private Button _bagButton;
@@ -720,9 +722,16 @@ public partial class GameUI : CanvasLayer
             gs.VerbsChanged += RefreshMemoryVerbBar;
             gs.VerbsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.StoryFlagsChanged += RefreshHud;
+            gs.FlashlightBatteryChanged += () =>
+            {
+                RefreshFlashlightBatteryHud();
+                if (_bagPanel?.Visible ?? false)
+                    RefreshBag();
+            };
             gs.StoryFlagsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.DeveloperModeChanged += RefreshDeveloperChrome;
             gs.DeveloperToolsChanged += RefreshGameplayHudVisibility;
+            gs.DeveloperToolsChanged += RefreshFlashlightBatteryHud;
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
             gs.CollapseStarted += OnCollapseStarted;
@@ -1646,7 +1655,14 @@ public partial class GameUI : CanvasLayer
 
         bool wasOff = gs.HasFlag("house_flashlight_off");
         if (wasOff)
+        {
+            if (!gs.TryPrepareFlashlight())
+            {
+                ShowToast("The flashlight has no charge. Find a spare cell.", 2f, true);
+                return true;
+            }
             gs.ClearFlag("house_flashlight_off", save: false);
+        }
         else
             gs.SetFlag("house_flashlight_off", save: false);
 
@@ -3872,18 +3888,19 @@ public partial class GameUI : CanvasLayer
                 "res://assets/images/core/items/flashlight.png",
                 "IN BAG",
                 "Her father's — top shelf of the kitchen cabinet that was never there",
-                "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout. The batteries, in this house, were never once dead.\n\nOnce it is in the Bag, move the mouse to aim its beam in the dark — in rooms, under the house, and over anything Mara is holding in her hand. Press L to switch the flashlight on or off in the dark. Before that click puts it away, her other hand stays dark. In the vent, hold W to crawl; release W and Mara stops."));
+                "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout.\n\nA full cell gives about three minutes of continuous light. The HUD shows its charge; a low cell flickers, then a spare is fitted automatically. The maze uses L to switch it on or off. In the house, L controls it in the dark. Move the mouse to aim its beam, including over anything Mara is holding in her hand."));
         }
 
-        if (gs.HasFlag(HedgeMaze.LockboxBatteriesFlag))
+        if (gs.FlashlightSpareCells > 0)
         {
+            int cells = gs.FlashlightSpareCells;
             items.Add(new PracticalItemView(
-                HedgeMaze.LockboxBatteriesFlag,
-                "Three flashlight batteries",
+                "flashlight_spare_cells",
+                $"Flashlight spare cells ×{cells}",
                 "res://assets/images/core/items/spare_battery.png",
-                "3 IN BAG",
-                "Taken from the leaf-engraved chest inside the hedge maze",
-                "Three fresh cells, wrapped together in old green felt. They fit Father's flashlight; the light has a stronger reach now, and these were meant to keep it ready."));
+                $"{cells} IN BAG",
+                "Cells recovered from the garden and the rooms below",
+                $"{cells} spare flashlight cell{(cells == 1 ? "" : "s")}. The next one fits automatically when the cell in Father's torch runs out."));
         }
 
         if (gs.HasFlag("item_iron_cellar_key"))
@@ -4388,6 +4405,50 @@ public partial class GameUI : CanvasLayer
 
         RefreshBagButton();
         RefreshMemoryVerbBar();
+        RefreshFlashlightBatteryHud();
+    }
+
+    private void RefreshFlashlightBatteryHud()
+    {
+        if (_flashlightBatteryLabel == null || _flashlightBatteryBar == null)
+            return;
+
+        var gs = GameState.Instance;
+        bool show = gs?.HasFlag("item_flashlight") == true;
+        bool infinite = gs != null && gs.DevToolsEnabled &&
+            (gs.DevInfiniteFlashlightBattery || gs.DevFreeFlashlight);
+        _flashlightBatteryLabel.Visible = show;
+        _flashlightBatteryBar.Visible = show && !infinite;
+        if (!show || gs == null)
+            return;
+
+        if (infinite)
+        {
+            _flashlightBatteryLabel.Text = "FLASHLIGHT · INFINITE BATTERY";
+            _flashlightBatteryLabel.AddThemeColorOverride("font_color", new Color(0.78f, 0.9f, 0.76f));
+            return;
+        }
+
+        int percent = Mathf.CeilToInt(gs.FlashlightBatteryFraction * 100f);
+        int spares = gs.FlashlightSpareCells;
+        string reserve = spares == 1 ? "1 spare" : $"{spares} spares";
+        _flashlightBatteryLabel.Text = !gs.FlashlightHasCharge
+            ? $"FLASHLIGHT · EMPTY · {reserve}"
+            : gs.FlashlightBatteryLow
+                ? $"FLASHLIGHT · LOW {percent}% · {reserve}"
+                : $"FLASHLIGHT · {percent}% · {reserve}";
+        _flashlightBatteryLabel.AddThemeColorOverride("font_color",
+            !gs.FlashlightHasCharge
+                ? new Color(1f, 0.44f, 0.34f)
+                : gs.FlashlightBatteryLow
+                    ? new Color(1f, 0.7f, 0.38f)
+                    : new Color(0.88f, 0.85f, 0.74f));
+        _flashlightBatteryBar.Value = gs.FlashlightBatteryFraction;
+        _flashlightBatteryBar.Modulate = !gs.FlashlightHasCharge
+            ? new Color(1f, 0.38f, 0.3f)
+            : gs.FlashlightBatteryLow
+                ? new Color(1f, 0.68f, 0.34f)
+                : Colors.White;
     }
 
     private void RefreshCorruptionShader()
@@ -4730,7 +4791,7 @@ public partial class GameUI : CanvasLayer
             && isDark
             && !SceneManager.IsChanging
             && !AnyPanelOpen();
-        bool beamCanLightHand = gs != null && gs.HasFlag("item_flashlight") &&
+        bool beamCanLightHand = gs != null && gs.HasFlag("item_flashlight") && gs.FlashlightLightVisible &&
             (!gs.HasFlag("house_flashlight_off") || (gs.DevToolsEnabled && gs.DevFreeFlashlight)) &&
             !(blackoutRoom && gs.HasFlag("blackout_flickering"));
 
@@ -4855,7 +4916,7 @@ public partial class GameUI : CanvasLayer
         statusPanel.OffsetLeft = -316;
         statusPanel.OffsetRight = -16;
         statusPanel.OffsetTop = 14;
-        statusPanel.OffsetBottom = 132;
+        statusPanel.OffsetBottom = 168;
         statusPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
 
         var statusBox = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -4897,6 +4958,25 @@ public partial class GameUI : CanvasLayer
 
         _shardLabel = MakeLabel("", 19);
         statusBox.AddChild(_shardLabel);
+
+        _flashlightBatteryLabel = MakeLabel("", 16);
+        _flashlightBatteryLabel.Visible = false;
+        statusBox.AddChild(_flashlightBatteryLabel);
+        _flashlightBatteryBar = new ProgressBar
+        {
+            MinValue = 0,
+            MaxValue = 1,
+            Value = 1,
+            CustomMinimumSize = new Vector2(220, 6),
+            ShowPercentage = false,
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _flashlightBatteryBar.AddThemeStyleboxOverride("background",
+            new StyleBoxFlat { BgColor = new Color(0.16f, 0.15f, 0.13f, 0.9f) });
+        _flashlightBatteryBar.AddThemeStyleboxOverride("fill",
+            new StyleBoxFlat { BgColor = new Color(0.84f, 0.78f, 0.62f, 0.95f) });
+        statusBox.AddChild(_flashlightBatteryBar);
         statusPanel.AddChild(statusBox);
         _hud.AddChild(statusPanel);
 
@@ -5189,6 +5269,8 @@ public partial class GameUI : CanvasLayer
             v => GameState.Instance?.SetDevMouseLight(v));
         AddDevToggle(toolsRight, "Flashlight always on", () => GameState.Instance?.DevFreeFlashlight ?? false,
             v => GameState.Instance?.SetDevFreeFlashlight(v));
+        AddDevToggle(toolsRight, "Infinite flashlight battery", () => GameState.Instance?.DevInfiniteFlashlightBattery ?? false,
+            v => GameState.Instance?.SetDevInfiniteFlashlightBattery(v));
         AddDevToggle(toolsRight, "Map overlay", () => GameState.Instance?.DevShowMap ?? false,
             v => GameState.Instance?.SetDevShowMap(v));
         AddDevToggle(toolsRight, "Hide gameplay UI", () => GameState.Instance?.DevHideHud ?? false,
@@ -7672,8 +7754,8 @@ public partial class GameUI : CanvasLayer
             radius = maze.FlashlightBeamRadius;
             return maze.FlashlightBeamActive;
         }
-        if (gs.HasFlag("house_flashlight_off") &&
-            !(gs.DevToolsEnabled && gs.DevFreeFlashlight))
+        if (!gs.FlashlightLightVisible ||
+            (gs.HasFlag("house_flashlight_off") && !(gs.DevToolsEnabled && gs.DevFreeFlashlight)))
             return false;
         Transform2D worldToViewport = GetViewport().GetCanvasTransform();
         if (activeRoom is Basement basement)

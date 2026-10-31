@@ -257,6 +257,25 @@ public partial class GameState : Node
     private readonly HashSet<MemoryVerb> _unlockedVerbs = new();
     private readonly HashSet<string> _storyFlags = new();
 
+    public const float FlashlightCellCapacitySeconds = 180f;
+    public const float FlashlightLowThreshold = 0.2f;
+    private float _flashlightCellSeconds = FlashlightCellCapacitySeconds;
+    private int _flashlightSpareCells;
+    private float _flashlightFlickerCountdown;
+    private float _flashlightFlickerOffLeft;
+    private bool _flashlightFlickerOff;
+    private bool _flashlightLowWarningPlayed;
+    private readonly RandomNumberGenerator _flashlightRng = new();
+
+    public event Action FlashlightBatteryChanged;
+    public float FlashlightBatteryFraction => Mathf.Clamp(_flashlightCellSeconds / FlashlightCellCapacitySeconds, 0f, 1f);
+    public int FlashlightSpareCells => Mathf.Max(0, _flashlightSpareCells);
+    public bool FlashlightBatteryLow => !InfiniteFlashlightBattery &&
+        FlashlightBatteryFraction <= FlashlightLowThreshold && _flashlightCellSeconds > 0f;
+    public bool FlashlightHasCharge => _flashlightCellSeconds > 0f || _flashlightSpareCells > 0 || InfiniteFlashlightBattery;
+    public bool FlashlightLightVisible => FlashlightHasCharge && !_flashlightFlickerOff;
+    private bool InfiniteFlashlightBattery => DevToolsEnabled && (DevInfiniteFlashlightBattery || DevFreeFlashlight);
+
     /// <summary>The verb currently armed by the player (runtime mode, not saved).</summary>
     public MemoryVerb ActiveVerb { get; private set; } = MemoryVerb.None;
 
@@ -438,6 +457,7 @@ public partial class GameState : Node
     {
         Instance = this;
         ProcessMode = ProcessModeEnum.Always;
+        _flashlightRng.Randomize();
 
         SceneManager.SceneChanged += OnSceneChanged;
         RoomExamineTracker.ExamineRecorded += OnExamineRecorded;
@@ -453,6 +473,182 @@ public partial class GameState : Node
             PlayTimeSeconds += delta;
 
         TickCollapse(delta);
+        TickFlashlightBattery((float)delta);
+    }
+
+    private void TickFlashlightBattery(float delta)
+    {
+        if (InfiniteFlashlightBattery)
+        {
+            SetFlashlightFlicker(false);
+            return;
+        }
+
+        if (SceneManager.IsChanging || Dialogue.IsShowing || Dialogue.IsInputBlocked ||
+            (GameUI.Instance != null && GameUI.Instance.IsBlockingOverlayOpen()) ||
+            !FlashlightIsBeingUsed())
+        {
+            SetFlashlightFlicker(false);
+            return;
+        }
+
+        if (_flashlightCellSeconds <= 0f)
+        {
+            if (!UseSpareFlashlightCell())
+            {
+                SetFlag("house_flashlight_off", save: false);
+                AudioManager.Play(Sfx.FlashlightClick, -8f, 0.68f);
+                Toast("The flashlight goes dark. There are no spare cells left.");
+                SaveGame("flashlight battery depleted");
+                return;
+            }
+        }
+
+        int previousPercent = Mathf.CeilToInt(FlashlightBatteryFraction * 100f);
+        _flashlightCellSeconds = Mathf.Max(0f, _flashlightCellSeconds - delta);
+        int currentPercent = Mathf.CeilToInt(FlashlightBatteryFraction * 100f);
+        if (currentPercent != previousPercent)
+            FlashlightBatteryChanged?.Invoke();
+
+        if (!_flashlightLowWarningPlayed && FlashlightBatteryLow)
+        {
+            _flashlightLowWarningPlayed = true;
+            Toast("The flashlight is running low. The beam begins to flicker.");
+        }
+
+        if (_flashlightCellSeconds <= 0f)
+        {
+            if (UseSpareFlashlightCell())
+            {
+                Toast($"Fresh cell in. {FlashlightSpareCells} spare {(FlashlightSpareCells == 1 ? "remains" : "remain")}.");
+                SaveGame("flashlight battery replaced");
+            }
+            else
+            {
+                SetFlag("house_flashlight_off", save: false);
+                AudioManager.Play(Sfx.FlashlightClick, -8f, 0.68f);
+                Toast("The flashlight goes dark. There are no spare cells left.");
+                SaveGame("flashlight battery depleted");
+            }
+        }
+
+        if (FlashlightBatteryLow && _flashlightCellSeconds > 0f)
+            TickFlashlightFlicker(delta);
+        else
+            SetFlashlightFlicker(false);
+    }
+
+    private bool FlashlightIsBeingUsed()
+    {
+        if (!HasFlag("item_flashlight"))
+            return false;
+
+        string path = SceneManager.CurrentScenePath ?? string.Empty;
+        int slash = path.LastIndexOf('/');
+        string scene = slash >= 0 ? path.Substring(slash + 1) : path;
+        bool devAlwaysOn = DevToolsEnabled && DevFreeFlashlight;
+
+        if (scene == "hedge_maze.tscn")
+        {
+            bool switchedOn = SceneManager.Instance?.CurrentScene is HedgeMaze maze && maze.FlashlightSwitchOn;
+            return switchedOn || devAlwaysOn;
+        }
+
+        bool on = devAlwaysOn || !HasFlag("house_flashlight_off");
+        if (!on)
+            return false;
+        if (scene is "basement.tscn" or "vent_crawl.tscn")
+            return true;
+        bool blackoutRoom = scene is "room_1.tscn" or "room_2.tscn" or "room_3.tscn" or
+            "room_4.tscn" or "room_5.tscn" or "journey_to_room_2.tscn" or
+            "journey_to_room_3.tscn" or "journey_to_room_4.tscn";
+        return blackoutRoom && HasFlag("blackout_active") && !HasFlag("backup_power_on") &&
+            !HasFlag("blackout_flickering");
+    }
+
+    private void TickFlashlightFlicker(float delta)
+    {
+        if (_flashlightFlickerOff)
+        {
+            _flashlightFlickerOffLeft -= delta;
+            if (_flashlightFlickerOffLeft <= 0f)
+            {
+                _flashlightFlickerOffLeft = 0f;
+                SetFlashlightFlicker(false);
+                _flashlightFlickerCountdown = _flashlightRng.RandfRange(
+                    FlashlightBatteryFraction <= 0.08f ? 0.55f : 1.1f,
+                    FlashlightBatteryFraction <= 0.08f ? 1.2f : 2.5f);
+            }
+            return;
+        }
+
+        _flashlightFlickerCountdown -= delta;
+        if (_flashlightFlickerCountdown <= 0f)
+        {
+            _flashlightFlickerOffLeft = _flashlightRng.RandfRange(0.055f, 0.14f);
+            SetFlashlightFlicker(true);
+        }
+    }
+
+    private void SetFlashlightFlicker(bool off)
+    {
+        if (_flashlightFlickerOff == off)
+            return;
+        _flashlightFlickerOff = off;
+        FlashlightBatteryChanged?.Invoke();
+    }
+
+    private bool UseSpareFlashlightCell()
+    {
+        if (_flashlightSpareCells <= 0)
+            return false;
+        _flashlightSpareCells--;
+        _flashlightCellSeconds = FlashlightCellCapacitySeconds;
+        _flashlightLowWarningPlayed = false;
+        _flashlightFlickerCountdown = _flashlightRng.RandfRange(1.1f, 2.5f);
+        _flashlightFlickerOffLeft = 0f;
+        SetFlashlightFlicker(false);
+        FlashlightBatteryChanged?.Invoke();
+        return true;
+    }
+
+    public bool TryPrepareFlashlight()
+    {
+        if (InfiniteFlashlightBattery || _flashlightCellSeconds > 0f)
+            return true;
+        if (!UseSpareFlashlightCell())
+            return false;
+        SaveGame("flashlight battery replaced");
+        return true;
+    }
+
+    private void ResetFlashlightBatteryState()
+    {
+        _flashlightCellSeconds = FlashlightCellCapacitySeconds;
+        _flashlightSpareCells = 0;
+        _flashlightFlickerCountdown = 0f;
+        _flashlightFlickerOffLeft = 0f;
+        _flashlightFlickerOff = false;
+        _flashlightLowWarningPlayed = false;
+        FlashlightBatteryChanged?.Invoke();
+    }
+
+    private void GrantSpareFlashlightCells(string flag)
+    {
+        int count = flag switch
+        {
+            "hedge_spare_battery" => 1,
+            "basement_battery_taken" => 1,
+            HedgeMaze.LockboxBatteriesFlag => 3,
+            _ => 0,
+        };
+        if (count <= 0)
+            return;
+
+        _flashlightSpareCells = Mathf.Clamp(_flashlightSpareCells + count, 0, 99);
+        if (_flashlightCellSeconds <= 0f && UseSpareFlashlightCell())
+            Toast("A fresh cell clicks into the torch. Press L to switch it back on.");
+        FlashlightBatteryChanged?.Invoke();
     }
 
     /// <summary>The 15-second grace. Time only drains while Mara can actually
@@ -2014,6 +2210,7 @@ public partial class GameState : Node
     {
         if (string.IsNullOrWhiteSpace(flag) || !_storyFlags.Add(flag))
             return false;
+        GrantSpareFlashlightCells(flag);
         if (CollapseRescueFlags.Contains(flag))
             NotifyPuzzleSolved();
         StoryFlagsChanged?.Invoke();
@@ -2505,6 +2702,7 @@ public partial class GameState : Node
     private bool _devFreeFlashlight;
     private bool _devNoClip;
     private bool _devInfiniteLockpicks;
+    private bool _devInfiniteFlashlightBattery;
     private bool _devShowMap = true;
     private bool _devMouseCamera = true;
     private bool _devMouseLight = false;
@@ -2521,6 +2719,7 @@ public partial class GameState : Node
     public bool DevFreeFlashlight => _devFreeFlashlight;
     public bool DevNoClip => _devNoClip;
     public bool DevInfiniteLockpicks => _devInfiniteLockpicks;
+    public bool DevInfiniteFlashlightBattery => _devInfiniteFlashlightBattery;
     public bool DevShowMap => _devShowMap;
     public bool DevMouseCamera => _devMouseCamera;
     public bool DevMouseLight => _devMouseLight;
@@ -2545,6 +2744,7 @@ public partial class GameState : Node
     public void SetDevFreeFlashlight(bool value) => SetDevFlag(ref _devFreeFlashlight, value);
     public void SetDevNoClip(bool value) => SetDevFlag(ref _devNoClip, value);
     public void SetDevInfiniteLockpicks(bool value) => SetDevFlag(ref _devInfiniteLockpicks, value);
+    public void SetDevInfiniteFlashlightBattery(bool value) => SetDevFlag(ref _devInfiniteFlashlightBattery, value);
     public void SetDevShowMap(bool value) => SetDevFlag(ref _devShowMap, value);
     public void SetDevMouseCamera(bool value) => SetDevFlag(ref _devMouseCamera, value);
     public void SetDevMouseLight(bool value) => SetDevFlag(ref _devMouseLight, value);
@@ -2817,6 +3017,7 @@ public partial class GameState : Node
         _unlockedClues.Clear();
         _unlockedVerbs.Clear();
         _storyFlags.Clear();
+        ResetFlashlightBatteryState();
         ActiveVerb = MemoryVerb.None;
         CompletedEnding = string.Empty;
         VerbUses = 0;
@@ -2870,7 +3071,9 @@ public partial class GameState : Node
 
         var data = new Dictionary
         {
-            ["version"] = 2,
+            ["version"] = 3,
+            ["flashlight_cell_seconds"] = _flashlightCellSeconds,
+            ["flashlight_spare_cells"] = _flashlightSpareCells,
             ["scene"] = SceneManager.CurrentScenePath ?? string.Empty,
             ["corruption"] = Globals.Instance.CORRUPTION_COUNT,
             ["clarity"] = Globals.Instance.CLARITY_TOGGLE_COUNT,
@@ -3108,6 +3311,19 @@ public partial class GameState : Node
             foreach (var v in data["story_flags"].AsGodotArray())
                 _storyFlags.Add(v.AsString());
         }
+        _flashlightCellSeconds = Mathf.Clamp(
+            (float)Get(data, "flashlight_cell_seconds", FlashlightCellCapacitySeconds).AsDouble(),
+            0f, FlashlightCellCapacitySeconds);
+        int savedFlashlightCells = Get(data, "flashlight_spare_cells", -1).AsInt32();
+        _flashlightSpareCells = savedFlashlightCells >= 0
+            ? Mathf.Clamp(savedFlashlightCells, 0, 99)
+            : (HasFlag("hedge_spare_battery") ? 1 : 0)
+              + (HasFlag("basement_battery_taken") ? 1 : 0)
+              + (HasFlag(HedgeMaze.LockboxBatteriesFlag) ? 3 : 0);
+        _flashlightLowWarningPlayed = FlashlightBatteryLow;
+        _flashlightFlickerCountdown = 0f;
+        _flashlightFlickerOffLeft = 0f;
+        _flashlightFlickerOff = false;
         VerbUses = Get(data, "verb_uses", 0).AsInt32();
         CompletedEnding = Get(data, "completed_ending", string.Empty).AsString();
         _furthestScenePath = Get(data, "furthest_scene", string.Empty).AsString();
@@ -3167,6 +3383,7 @@ public partial class GameState : Node
         _unlockedClues.Clear();
         _unlockedVerbs.Clear();
         _storyFlags.Clear();
+        ResetFlashlightBatteryState();
         ActiveVerb = MemoryVerb.None;
         CompletedEnding = string.Empty;
         VerbUses = 0;
