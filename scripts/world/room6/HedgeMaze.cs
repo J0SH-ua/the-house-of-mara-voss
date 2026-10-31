@@ -972,7 +972,7 @@ public partial class HedgeMaze : Node2D
             _copyCoordinatesButton.Text = "COPIED";
             _coordinateCopyFeedbackUntilMsec = Time.GetTicksMsec() + 1300;
         }
-        GameState.Instance?.Toast("Maze coordinates copied to clipboard (F12).", 1.8f, true);
+        GameUI.Instance?.ShowToast("Maze coordinates copied to clipboard (F12).", 1.8f, true);
     }
 
     /// <summary>The readout: where she is, where the camera is, and
