@@ -111,10 +111,10 @@ public partial class HedgeMaze : Node2D
     // is drawn as everything that rises above her eye, so dropping
     // her eye makes the hedges lean in and lifting it lets them
     // fall away again.
-    private const float HedgeWallHeight = 1.65f;
+    private const float HedgeWallHeight = 2.5f;
     private const float PillarHeight = 1.45f;
     private const float FountainHeight = 0.85f;
-    private const float TopiaryHeight = 1.79f;
+    private const float TopiaryHeight = 2.35f;
 
     // How much of each painted tile covers one world unit. The tiles
     // are mirrored 2x2 by tools/build_hedge_art.py, so they repeat
@@ -191,21 +191,24 @@ public partial class HedgeMaze : Node2D
     private static readonly Vector2 TorchSpriteGrip = new(0.5651f, 0.4884f);
     private static readonly Vector2 TorchSpriteLens = new(0.1632f, 0.1681f);
 
-    // # hedge, P stone pillar, F dry fountain, T topiary,
-    // S south waking place, B bridge opening, X far opening.
+    // # dense hedge, T distinctive tree-like topiaries, g a small
+    // grassy clearing, w a patch of wildflowers, S the south waking
+    // place, B the bridge opening, X the far opening. Open ground is
+    // deliberately uneven: branches reconnect around a few short
+    // dead ends rather than repeating a clipped, regular grid.
     private static readonly string[] MapRows =
     [
-        "###X###########",
-        "#.............#",
-        "#.P##.###P###.#",
-        "#...#...#.....#",
-        "###.#.###.###.#",
-        "#F..#.....#...#",
-        "#.###.###.#.#.#",
-        "#...#..T..#...#",
-        "###.###...###.#",
-        "#......S......#",
-        "#######B#######",
+        "####X##########",
+        "####....#######",
+        "###.g.....w..##",
+        "##......#.....#",
+        "#...##.....#..#",
+        "#....#..#T...##",
+        "##T..#.....#..#",
+        "#...##...##...#",
+        "##..........###",
+        "####..S....####",
+        "######B########",
     ];
 
     private struct RayHit
@@ -375,14 +378,14 @@ public partial class HedgeMaze : Node2D
     private void PlaceProps()
     {
         _props.Clear();
-        AddProp(PropKind.Lamp, new Vector2(4.5f, 1.5f), "Garden lamp",
+        AddProp(PropKind.Lamp, new Vector2(4.5f, 2.5f), "Garden lamp",
             "A lamp on a post, wired to nothing I can see. The glass is cold. Somebody meant to light this garden once.",
             LampPostTexturePath, 1.18f);
-        AddProp(PropKind.Wheelbarrow, new Vector2(10.5f, 1.5f), "Wheelbarrow",
+        AddProp(PropKind.Wheelbarrow, new Vector2(11.5f, 3.5f), "Wheelbarrow",
             "A barrow with last year's leaves in it and one wheel that will never be true again. Whoever cut this hedge did it by hand, in a bad winter.",
             WheelbarrowTexturePath, 0.42f);
         AddProp(PropKind.WateringCan, new Vector2(12.5f, 7.5f), "Watering can",
-            "Green underneath, orange where the sun got at it. The fountain has been dry for years and this is still here, waiting for a garden.",
+            "Green underneath, orange where the sun got at it. It has sat here so long the soil is beginning to close over its shadow.",
             WateringCanTexturePath, 0.3f);
         AddProp(PropKind.Battery, new Vector2(8.5f, 8.5f), "Spare battery",
             "A spare cell, wrapped in a scrap of cloth. Dad's idea of a reserve: never the thing you need, until the moment you do.",
@@ -1312,9 +1315,9 @@ public partial class HedgeMaze : Node2D
 
     private static bool IsSolid(char tile) => tile is '#' or 'P' or 'F' or 'T';
 
-    /// <summary>One grid ray. The low dry fountain blocks her feet but
-    /// not her eyes: it is reported separately and the ray carries on
-    /// to the hedge behind it.</summary>
+    /// <summary>One grid ray. Low garden features block her feet but
+    /// not her eyes: they are reported separately and the ray carries
+    /// on to the hedge behind them.</summary>
     private RayHit CastRay(float angle, out RayHit shortHit)
     {
         shortHit = default;
@@ -1837,6 +1840,12 @@ public partial class HedgeMaze : Node2D
             crownShade = new Color(shade.R * 0.72f, shade.G * 0.92f, shade.B, shade.A);
         DrawPolygon(points, new Color[] { crownShade, crownShade, crownShade, crownShade }, uvs,
             _hedgeTexture);
+
+        // A cool, very faint moon edge catches only the uppermost leaves;
+        // the hedge faces remain governed by the existing torch beam.
+        float rimWidth = ColumnWidth * (0.35f + 0.65f * Hash01(hit.Cell.X, hit.Cell.Y, 83));
+        DrawRect(new Rect2(screenX, top - crown, rimWidth, Mathf.Min(2.5f, crown)),
+            new Color(0.62f, 0.7f, 0.82f, 0.18f), true);
         return crown;
     }
 
@@ -1886,7 +1895,8 @@ public partial class HedgeMaze : Node2D
         {
             for (int cx = px - 6; cx <= px + 6; cx++)
             {
-                if (IsSolid(CellAt(new Vector2I(cx, cy))))
+                char groundTile = CellAt(new Vector2I(cx, cy));
+                if (IsSolid(groundTile))
                     continue;
 
                 var world = new Vector2(
@@ -1911,11 +1921,57 @@ public partial class HedgeMaze : Node2D
                 float hash = Hash01(cx * 3, cy * 5, 71);
                 float size = Mathf.Clamp(9f / depth, 2f, 12f);
                 float light = SurfaceLight(depth, world);
-                Color color = hash > 0.86f
-                    ? ScaleColor(new Color(0.34f, 0.32f, 0.27f), light)
-                    : ScaleColor(new Color(0.11f, 0.33f, 0.11f), light);
-                DrawRect(new Rect2(screenX - size * 0.5f, screenY - size * 0.6f,
-                    size, Mathf.Max(2f, size * 0.6f)), color, true);
+                Vector2 ground = new(screenX, screenY);
+
+                // The painted ground already carries uneven earth, leaves
+                // and stones. A sparse, fixed-world accent pass adds little
+                // weeds, fallen leaves, exposed roots and moon-muted flowers
+                // without turning the paths into a cluttered carpet.
+                if (hash > 0.965f || (groundTile == 'w' && hash > 0.35f))
+                {
+                    Color stem = ScaleColor(new Color(0.28f, 0.36f, 0.22f), light);
+                    Color bloom = ScaleColor(new Color(0.66f, 0.66f, 0.57f), light);
+                    int flowers = groundTile == 'w' ? 3 : 1;
+                    for (int flower = 0; flower < flowers; flower++)
+                    {
+                        float offset = (flower - (flowers - 1) * 0.5f) * size * 0.34f;
+                        Vector2 foot = ground + new Vector2(offset, size * 0.12f);
+                        Vector2 head = ground + new Vector2(offset - size * 0.04f, -size * 0.38f);
+                        DrawLine(foot, head, stem, Mathf.Max(1f, size * 0.08f));
+                        DrawCircle(head, Mathf.Max(1f, size * 0.11f), bloom);
+                    }
+                }
+                else if (hash > 0.90f)
+                {
+                    Color pebble = ScaleColor(new Color(0.35f, 0.34f, 0.30f), light);
+                    DrawRect(new Rect2(ground.X - size * 0.3f, ground.Y - size * 0.1f,
+                        size * 0.6f, Mathf.Max(1.5f, size * 0.22f)), pebble, true);
+                }
+                else if (hash > 0.83f)
+                {
+                    Color leaf = ScaleColor(new Color(0.42f, 0.29f, 0.16f), light);
+                    DrawLine(ground + new Vector2(-size * 0.32f, size * 0.06f),
+                        ground + new Vector2(size * 0.3f, -size * 0.08f), leaf,
+                        Mathf.Max(1f, size * 0.2f));
+                    DrawLine(ground + new Vector2(-size * 0.1f, 0f),
+                        ground + new Vector2(size * 0.01f, -size * 0.22f),
+                        ScaleColor(new Color(0.57f, 0.4f, 0.22f), light), 1f);
+                }
+                else if (hash > 0.76f)
+                {
+                    Color root = ScaleColor(new Color(0.29f, 0.22f, 0.15f), light);
+                    DrawLine(ground + new Vector2(-size * 0.46f, 0f),
+                        ground + new Vector2(size * 0.42f, -size * 0.08f), root,
+                        Mathf.Max(1f, size * 0.12f));
+                }
+                else
+                {
+                    Color weed = ScaleColor(new Color(0.11f, 0.29f, 0.12f), light);
+                    DrawLine(ground + new Vector2(-size * 0.24f, 0f),
+                        ground + new Vector2(-size * 0.16f, -size * 0.34f), weed, 1f);
+                    DrawLine(ground + new Vector2(size * 0.08f, 0f),
+                        ground + new Vector2(size * 0.2f, -size * 0.28f), weed, 1f);
+                }
             }
         }
     }
@@ -2444,6 +2500,8 @@ public partial class HedgeMaze : Node2D
                     case 'S': color = new Color(0.85f, 0.8f, 0.45f, 0.95f); break;
                     case 'B': color = new Color(0.88f, 0.58f, 0.38f, 0.95f); break;
                     case 'X': color = new Color(0.88f, 0.4f, 0.4f, 0.95f); break;
+                    case 'g': color = new Color(0.24f, 0.39f, 0.23f, 0.95f); break;
+                    case 'w': color = new Color(0.48f, 0.48f, 0.32f, 0.95f); break;
                     default: continue;
                 }
                 DrawRect(new Rect2(origin + new Vector2(x * cell, y * cell),

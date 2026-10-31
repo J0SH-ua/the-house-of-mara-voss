@@ -5137,7 +5137,7 @@ public partial class GameUI : CanvasLayer
             v => GameState.Instance?.SetDevFlashlightScale((float)v),
             v => $"{v:0.0}×");
         AddDevSlider(toolsLeft, "Dev mouse sensitivity", 0.25, 3, 0.05,
-            () => GameState.Instance?.DevMouseSensitivity ?? 1f,
+            () => GameState.Instance?.DevMouseSensitivity ?? 0.25f,
             v => GameState.Instance?.SetDevMouseSensitivity((float)v),
             v => $"{v:0.00}×");
         AddDevSlider(toolsLeft, "Flashlight hand size", 0.55, 2.2, 0.05,
