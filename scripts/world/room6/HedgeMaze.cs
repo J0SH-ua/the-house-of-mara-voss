@@ -749,6 +749,14 @@ public partial class HedgeMaze : Node2D
         if (@event is not InputEventKey keyEvent)
             return;
 
+        if (keyEvent.PhysicalKeycode == Key.F12 && keyEvent.Pressed && !keyEvent.Echo &&
+            gameState?.DevToolsEnabled == true)
+        {
+            CopyCoordinatesFromOverlay();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         bool capsLock = keyEvent.PhysicalKeycode == Key.Capslock ||
             keyEvent.Keycode == Key.Capslock;
         bool shift = keyEvent.PhysicalKeycode == Key.Shift ||
@@ -959,8 +967,12 @@ public partial class HedgeMaze : Node2D
     private void CopyCoordinatesFromOverlay()
     {
         CopyCoordinatesToClipboard();
-        _copyCoordinatesButton.Text = "COPIED";
-        _coordinateCopyFeedbackUntilMsec = Time.GetTicksMsec() + 1300;
+        if (_copyCoordinatesButton != null)
+        {
+            _copyCoordinatesButton.Text = "COPIED";
+            _coordinateCopyFeedbackUntilMsec = Time.GetTicksMsec() + 1300;
+        }
+        GameState.Instance?.Toast("Maze coordinates copied to clipboard (F12).", 1.8f, true);
     }
 
     /// <summary>The readout: where she is, where the camera is, and
@@ -980,12 +992,12 @@ public partial class HedgeMaze : Node2D
         {
             _copyCoordinatesButton = new Button
             {
-                Text = "COPY",
+                Text = "COPY · F12",
                 Position = new Vector2(636, 136),
-                Size = new Vector2(88, 34),
+                Size = new Vector2(100, 34),
                 MouseFilter = Control.MouseFilterEnum.Stop,
                 FocusMode = Control.FocusModeEnum.None,
-                TooltipText = "Copy current maze coordinates and heading",
+                TooltipText = "Copy current maze coordinates and heading (F12)",
                 ZIndex = 101,
             };
             if (_font != null)
@@ -1016,7 +1028,7 @@ public partial class HedgeMaze : Node2D
         _devLabel.Visible = wantCoordinates;
         _copyCoordinatesButton.Visible = wantCoordinates;
         if (Time.GetTicksMsec() >= _coordinateCopyFeedbackUntilMsec)
-            _copyCoordinatesButton.Text = "COPY";
+            _copyCoordinatesButton.Text = "COPY · F12";
         if (!wantCoordinates)
             return;
 
@@ -1030,8 +1042,8 @@ public partial class HedgeMaze : Node2D
             (_freeCamera ? "   FREE CAMERA" : string.Empty) +
             (_flashlightOn ? "   torch on" : "   torch off");
         string line3 = _freeCamera
-            ? "free camera: W/S forward/back · A/D strafe · ←/→ turn · wheel raises and lowers"
-            : string.Empty;
+            ? "free camera: W/S forward/back · A/D strafe · ←/→ turn · wheel raises/lowers · F12 copies"
+            : "F12 copies coordinates";
         _devLabel.Text = line1 + "\n" + line2 + (line3.Length > 0 ? "\n" + line3 : string.Empty);
     }
 
