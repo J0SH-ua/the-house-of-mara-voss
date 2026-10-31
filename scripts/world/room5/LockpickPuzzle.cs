@@ -87,15 +87,6 @@ public partial class LockpickPuzzle : Node2D
         "Five gone. The pin is still there; forcing it won't make it kinder.",
         "Six picks gone. One left in the roll. Slow hands, Mara.",
     ];
-    private static readonly string[] GardenSnapLines =
-    [
-        "The pick gives with a little tick. I pushed too hard; ease off and try the pin again.",
-        "Another pick gone. The brass is stubborn, not worth forcing. Breathe, then listen.",
-        "Third pick. I can still take my time with this lock.",
-        "That one snapped too. Ease the tension before I turn again.",
-        "Five gone. The pin is still there; forcing it won't make it kinder.",
-        "Six picks gone. One left in the roll. Slow hands, Mara.",
-    ];
 
     private static readonly Rect2 RewindRect = new(216, 468, 350, 54);
     private static readonly Rect2 LetGoRect = new(586, 468, 350, 54);
