@@ -195,25 +195,17 @@ public partial class HedgeMaze : Node2D
     // S south waking place, B bridge opening, X far opening.
     private static readonly string[] MapRows =
     [
-        "###X#####################",
-        "#.......................#",
-        "#####.###P#####.#.#####.#",
-        "#...#.......#...........#",
-        "#.#.#.#####.#.##.#...##.#",
-        "#.#.#.........#....T..#.#",
-        "#.#.#.#.##..#.#.#.....#.#",
-        "#.#...#.#...#.#.....#.#.#",
-        "#.###.#.#.....#.###.#.###",
-        "#...#...#..F....#.#.....#",
-        "#.#.######...####.P.#.#.#",
-        "#.........#.#.....#.#.#.#",
-        "#.##...##.#.#.#.#.#.###.#",
-        "#....T....#.....#.#.#...#",
-        "#.#.....###.#.#.###.#P#.#",
-        "#...#.#...#.....#.......#",
-        "#.#P#.###.#####.#.#####.#",
-        "#............S#.........#",
-        "#############B###########",
+        "###X###########",
+        "#.............#",
+        "#.P##.###P###.#",
+        "#...#...#.....#",
+        "###.#.###.###.#",
+        "#F..#.....#...#",
+        "#.###.###.#.#.#",
+        "#...#..T..#...#",
+        "###.###...###.#",
+        "#......S......#",
+        "#######B#######",
     ];
 
     private struct RayHit
@@ -245,12 +237,12 @@ public partial class HedgeMaze : Node2D
     private Label _titleLabel;
     private Label _exitLabel;
 
-    private Vector2 _playerPosition = new(13.5f, 17.5f);
+    private Vector2 _playerPosition = new(7.5f, 9.5f);
 
     // Where the view is actually coming from. Normally this is her
     // own two eyes; a developer camera can leave her body behind
     // and fly about the hedges on its own.
-    private Vector2 _cameraPosition = new(13.5f, 17.5f);
+    private Vector2 _cameraPosition = new(7.5f, 9.5f);
     private float _cameraYaw;
     private float _cameraHeight = BaseEyeHeight;
     private bool _freeCamera;
@@ -315,8 +307,8 @@ public partial class HedgeMaze : Node2D
     }
 
     private readonly List<MazeProp> _props = new();
-    private Vector2I _startCell = new(13, 17);
-    private Vector2I _southExitCell = new(13, 18);
+    private Vector2I _startCell = new(7, 9);
+    private Vector2I _southExitCell = new(7, 10);
     private Vector2I _northExitCell = new(3, 0);
     private readonly float[] _depthByColumn = new float[ColumnCount];
     private readonly float[] _shortDepthByColumn = new float[ColumnCount];
@@ -389,10 +381,10 @@ public partial class HedgeMaze : Node2D
         AddProp(PropKind.Wheelbarrow, new Vector2(10.5f, 1.5f), "Wheelbarrow",
             "A barrow with last year's leaves in it and one wheel that will never be true again. Whoever cut this hedge did it by hand, in a bad winter.",
             WheelbarrowTexturePath, 0.42f);
-        AddProp(PropKind.WateringCan, new Vector2(12.5f, 9.5f), "Watering can",
+        AddProp(PropKind.WateringCan, new Vector2(12.5f, 7.5f), "Watering can",
             "Green underneath, orange where the sun got at it. The fountain has been dry for years and this is still here, waiting for a garden.",
             WateringCanTexturePath, 0.3f);
-        AddProp(PropKind.Battery, new Vector2(11.5f, 17.5f), "Spare battery",
+        AddProp(PropKind.Battery, new Vector2(8.5f, 8.5f), "Spare battery",
             "A spare cell, wrapped in a scrap of cloth. Dad's idea of a reserve: never the thing you need, until the moment you do.",
             SpareBatteryTexturePath, 0.2f);
     }
@@ -2426,7 +2418,7 @@ public partial class HedgeMaze : Node2D
         if (!_devMapOverlay)
             return;
 
-        const float cell = 7f;
+        const float cell = 10f;
         int columns = 0;
         foreach (string row in MapRows)
             columns = Mathf.Max(columns, row.Length);
@@ -2460,7 +2452,21 @@ public partial class HedgeMaze : Node2D
         }
 
         Vector2 her = origin + _playerPosition * cell;
-        DrawCircle(her, 3.4f, new Color(1f, 0.95f, 0.7f, 0.95f));
+        Vector2 facing = new(Mathf.Cos(_yaw), Mathf.Sin(_yaw));
+        Vector2 flank = new(-facing.Y, facing.X);
+        Vector2 tip = her + facing * 4.7f;
+        Vector2 tail = her - facing * 3.1f;
+        DrawColoredPolygon(
+            new[] { tip, tail + flank * 3.1f, tail - flank * 3.1f },
+            new Color(0.04f, 0.035f, 0.02f, 0.98f));
+        DrawColoredPolygon(
+            new[]
+            {
+                her + facing * 3.8f,
+                her - facing * 2.5f + flank * 2.0f,
+                her - facing * 2.5f - flank * 2.0f,
+            },
+            new Color(1f, 0.95f, 0.7f, 1f));
         if (_freeCamera)
         {
             Vector2 cam = origin + _cameraPosition * cell;

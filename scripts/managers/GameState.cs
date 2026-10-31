@@ -2504,7 +2504,7 @@ public partial class GameState : Node
     private bool _devFreeCamera;
     private bool _devFreeFlashlight;
     private bool _devNoClip;
-    private bool _devShowMap;
+    private bool _devShowMap = true;
     private bool _devMouseCamera = true;
     private bool _devMouseLight = false;
     private float _devFlashlightScale = 1f;
