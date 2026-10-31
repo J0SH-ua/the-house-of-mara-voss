@@ -168,11 +168,20 @@ public partial class HedgeMaze : Node2D
     {
         int cellX = Mathf.FloorToInt(_playerPosition.X);
         int cellY = Mathf.FloorToInt(_playerPosition.Y);
-        string player = $"player x={_playerPosition.X:0.00}, y={_playerPosition.Y:0.00}, cell=({cellX},{cellY}), heading={HeadingDegrees(_yaw):0}°";
+        string player =
+            $"player x={_playerPosition.X:0.00}, y={_playerPosition.Y:0.00}, " +
+            $"cell=({cellX},{cellY}), heading={HeadingDegrees(_yaw):0}°";
         if (!_freeCamera)
             return player;
 
         return $"{player}; camera x={_cameraPosition.X:0.00}, y={_cameraPosition.Y:0.00}, heading={HeadingDegrees(_cameraYaw):0}°";
+    }
+
+    public string CopyCoordinatesToClipboard()
+    {
+        string coordinates = GetCoordinatesForClipboard();
+        DisplayServer.ClipboardSet(coordinates);
+        return coordinates;
     }
 
     private static float HeadingDegrees(float radians)
@@ -277,6 +286,8 @@ public partial class HedgeMaze : Node2D
     private float _mouseDeltaX;
     private float _mouseDeltaY;
     private Label _devLabel;
+    private Button _copyCoordinatesButton;
+    private ulong _coordinateCopyFeedbackUntilMsec;
     private Vector2 _velocity = Vector2.Zero;
     private float _yaw = Mathf.Pi;
     private float _lookPitchRadians;
@@ -945,6 +956,13 @@ public partial class HedgeMaze : Node2D
         }
     }
 
+    private void CopyCoordinatesFromOverlay()
+    {
+        CopyCoordinatesToClipboard();
+        _copyCoordinatesButton.Text = "COPIED";
+        _coordinateCopyFeedbackUntilMsec = Time.GetTicksMsec() + 1300;
+    }
+
     /// <summary>The readout: where she is, where the camera is, and
     /// how the place is running.</summary>
     private void UpdateDevReadout(bool wantCoordinates)
@@ -958,7 +976,47 @@ public partial class HedgeMaze : Node2D
             _devLabel.Visible = false;
         }
 
+        if (_copyCoordinatesButton == null)
+        {
+            _copyCoordinatesButton = new Button
+            {
+                Text = "COPY",
+                Position = new Vector2(636, 136),
+                Size = new Vector2(88, 34),
+                MouseFilter = Control.MouseFilterEnum.Stop,
+                FocusMode = Control.FocusModeEnum.None,
+                TooltipText = "Copy current maze coordinates and heading",
+                ZIndex = 101,
+            };
+            if (_font != null)
+                _copyCoordinatesButton.AddThemeFontOverride("font", _font);
+            _copyCoordinatesButton.AddThemeFontSizeOverride("font_size", 15);
+            _copyCoordinatesButton.AddThemeColorOverride("font_color", new Color(0.82f, 0.91f, 0.78f));
+            var normal = new StyleBoxFlat
+            {
+                BgColor = new Color(0.04f, 0.07f, 0.05f, 0.9f),
+                BorderColor = new Color(0.48f, 0.63f, 0.46f, 0.8f),
+            };
+            normal.SetBorderWidthAll(1);
+            normal.SetCornerRadiusAll(3);
+            var hover = new StyleBoxFlat
+            {
+                BgColor = new Color(0.12f, 0.19f, 0.12f, 0.96f),
+                BorderColor = new Color(0.72f, 0.83f, 0.67f, 0.95f),
+            };
+            hover.SetBorderWidthAll(1);
+            hover.SetCornerRadiusAll(3);
+            _copyCoordinatesButton.AddThemeStyleboxOverride("normal", normal);
+            _copyCoordinatesButton.AddThemeStyleboxOverride("hover", hover);
+            _copyCoordinatesButton.AddThemeStyleboxOverride("pressed", hover);
+            _copyCoordinatesButton.Pressed += CopyCoordinatesFromOverlay;
+            AddChild(_copyCoordinatesButton);
+        }
+
         _devLabel.Visible = wantCoordinates;
+        _copyCoordinatesButton.Visible = wantCoordinates;
+        if (Time.GetTicksMsec() >= _coordinateCopyFeedbackUntilMsec)
+            _copyCoordinatesButton.Text = "COPY";
         if (!wantCoordinates)
             return;
 

@@ -2537,8 +2537,7 @@ public partial class GameUI : CanvasLayer
             return;
         }
 
-        string coordinates = maze.GetCoordinatesForClipboard();
-        DisplayServer.ClipboardSet(coordinates);
+        string coordinates = maze.CopyCoordinatesToClipboard();
         if (_devStatusLabel != null)
             _devStatusLabel.Text = $"COPIED TO CLIPBOARD — {coordinates}";
     }
