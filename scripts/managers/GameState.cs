@@ -2023,6 +2023,9 @@ public partial class GameState : Node
 
     public void RegisterPickBroken()
     {
+        if (DevToolsEnabled && DevInfiniteLockpicks)
+            return;
+
         int next = BrokenPickCount + 1;
         if (next <= LockpickTotal)
             SetFlag($"lockpick_broken_{next}", save: false);
