@@ -2504,6 +2504,7 @@ public partial class GameState : Node
     private bool _devFreeCamera;
     private bool _devFreeFlashlight;
     private bool _devNoClip;
+    private bool _devInfiniteLockpicks;
     private bool _devShowMap = true;
     private bool _devMouseCamera = true;
     private bool _devMouseLight = false;
@@ -2519,6 +2520,7 @@ public partial class GameState : Node
     public bool DevFreeCamera => _devFreeCamera;
     public bool DevFreeFlashlight => _devFreeFlashlight;
     public bool DevNoClip => _devNoClip;
+    public bool DevInfiniteLockpicks => _devInfiniteLockpicks;
     public bool DevShowMap => _devShowMap;
     public bool DevMouseCamera => _devMouseCamera;
     public bool DevMouseLight => _devMouseLight;
@@ -2542,6 +2544,7 @@ public partial class GameState : Node
     public void SetDevFreeCamera(bool value) => SetDevFlag(ref _devFreeCamera, value);
     public void SetDevFreeFlashlight(bool value) => SetDevFlag(ref _devFreeFlashlight, value);
     public void SetDevNoClip(bool value) => SetDevFlag(ref _devNoClip, value);
+    public void SetDevInfiniteLockpicks(bool value) => SetDevFlag(ref _devInfiniteLockpicks, value);
     public void SetDevShowMap(bool value) => SetDevFlag(ref _devShowMap, value);
     public void SetDevMouseCamera(bool value) => SetDevFlag(ref _devMouseCamera, value);
     public void SetDevMouseLight(bool value) => SetDevFlag(ref _devMouseLight, value);

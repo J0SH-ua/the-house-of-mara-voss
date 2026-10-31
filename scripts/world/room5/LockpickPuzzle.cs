@@ -39,6 +39,9 @@ public partial class LockpickPuzzle : Node2D
     private const string Room5ScenePath = "res://scenes/world/room_5.tscn";
     private const string VentCrawlScenePath = "res://scenes/world/vent_crawl.tscn";
     private const string BasementScenePath = "res://scenes/world/basement.tscn";
+    private const string HedgeMazeChestBackgroundPath = "res://assets/images/hedge/lockpick_chest_bg.png";
+    private const string HedgeMazeChestRevealPath = "res://assets/images/hedge/props/lockbox_chest_open.png";
+    private const string HedgeMazeScenePath = "res://scenes/world/hedge_maze.tscn";
     private const float MaxPickDegrees = 78f;
     private const float PlugOpenDegrees = 90f;
     private const float TurnSpeedDegreesPerSecond = 62f;
@@ -56,7 +59,9 @@ public partial class LockpickPuzzle : Node2D
     }
 
     private static readonly Rect2 LeaveRect = new(16, 468, 216, 44);
-    private static readonly Vector2 LockCenter = new(576, 324);
+    private static readonly Vector2 HouseLockCenter = new(576, 324);
+    private static readonly Vector2 GardenLockCenter = new(576, 312);
+    private Vector2 LockCenter => _targetGardenChest ? GardenLockCenter : HouseLockCenter;
     private static readonly string[] NearLines =
     [
         "There. Did you hear that? The little clean sound. Stay there.",
@@ -85,8 +90,21 @@ public partial class LockpickPuzzle : Node2D
     private const int PanicEffectsMaxPicksLeft = 3;
     private const string RewindJourneyScenePath = "res://scenes/world/lockpick_rewind.tscn";
 
-    private int PicksLeftNow => GameState.Instance?.PicksLeft ?? GameState.LockpickTotal;
-    private bool PanicEffectsActive => PicksLeftNow <= PanicEffectsMaxPicksLeft;
+    private bool DevInfinitePicks
+    {
+        get
+        {
+            var gs = GameState.Instance;
+            return gs != null && gs.DevToolsEnabled && gs.DevInfiniteLockpicks;
+        }
+    }
+    private int PicksLeftNow => _targetGardenChest
+        ? GameState.LockpickTotal
+        : DevInfinitePicks
+            ? int.MaxValue
+            : (GameState.Instance?.PicksLeft ?? GameState.LockpickTotal);
+    private bool PanicEffectsActive => !_targetGardenChest && !DevInfinitePicks &&
+        PicksLeftNow <= PanicEffectsMaxPicksLeft;
     private int PanicEffectsDepth =>
         Mathf.Clamp(PanicEffectsMaxPicksLeft - PicksLeftNow, 0, PanicEffectsMaxPicksLeft);
 
@@ -100,6 +118,7 @@ public partial class LockpickPuzzle : Node2D
     ];
 
     private Texture2D _background;
+    private Texture2D _chestRewardTexture;
     private FontFile _font;
     private Label _titleLabel;
     private Label _helpLabel;
@@ -107,6 +126,7 @@ public partial class LockpickPuzzle : Node2D
     private Label _leaveLabel;
 
     private bool _targetTrunk;
+    private bool _targetGardenChest;
     private bool _hasFineWrench;
     private float[] _layerSweetDegrees = System.Array.Empty<float>();
     private float[] _layerEnds = System.Array.Empty<float>();
@@ -159,13 +179,15 @@ public partial class LockpickPuzzle : Node2D
 
     public override void _Ready()
     {
-        _background = GD.Load<Texture2D>(BackgroundPath);
-        _font = GD.Load<FontFile>(FontPath);
-
         var gs = GameState.Instance;
-        _targetTrunk = gs != null &&
+        _targetGardenChest = gs?.HasFlag(HedgeMaze.LockboxTargetFlag) ?? false;
+        _targetTrunk = !_targetGardenChest && gs != null &&
             (gs.HasFlag("lockpick_target_trunk") ||
              (!gs.HasFlag("lockpick_target_vent") && gs.HasFlag("room5_vent_open")));
+        _background = GD.Load<Texture2D>(_targetGardenChest ? HedgeMazeChestBackgroundPath : BackgroundPath);
+        if (_targetGardenChest)
+            _chestRewardTexture = GD.Load<Texture2D>(HedgeMazeChestRevealPath);
+        _font = GD.Load<FontFile>(FontPath);
         _hasFineWrench = gs?.HasFlag("item_fine_tension_wrench") ?? false;
         _rng.Randomize();
         BuildLayers();
@@ -183,7 +205,15 @@ public partial class LockpickPuzzle : Node2D
 
     private void BuildLayers()
     {
-        if (_targetTrunk)
+        if (_targetGardenChest)
+        {
+            // The leaf-plate chest has four narrower, differently spaced
+            // pin gates. It keeps the tactile pick logic, not the house-lock panic.
+            _layerEnds = [24f, 45f, 68f, PlugOpenDegrees];
+            _layerTolerances = [11f, 9f, 7.5f, 6f];
+            _layerStressScales = [0.8f, 0.9f, 1f, 1.08f];
+        }
+        else if (_targetTrunk)
         {
             _layerEnds = [18f, 36f, 54f, 72f, PlugOpenDegrees];
             _layerTolerances = [11f, 9f, 7.5f, 6f, 5f];
@@ -248,11 +278,15 @@ public partial class LockpickPuzzle : Node2D
     private void BuildLabels()
     {
         _titleLabel = MakeLabel(
-            _targetTrunk ? "The little trunk's lock" : "The vent latch",
+            _targetGardenChest ? "The leaf-plate lockbox"
+                : _targetTrunk ? "The little trunk's lock" : "The vent latch",
             new Vector2(326, 18), new Vector2(500, 38), 29,
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(
-            "Mouse — seat the pick      Hold A — turn the lock. How far it turns before it shakes tells the truth.\nNo gauge for the steel — only the shake and the sound. Force a bind and the damage stays in the pick until it snaps. She has seven.",
+            _targetGardenChest
+                ? "Mouse — seat the pick in the leaf keyway      Hold A/D — turn. Find the quiet point in each pin.\nEase off when it binds; the lock will reset, but the picks won't break here."
+                : "Mouse — seat the pick      Hold A — turn the lock. How far it turns before it shakes tells the truth.\nNo gauge for the steel — only the shake and the sound. Force a bind and the damage stays in the pick until it snaps. She has seven.",
+
             new Vector2(256, 58), new Vector2(640, 62), 19,
             new Color(0.9f, 0.86f, 0.76f, 0.94f));
         _statusLabel = MakeLabel(string.Empty,
@@ -325,7 +359,11 @@ public partial class LockpickPuzzle : Node2D
                 return;
             }
 
-            if (_targetTrunk)
+            if (_targetGardenChest)
+            {
+                await Say("A leaf worked into the brass, a narrow keyway at its heart. Four little pins, maybe. This one belongs to the garden, not the house.");
+            }
+            else if (_targetTrunk)
             {
                 await Say("Small lock. Old lock. Five layers deep, if my fingers are reading it right. The kind Dad called honest — which meant it would tell you exactly where you were wrong, one pin at a time.");
             }
@@ -335,25 +373,31 @@ public partial class LockpickPuzzle : Node2D
             }
             if (!StillHere())
                 return;
-            await Say("Seven picks in the roll. He oiled them like they were alive, and they'll take a lot — but force one while it's binding and even his steel remembers it can break. So: don't push a sound I don't like. His words. I'm going to try and deserve them.");
+            if (_targetGardenChest)
+                await Say("No rush. Let the pick find each quiet point; when the brass resists, ease off and listen again.");
+            else
+                await Say("Seven picks in the roll. He oiled them like they were alive, and they'll take a lot — but force one while it's binding and even his steel remembers it can break. So: don't push a sound I don't like. His words. I'm going to try and deserve them.");
             if (!StillHere())
                 return;
 
-            if (gs != null && gs.PicksLeft <= 0)
+            if (!_targetGardenChest)
             {
-                // A gathered memory gathers the small breakages too;
-                // if she has somehow arrived with an empty roll, the
-                // house has already put it back together for her.
-                gs.RestoreAllPicks("the roll was whole again when she opened it");
-                await Say("Seven. All seven lying whole in their pockets, like the breaking got gathered back along with everything else. …All right. I won't waste that twice.");
-                if (!StillHere())
-                    return;
-            }
-            else if (gs != null && gs.BrokenPickCount > 0)
-            {
-                await Say($"{gs.PicksLeft} sound picks left in the roll. The broken ones are still in their pockets. I keep them there so my hands remember what forcing costs.");
-                if (!StillHere())
-                    return;
+                if (gs != null && gs.PicksLeft <= 0)
+                {
+                    // A gathered memory gathers the small breakages too;
+                    // if she has somehow arrived with an empty roll, the
+                    // house has already put it back together for her.
+                    gs.RestoreAllPicks("the roll was whole again when she opened it");
+                    await Say("Seven. All seven lying whole in their pockets, like the breaking got gathered back along with everything else. …All right. I won't waste that twice.");
+                    if (!StillHere())
+                        return;
+                }
+                else if (gs != null && gs.BrokenPickCount > 0)
+                {
+                    await Say($"{gs.PicksLeft} sound picks left in the roll. The broken ones are still in their pockets. I keep them there so my hands remember what forcing costs.");
+                    if (!StillHere())
+                        return;
+                }
             }
 
             _pickDamage = 0f;
@@ -545,7 +589,8 @@ public partial class LockpickPuzzle : Node2D
                 // and the thinning sound are the only warnings.
                 _stress = Mathf.MoveToward(_stress, 1f, 2.2f * CurrentStressScale * dt);
                 float extraError = Mathf.Max(0f, error - tolerance);
-                _pickDamage += dt * CurrentStressScale * (0.78f + 0.03f * extraError);
+                if (!_targetGardenChest && !DevInfinitePicks)
+                    _pickDamage += dt * CurrentStressScale * (0.78f + 0.03f * extraError);
                 ulong nowBind = Time.GetTicksMsec();
                 if (nowBind - _lastBindSoundMsec > 120)
                 {
@@ -563,7 +608,7 @@ public partial class LockpickPuzzle : Node2D
 
             // Bent past what bent steel forgives, his pick
             // remembers what steel does.
-            if (_binding && _pickDamage >= 1f)
+            if (_binding && _pickDamage >= 1f && !_targetGardenChest && !DevInfinitePicks)
             {
                 SnapPick();
                 return;
@@ -938,6 +983,13 @@ public partial class LockpickPuzzle : Node2D
         AudioManager.Play(Sfx.LockpickTick, -9f, 1.22f);
         AudioManager.Play(Sfx.DoorUnlock, -6f, _targetTrunk ? 0.92f : 1.05f);
         UpdateStatus();
+        if (_targetGardenChest)
+        {
+            if (_titleLabel != null) _titleLabel.Visible = false;
+            if (_helpLabel != null) _helpLabel.Visible = false;
+            if (_statusLabel != null) _statusLabel.Visible = false;
+            if (_leaveLabel != null) _leaveLabel.Visible = false;
+        }
         QueueRedraw();
 
         Dialogue.BeginInputBlock();
@@ -948,7 +1000,20 @@ public partial class LockpickPuzzle : Node2D
                 return;
 
             var gs = GameState.Instance;
-            if (_targetTrunk)
+            if (_targetGardenChest)
+            {
+                if (gs != null)
+                {
+                    gs.SetFlag(HedgeMaze.LockboxOpenedFlag, save: false);
+                    gs.SetFlag(HedgeMaze.LockboxBatteriesFlag, save: false);
+                    ClearTargetFlags(gs);
+                    gs.SaveGame("the hedge lockbox opened and its batteries were taken");
+                }
+                await Say("The leaf in the brass gives with a soft click. Inside: three flashlight cells, still wrapped together. Dad kept them dry. The beam reaches further now.");
+                if (StillHere())
+                    SceneManager.ChangeScene(HedgeMazeScenePath);
+            }
+            else if (_targetTrunk)
             {
                 if (gs != null)
                 {
@@ -991,9 +1056,11 @@ public partial class LockpickPuzzle : Node2D
         Dialogue.BeginInputBlock();
         try
         {
-            await Say(_targetTrunk
-                ? "Tools away. The trunk can keep its counsel a while longer."
-                : "Tools away. A latch isn't a memory. It will still be a latch when I come back.");
+            await Say(_targetGardenChest
+                ? "Tools away. The chest can wait; there is no hurry in this garden."
+                : _targetTrunk
+                    ? "Tools away. The trunk can keep its counsel a while longer."
+                    : "Tools away. A latch isn't a memory. It will still be a latch when I come back.");
             if (StillHere())
                 ReturnFromLock();
         }
@@ -1005,6 +1072,14 @@ public partial class LockpickPuzzle : Node2D
 
     private void ReturnFromLock()
     {
+        if (_targetGardenChest)
+        {
+            if (GameState.Instance is GameState gs)
+                ClearTargetFlags(gs);
+            SceneManager.ChangeScene(HedgeMazeScenePath);
+            return;
+        }
+
         SceneManager.ChangeScene(_targetTrunk ? BasementScenePath : Room5ScenePath);
     }
 
@@ -1014,6 +1089,7 @@ public partial class LockpickPuzzle : Node2D
         gs.ClearFlag("lockpick_target_trunk", save: false);
         gs.ClearFlag("lockpick_origin_room5", save: false);
         gs.ClearFlag("lockpick_origin_basement", save: false);
+        gs.ClearFlag(HedgeMaze.LockboxTargetFlag, save: false);
     }
 
     /// <summary>Which of the basement's investigated things Mara had
@@ -1037,7 +1113,11 @@ public partial class LockpickPuzzle : Node2D
         if (_statusLabel == null)
             return;
         string toolNote = _hasFineWrench ? " · fine wrench" : string.Empty;
-        int picks = GameState.Instance?.PicksLeft ?? GameState.LockpickTotal;
+        string picks = _targetGardenChest
+            ? "picks safe here"
+            : DevInfinitePicks
+                ? "∞ lockpicks (dev)"
+                : $"{PicksLeftNow} of {GameState.LockpickTotal} picks sound";
         _statusLabel.Text = _state switch
         {
             PickState.Success => "It turns.",
@@ -1046,7 +1126,7 @@ public partial class LockpickPuzzle : Node2D
             _ when _binding && _pickDamage > 0.78f => "That thin sound. That is the sound steel makes last. LET GO.",
             _ when _binding && _pickDamage > 0.5f => "The steel has started to sound tired. Let go. Breathe. Bent doesn't un-bend.",
             _ when _binding => "It binds there. Let go, breathe, try a hair to one side.",
-            _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set{toolNote} · {picks} of {GameState.LockpickTotal} picks sound",
+            _ => $"Layer {Mathf.Min(_layerIndex + 1, LayerCount)} of {LayerCount} · {_layerIndex} set{toolNote} · {picks}",
         };
     }
 
@@ -1150,6 +1230,12 @@ public partial class LockpickPuzzle : Node2D
         {
             DrawEchoCracks();
             DrawSnapFlash();
+        }
+
+        if (_targetGardenChest && _state == PickState.Success && _chestRewardTexture != null)
+        {
+            DrawRect(screen, new Color(0.025f, 0.03f, 0.02f, 0.82f), true);
+            DrawTextureRect(_chestRewardTexture, screen, false);
         }
     }
 
@@ -1300,14 +1386,34 @@ public partial class LockpickPuzzle : Node2D
     {
         float plugRad = Mathf.DegToRad(_plugDegrees);
         Vector2 plugUp = DirectionFromDegrees(_plugDegrees);
-        // The painted lock is the housing; this darker brass circle is the
-        // part that can actually turn inside it.
-        DrawCircle(LockCenter, 72f, new Color(0.09f, 0.07f, 0.05f, 0.98f));
-        DrawArc(LockCenter, 72f, 0f, Mathf.Tau, 48,
-            new Color(0.72f, 0.55f, 0.28f, 0.95f), 3f, true);
-        DrawCircle(LockCenter, 58f, new Color(0.22f, 0.16f, 0.1f, 0.98f));
-        DrawArc(LockCenter, 58f, 0f, Mathf.Tau, 44,
-            new Color(0.45f, 0.34f, 0.2f, 0.9f), 2f, true);
+        // The painted lock is the housing; this darker plug turns inside it.
+        // The chest's lock is oxidized leaf-brass rather than the house's plain brass.
+        Color housing = _targetGardenChest
+            ? new Color(0.075f, 0.09f, 0.055f, 0.98f)
+            : new Color(0.09f, 0.07f, 0.05f, 0.98f);
+        Color brightBrass = _targetGardenChest
+            ? new Color(0.63f, 0.62f, 0.34f, 0.97f)
+            : new Color(0.72f, 0.55f, 0.28f, 0.95f);
+        Color shadedBrass = _targetGardenChest
+            ? new Color(0.36f, 0.4f, 0.22f, 0.93f)
+            : new Color(0.45f, 0.34f, 0.2f, 0.9f);
+        DrawCircle(LockCenter, 72f, housing);
+        DrawArc(LockCenter, 72f, 0f, Mathf.Tau, 48, brightBrass, 3f, true);
+        DrawCircle(LockCenter, 58f, _targetGardenChest
+            ? new Color(0.17f, 0.19f, 0.11f, 0.98f)
+            : new Color(0.22f, 0.16f, 0.1f, 0.98f));
+        DrawArc(LockCenter, 58f, 0f, Mathf.Tau, 44, shadedBrass, 2f, true);
+        if (_targetGardenChest)
+        {
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector2 leafStart = LockCenter + new Vector2(side * 67f, -18f);
+                Vector2 leafTip = LockCenter + new Vector2(side * 87f, -34f);
+                DrawLine(leafStart, leafTip, brightBrass, 2.2f, true);
+                DrawLine(leafStart, LockCenter + new Vector2(side * 83f, -13f),
+                    shadedBrass, 1.8f, true);
+            }
+        }
 
         // Keyway, carried around by the plug.
         DrawLine(LockCenter + plugUp * 8f, LockCenter + plugUp * 48f,
@@ -1446,7 +1552,9 @@ public partial class LockpickPuzzle : Node2D
     /// pieces with the gap where the steel gave up.</summary>
     private void DrawPickRoll()
     {
-        int broken = GameState.Instance?.BrokenPickCount ?? 0;
+        int broken = _targetGardenChest || DevInfinitePicks
+            ? 0
+            : (GameState.Instance?.BrokenPickCount ?? 0);
         // While time runs backwards the roll is seen mending,
         // pick by pick, newest wound first.
         if (_state == PickState.Rewinding)

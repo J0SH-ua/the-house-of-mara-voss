@@ -75,7 +75,13 @@ public partial class HedgeMaze : Node2D
     private const string WheelbarrowTexturePath = "res://assets/images/hedge/props/wheelbarrow.png";
     private const string WateringCanTexturePath = "res://assets/images/hedge/props/watering_can.png";
     private const string SpareBatteryTexturePath = "res://assets/images/hedge/props/spare_battery.png";
+    private const string LockboxTexturePath = "res://assets/images/hedge/props/lockbox_chest.png";
+    private const string LockboxEmptyTexturePath = "res://assets/images/hedge/props/lockbox_chest_empty.png";
+    private const string LockpickScenePath = "res://scenes/world/lockpick_puzzle.tscn";
     private const string SpareBatteryFlag = "hedge_spare_battery";
+    public const string LockboxOpenedFlag = "hedge_maze_lockbox_opened";
+    public const string LockboxBatteriesFlag = "hedge_maze_lockbox_batteries";
+    public const string LockboxTargetFlag = "lockpick_target_hedge_chest";
     private const string LampOnFlag = "hedge_lamp_on";
     private const string Room7ScenePath = "res://scenes/world/room_7.tscn";
 
@@ -219,16 +225,16 @@ public partial class HedgeMaze : Node2D
     private static readonly Vector2 TorchSpriteGrip = new(0.5651f, 0.4884f);
     private static readonly Vector2 TorchSpriteLens = new(0.1632f, 0.1681f);
 
-    // # dense hedge, T distinctive tree-like topiaries, g a small
-    // grassy clearing, w a patch of wildflowers, S the south waking
-    // place, B the bridge opening, X the far opening. Open ground is
+    // # dense hedge, T distinctive tree-like topiaries, C the garden
+    // lockbox, g a small grassy clearing, w a patch of wildflowers,
+    // S the south waking place, B the bridge opening, X the far opening. Open ground is
     // deliberately uneven: branches reconnect around a few short
     // dead ends rather than repeating a clipped, regular grid.
     private static readonly string[] MapRows =
     [
         "####X##########",
         "####....#######",
-        "###.g.....w..##",
+        "###Cg.....w..##",
         "##......#.....#",
         "#...##.....#..#",
         "#....#..#T...##",
@@ -250,10 +256,18 @@ public partial class HedgeMaze : Node2D
     }
 
     private static bool _pendingFromNorth;
+    private static Vector2? _pendingReturnPosition;
+    private static float _pendingReturnYaw;
 
     /// <summary>SceneManager arms the physical end Mara is entering
     /// from immediately before a scene change. Consumed in _Ready.</summary>
     public static void ArmEntry(bool fromNorth) => _pendingFromNorth = fromNorth;
+
+    public static void ArmReturnAtLockbox(Vector2 position, float yaw)
+    {
+        _pendingReturnPosition = position;
+        _pendingReturnYaw = yaw;
+    }
 
     private FontFile _font;
     private Texture2D _torchHandsTexture;
@@ -325,7 +339,7 @@ public partial class HedgeMaze : Node2D
     private bool _flashlightOn;
 
     /// <summary>Something in the maze she can walk up to and use.</summary>
-    private enum PropKind { Lamp, Wheelbarrow, WateringCan, Battery }
+    private enum PropKind { Lamp, Wheelbarrow, WateringCan, Battery, Lockbox }
 
     private sealed class MazeProp
     {
@@ -408,6 +422,13 @@ public partial class HedgeMaze : Node2D
     private void PlaceProps()
     {
         _props.Clear();
+        bool chestOpened = GameState.Instance?.HasFlag(LockboxOpenedFlag) ?? false;
+        AddProp(PropKind.Lockbox, new Vector2(3.37f, 2.27f), "The garden lockbox",
+            chestOpened
+                ? "The leaf-engraved chest stands open, its three spare flashlight cells gone from the velvet-dark lining."
+                : "A small walnut chest half-swallowed by the grass. Its brass plate curls like leaves around a narrow keyway; the hasp is still locked.",
+            chestOpened ? LockboxEmptyTexturePath : LockboxTexturePath,
+            chestOpened ? 0.88f : 0.78f);
         AddProp(PropKind.Lamp, new Vector2(4.5f, 2.5f), "Garden lamp",
             "A lamp on a post, wired to nothing I can see. The glass is cold. Somebody meant to light this garden once.",
             LampPostTexturePath, 1.18f);
@@ -471,6 +492,12 @@ public partial class HedgeMaze : Node2D
         {
             _playerPosition = new Vector2(_startCell.X + 0.5f, _startCell.Y + 0.5f);
             _yaw = Mathf.Pi; // west, along the corridor she wakes beside
+        }
+        if (_pendingReturnPosition.HasValue)
+        {
+            _playerPosition = _pendingReturnPosition.Value;
+            _yaw = _pendingReturnYaw;
+            _pendingReturnPosition = null;
         }
         _velocity = Vector2.Zero;
         _lookPitchRadians = 0f;
@@ -1539,7 +1566,7 @@ public partial class HedgeMaze : Node2D
         var gs = GameState.Instance;
         float radius = gs?.HasFlag("basement_battery_taken") == true ? StrongBeamRadius : BeamRadius;
         // a spare battery makes the circle reach much further
-        if (gs != null && gs.HasFlag(SpareBatteryFlag))
+        if (gs != null && (gs.HasFlag(SpareBatteryFlag) || gs.HasFlag(LockboxBatteriesFlag)))
             radius = StrongBeamRadius;
         // and a developer can make the torch as big as they like
         if (gs != null && gs.DevToolsEnabled)
@@ -2594,6 +2621,7 @@ public partial class HedgeMaze : Node2D
                     case 'P': color = new Color(0.44f, 0.44f, 0.48f, 0.95f); break;
                     case 'F': color = new Color(0.2f, 0.42f, 0.52f, 0.95f); break;
                     case 'T': color = new Color(0.18f, 0.44f, 0.2f, 0.95f); break;
+                    case 'C': color = new Color(0.64f, 0.48f, 0.24f, 0.98f); break;
                     case 'S': color = new Color(0.85f, 0.8f, 0.45f, 0.95f); break;
                     case 'B': color = new Color(0.88f, 0.58f, 0.38f, 0.95f); break;
                     case 'X': color = new Color(0.88f, 0.4f, 0.4f, 0.95f); break;
@@ -2857,6 +2885,30 @@ public partial class HedgeMaze : Node2D
         // The house's own ripple, where her hand went out.
         if (PropRect(prop, out Rect2 reach, out _))
             Hotspots.SpawnRipple(reach.Position + reach.Size * 0.5f, new Color(1f, 0.9f, 0.62f));
+
+        if (prop.Kind == PropKind.Lockbox)
+        {
+            var gs = GameState.Instance;
+            if (gs == null)
+                return;
+            if (gs.HasFlag(LockboxOpenedFlag))
+            {
+                AudioManager.Play(Sfx.Examine, -12f);
+                await Say(prop.Examine);
+                return;
+            }
+            if (!gs.HasFlag("item_lockpick_set"))
+            {
+                await Say("A good little lock. I can feel the pins waiting. But I don't have Dad's picks with me.");
+                return;
+            }
+
+            AudioManager.Play(Sfx.DrawerOpen, -8f, 0.86f);
+            ArmReturnAtLockbox(_playerPosition, _yaw);
+            gs.SetFlag(LockboxTargetFlag, save: false);
+            SceneManager.ChangeScene(LockpickScenePath);
+            return;
+        }
 
         if (prop.Kind == PropKind.Lamp)
         {

@@ -485,6 +485,9 @@ public partial class GameUI : CanvasLayer
         new("hedge_spare_battery", "Spare battery",
             "res://assets/images/core/items/spare_battery.png",
             "A cell, wrapped in a scrap of cloth. Dad never went anywhere without a second of himself in his pocket."),
+        new(HedgeMaze.LockboxBatteriesFlag, "Three flashlight batteries",
+            "res://assets/images/core/items/spare_battery.png",
+            "Three fresh cells from the old lockbox, kept together for Father's flashlight."),
         new("basement_negatives_taken", "Photograph negatives",
             "res://assets/images/core/items/negatives.png",
             "Faces reversed. Grass burning white. Some things were kept unprinted because looking straight was too much that year."),
@@ -2067,7 +2070,14 @@ public partial class GameUI : CanvasLayer
         if (current != _navSceneCachePath)
         {
             _navSceneCachePath = current;
-            if (SceneManager.TryGetBackTarget(current, out string target, out string label))
+            bool chestLock = current == "res://scenes/world/lockpick_puzzle.tscn" &&
+                (GameState.Instance?.HasFlag(HedgeMaze.LockboxTargetFlag) ?? false);
+            if (chestLock)
+            {
+                _backTargetPath = "res://scenes/world/hedge_maze.tscn";
+                _backButton.Text = "Back to maze";
+            }
+            else if (SceneManager.TryGetBackTarget(current, out string target, out string label))
             {
                 _backTargetPath = target;
                 _backButton.Text = label;
@@ -2097,6 +2107,12 @@ public partial class GameUI : CanvasLayer
             ClaritySystem.Disarm(silent: true);
         Hotspots.HideAll();
         AudioManager.Play(Sfx.UiBack, -6f);
+        var gs = GameState.Instance;
+        if (gs != null && SceneManager.CurrentScenePath == "res://scenes/world/lockpick_puzzle.tscn" &&
+            gs.HasFlag(HedgeMaze.LockboxTargetFlag))
+        {
+            gs.ClearFlag(HedgeMaze.LockboxTargetFlag, save: false);
+        }
         SceneManager.ChangeScene(_backTargetPath);
     }
 
@@ -3859,6 +3875,17 @@ public partial class GameUI : CanvasLayer
                 "Her father's flashlight, heavy as a small hammer, from where his hand could find it blind in any blackout. The batteries, in this house, were never once dead.\n\nOnce it is in the Bag, move the mouse to aim its beam in the dark — in rooms, under the house, and over anything Mara is holding in her hand. Press L to switch the flashlight on or off in the dark. Before that click puts it away, her other hand stays dark. In the vent, hold W to crawl; release W and Mara stops."));
         }
 
+        if (gs.HasFlag(HedgeMaze.LockboxBatteriesFlag))
+        {
+            items.Add(new PracticalItemView(
+                HedgeMaze.LockboxBatteriesFlag,
+                "Three flashlight batteries",
+                "res://assets/images/core/items/spare_battery.png",
+                "3 IN BAG",
+                "Taken from the leaf-engraved chest inside the hedge maze",
+                "Three fresh cells, wrapped together in old green felt. They fit Father's flashlight; the light has a stronger reach now, and these were meant to keep it ready."));
+        }
+
         if (gs.HasFlag("item_iron_cellar_key"))
         {
             items.Add(new PracticalItemView(
@@ -5152,6 +5179,8 @@ public partial class GameUI : CanvasLayer
         toolsLeft.AddChild(copyCoordinates);
         AddDevToggle(toolsLeft, "Free roam (walk through hedges)", () => GameState.Instance?.DevNoClip ?? false,
             v => GameState.Instance?.SetDevNoClip(v));
+        AddDevToggle(toolsLeft, "Infinite lockpicks", () => GameState.Instance?.DevInfiniteLockpicks ?? false,
+            v => GameState.Instance?.SetDevInfiniteLockpicks(v));
         AddDevToggle(toolsLeft, "Camera follows the mouse", () => GameState.Instance?.DevMouseCamera ?? false,
             v => GameState.Instance?.SetDevMouseCamera(v));
         AddDevToggle(toolsRight, "Free camera", () => GameState.Instance?.DevFreeCamera ?? false,
