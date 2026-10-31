@@ -440,7 +440,7 @@ public partial class HedgeMaze : Node2D
                 ? "The leaf-engraved chest stands open, its three spare flashlight cells gone from the velvet-dark lining."
                 : "A small walnut chest half-swallowed by the grass. Its brass plate curls like leaves around a narrow keyway; the hasp is still locked.",
             chestOpened ? LockboxEmptyTexturePath : LockboxTexturePath,
-            chestOpened ? 0.64f : 0.54f);
+            chestOpened ? 0.32f : 0.27f);
         AddProp(PropKind.Lamp, new Vector2(4.5f, 2.5f), "Garden lamp",
             "A lamp on a post, wired to nothing I can see. The glass is cold. Somebody meant to light this garden once.",
             LampPostTexturePath, 1.18f);

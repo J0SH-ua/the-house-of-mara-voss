@@ -713,6 +713,18 @@ public partial class LockpickPuzzle : Node2D
     {
         if (_state != PickState.Picking)
             return;
+        if (DevInfinitePicks)
+        {
+            // Dev infinite mode keeps the pick intact even if this
+            // is reached from a future or alternate breaking path.
+            _pickDamage = 0f;
+            _stress = 0f;
+            _binding = false;
+            _plugDegrees = CurrentLayerStart;
+            UpdateStatus();
+            QueueRedraw();
+            return;
+        }
         _state = PickState.Broken;
         _binding = false;
         _stress = 0f;
