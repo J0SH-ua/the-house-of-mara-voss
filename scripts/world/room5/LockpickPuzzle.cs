@@ -79,6 +79,15 @@ public partial class LockpickPuzzle : Node2D
         "Five. They feel like they're breaking easier. They aren't. It's not the steel getting weaker. It's the hands.",
         "Six— God. One left. One. If this one goes I can't open anything ever again in this house— stop. Stop. Slow down. His voice. Slow.",
     ];
+    private static readonly string[] GardenSnapLines =
+    [
+        "The pick gives with a little tick. I pushed too hard; ease off and try the pin again.",
+        "Another pick gone. The brass is stubborn, not worth forcing. Breathe, then listen.",
+        "Third pick. I can still take my time with this lock.",
+        "That one snapped too. Ease the tension before I turn again.",
+        "Five gone. The pin is still there; forcing it won't make it kinder.",
+        "Six picks gone. One left in the roll. Slow hands, Mara.",
+    ];
 
     private static readonly Rect2 RewindRect = new(216, 468, 350, 54);
     private static readonly Rect2 LetGoRect = new(586, 468, 350, 54);
@@ -98,11 +107,9 @@ public partial class LockpickPuzzle : Node2D
             return gs != null && gs.DevToolsEnabled && gs.DevInfiniteLockpicks;
         }
     }
-    private int PicksLeftNow => _targetGardenChest
-        ? GameState.LockpickTotal
-        : DevInfinitePicks
-            ? int.MaxValue
-            : (GameState.Instance?.PicksLeft ?? GameState.LockpickTotal);
+    private int PicksLeftNow => DevInfinitePicks
+        ? int.MaxValue
+        : (GameState.Instance?.PicksLeft ?? GameState.LockpickTotal);
     private bool PanicEffectsActive => !_targetGardenChest && !DevInfinitePicks &&
         PicksLeftNow <= PanicEffectsMaxPicksLeft;
     private int PanicEffectsDepth =>
@@ -284,7 +291,7 @@ public partial class LockpickPuzzle : Node2D
             new Color(0.96f, 0.9f, 0.76f, 0.97f));
         _helpLabel = MakeLabel(
             _targetGardenChest
-                ? "Mouse — seat the pick in the leaf keyway      Hold A/D — turn. Find the quiet point in each pin.\nEase off when it binds; the lock will reset, but the picks won't break here."
+                ? "Mouse — seat the pick in the leaf keyway      Hold A/D — turn. Find the quiet point in each pin.\nEase off when it binds; force it too long and the pick can snap."
                 : "Mouse — seat the pick      Hold A — turn the lock. How far it turns before it shakes tells the truth.\nNo gauge for the steel — only the shake and the sound. Force a bind and the damage stays in the pick until it snaps. She has seven.",
 
             new Vector2(256, 58), new Vector2(640, 62), 19,
@@ -374,30 +381,31 @@ public partial class LockpickPuzzle : Node2D
             if (!StillHere())
                 return;
             if (_targetGardenChest)
-                await Say("No rush. Let the pick find each quiet point; when the brass resists, ease off and listen again.");
+                await Say("No rush. Let the pick find each quiet point; when the brass resists, ease off and listen again. Force a bind, though, and the steel can still snap.");
             else
                 await Say("Seven picks in the roll. He oiled them like they were alive, and they'll take a lot — but force one while it's binding and even his steel remembers it can break. So: don't push a sound I don't like. His words. I'm going to try and deserve them.");
             if (!StillHere())
                 return;
 
-            if (!_targetGardenChest)
+            if (gs != null && gs.PicksLeft <= 0)
             {
-                if (gs != null && gs.PicksLeft <= 0)
-                {
-                    // A gathered memory gathers the small breakages too;
-                    // if she has somehow arrived with an empty roll, the
-                    // house has already put it back together for her.
-                    gs.RestoreAllPicks("the roll was whole again when she opened it");
-                    await Say("Seven. All seven lying whole in their pockets, like the breaking got gathered back along with everything else. …All right. I won't waste that twice.");
-                    if (!StillHere())
-                        return;
-                }
-                else if (gs != null && gs.BrokenPickCount > 0)
-                {
-                    await Say($"{gs.PicksLeft} sound picks left in the roll. The broken ones are still in their pockets. I keep them there so my hands remember what forcing costs.");
-                    if (!StillHere())
-                        return;
-                }
+                // At the garden lock, running the roll empty ends this
+                // attempt without the house's panic/rewind sequence.
+                // The roll is whole again when Mara comes back to try.
+                gs.RestoreAllPicks("the empty roll was restored before another lock attempt");
+                await Say(_targetGardenChest
+                    ? "All seven picks are back in the roll. I'll take another careful try."
+                    : "Seven. All seven lying whole in their pockets, like the breaking got gathered back along with everything else. …All right. I won't waste that twice.");
+                if (!StillHere())
+                    return;
+            }
+            else if (gs != null && gs.BrokenPickCount > 0)
+            {
+                await Say(_targetGardenChest
+                    ? $"{gs.PicksLeft} sound picks left in the roll. The broken ones stay broken; I need to ease off when the brass binds."
+                    : $"{gs.PicksLeft} sound picks left in the roll. The broken ones are still in their pockets. I keep them there so my hands remember what forcing costs.");
+                if (!StillHere())
+                    return;
             }
 
             _pickDamage = 0f;
@@ -589,7 +597,7 @@ public partial class LockpickPuzzle : Node2D
                 // and the thinning sound are the only warnings.
                 _stress = Mathf.MoveToward(_stress, 1f, 2.2f * CurrentStressScale * dt);
                 float extraError = Mathf.Max(0f, error - tolerance);
-                if (!_targetGardenChest && !DevInfinitePicks)
+                if (!DevInfinitePicks)
                     _pickDamage += dt * CurrentStressScale * (0.78f + 0.03f * extraError);
                 ulong nowBind = Time.GetTicksMsec();
                 if (nowBind - _lastBindSoundMsec > 120)
@@ -608,7 +616,7 @@ public partial class LockpickPuzzle : Node2D
 
             // Bent past what bent steel forgives, his pick
             // remembers what steel does.
-            if (_binding && _pickDamage >= 1f && !_targetGardenChest && !DevInfinitePicks)
+            if (_binding && _pickDamage >= 1f && !DevInfinitePicks)
             {
                 SnapPick();
                 return;
@@ -762,20 +770,31 @@ public partial class LockpickPuzzle : Node2D
                 return;
 
             var gs = GameState.Instance;
-            if ((gs?.PicksLeft ?? 1) <= 0)
+            if (gs != null && gs.PicksLeft <= 0)
             {
-                BeginPanic();
+                if (_targetGardenChest)
+                {
+                    await Say("The last pick snaps. That's all seven; I won't force the brass with an empty roll. I'll step out and try again with the roll whole.");
+                    if (StillHere())
+                        ReturnFromLock();
+                }
+                else
+                {
+                    BeginPanic();
+                }
                 return;
             }
 
-            // Mara still has a line for every snap. The words
-            // only come out through the dialogue bubble's panic
-            // shake once three picks or fewer remain, and each
-            // emptier pocket from there makes that shake worse.
+            // Mara still has a line for every snap. The house locks
+            // add their panic shake as the roll thins; the garden lock
+            // keeps the words calm and lets the steel carry the warning.
             bool panicDialogue = PanicEffectsActive;
             if (panicDialogue)
                 Dialogue.BeginPanic(0.9f + 0.3f * PanicEffectsDepth);
-            await Say(SnapLines[Mathf.Min(broken - 1, SnapLines.Length - 1)]);
+            string snapLine = _targetGardenChest
+                ? GardenSnapLines[Mathf.Min(broken - 1, GardenSnapLines.Length - 1)]
+                : SnapLines[Mathf.Min(broken - 1, SnapLines.Length - 1)];
+            await Say(snapLine);
             if (panicDialogue)
                 Dialogue.EndPanic();
             if (!StillHere())
@@ -1125,11 +1144,9 @@ public partial class LockpickPuzzle : Node2D
         if (_statusLabel == null)
             return;
         string toolNote = _hasFineWrench ? " · fine wrench" : string.Empty;
-        string picks = _targetGardenChest
-            ? "picks safe here"
-            : DevInfinitePicks
-                ? "∞ lockpicks (dev)"
-                : $"{PicksLeftNow} of {GameState.LockpickTotal} picks sound";
+        string picks = DevInfinitePicks
+            ? "∞ lockpicks (dev)"
+            : $"{PicksLeftNow} of {GameState.LockpickTotal} picks sound";
         _statusLabel.Text = _state switch
         {
             PickState.Success => "It turns.",
@@ -1564,7 +1581,7 @@ public partial class LockpickPuzzle : Node2D
     /// pieces with the gap where the steel gave up.</summary>
     private void DrawPickRoll()
     {
-        int broken = _targetGardenChest || DevInfinitePicks
+        int broken = DevInfinitePicks
             ? 0
             : (GameState.Instance?.BrokenPickCount ?? 0);
         // While time runs backwards the roll is seen mending,

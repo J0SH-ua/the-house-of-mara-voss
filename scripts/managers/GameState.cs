@@ -1714,7 +1714,7 @@ public partial class GameState : Node
         {
             return NextHintLevel("Lockpick") switch
             {
-                1 => ("The pick is locked to the mouse: move the mouse around the top of the lock to seat it, then hold A (or D) to turn the cylinder. No clicking, no dragging. His picks do not break — not in her memory of them — so take your time.", null),
+                1 => ("The pick is locked to the mouse: move the mouse around the top of the lock to seat it, then hold A (or D) to turn the cylinder. No clicking, no dragging. The picks are strong, not unbreakable: ease off when one binds or it can snap.", null),
                 2 => ("Read the turn, layer by layer. If holding A barely moves the cylinder before the pick starts shaking, you are far away — reseat the pick somewhere new. If it turns most of the way first, you are close: nudge the mouse a hair and try again.", null),
                 _ => ("When the pick trembles, let go of A at once — forcing only complains, it never helps. Let the layer spring back, move the pick the width of a breath toward wherever it turned farthest, and turn again. A layer turned all the way home clicks set and stays set. Deeper layers sit narrower; the fine tension wrench from Room 5's desk reads them about a degree sooner.", null),
             };
