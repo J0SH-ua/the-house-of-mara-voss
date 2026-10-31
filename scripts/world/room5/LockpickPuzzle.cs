@@ -40,7 +40,6 @@ public partial class LockpickPuzzle : Node2D
     private const string VentCrawlScenePath = "res://scenes/world/vent_crawl.tscn";
     private const string BasementScenePath = "res://scenes/world/basement.tscn";
     private const string HedgeMazeChestBackgroundPath = "res://assets/images/hedge/lockpick_chest_bg.png";
-    private const string HedgeMazeChestRevealPath = "res://assets/images/hedge/props/lockbox_chest_open.png";
     private const string HedgeMazeScenePath = "res://scenes/world/hedge_maze.tscn";
     private const float MaxPickDegrees = 78f;
     private const float PlugOpenDegrees = 90f;
@@ -88,6 +87,15 @@ public partial class LockpickPuzzle : Node2D
         "Five gone. The pin is still there; forcing it won't make it kinder.",
         "Six picks gone. One left in the roll. Slow hands, Mara.",
     ];
+    private static readonly string[] GardenSnapLines =
+    [
+        "The pick gives with a little tick. I pushed too hard; ease off and try the pin again.",
+        "Another pick gone. The brass is stubborn, not worth forcing. Breathe, then listen.",
+        "Third pick. I can still take my time with this lock.",
+        "That one snapped too. Ease the tension before I turn again.",
+        "Five gone. The pin is still there; forcing it won't make it kinder.",
+        "Six picks gone. One left in the roll. Slow hands, Mara.",
+    ];
 
     private static readonly Rect2 RewindRect = new(216, 468, 350, 54);
     private static readonly Rect2 LetGoRect = new(586, 468, 350, 54);
@@ -125,7 +133,6 @@ public partial class LockpickPuzzle : Node2D
     ];
 
     private Texture2D _background;
-    private Texture2D _chestRewardTexture;
     private FontFile _font;
     private Label _titleLabel;
     private Label _helpLabel;
@@ -192,8 +199,6 @@ public partial class LockpickPuzzle : Node2D
             (gs.HasFlag("lockpick_target_trunk") ||
              (!gs.HasFlag("lockpick_target_vent") && gs.HasFlag("room5_vent_open")));
         _background = GD.Load<Texture2D>(_targetGardenChest ? HedgeMazeChestBackgroundPath : BackgroundPath);
-        if (_targetGardenChest)
-            _chestRewardTexture = GD.Load<Texture2D>(HedgeMazeChestRevealPath);
         _font = GD.Load<FontFile>(FontPath);
         _hasFineWrench = gs?.HasFlag("item_fine_tension_wrench") ?? false;
         _rng.Randomize();
@@ -214,11 +219,11 @@ public partial class LockpickPuzzle : Node2D
     {
         if (_targetGardenChest)
         {
-            // The leaf-plate chest has four narrower, differently spaced
-            // pin gates. It keeps the tactile pick logic, not the house-lock panic.
-            _layerEnds = [24f, 45f, 68f, PlugOpenDegrees];
-            _layerTolerances = [11f, 9f, 7.5f, 6f];
-            _layerStressScales = [0.8f, 0.9f, 1f, 1.08f];
+            // The garden chest has one simple pin layer and keeps the
+            // tactile pick logic, without the house-lock panic sequence.
+            _layerEnds = [PlugOpenDegrees];
+            _layerTolerances = [8f];
+            _layerStressScales = [1f];
         }
         else if (_targetTrunk)
         {
@@ -368,7 +373,7 @@ public partial class LockpickPuzzle : Node2D
 
             if (_targetGardenChest)
             {
-                await Say("A leaf worked into the brass, a narrow keyway at its heart. Four little pins, maybe. This one belongs to the garden, not the house.");
+                await Say("A leaf worked into the brass, a narrow keyway at its heart. One little pin, perhaps. This one belongs to the garden, not the house.");
             }
             else if (_targetTrunk)
             {
@@ -1261,11 +1266,173 @@ public partial class LockpickPuzzle : Node2D
             DrawSnapFlash();
         }
 
-        if (_targetGardenChest && _state == PickState.Success && _chestRewardTexture != null)
+        if (_targetGardenChest && _state == PickState.Success)
+            DrawGardenChestReveal(screen);
+    }
+
+    /// <summary>A close, slightly top-down view into the chest after
+    /// the leaf-brass lock gives: raised lid behind the mouth, deep
+    /// velvet-lined cavity, and the three spare cells resting inside.</summary>
+    private void DrawGardenChestReveal(Rect2 screen)
+    {
+        DrawRect(screen, new Color(0.035f, 0.043f, 0.032f, 0.98f), true);
+        DrawRect(new Rect2(34, 28, 1084, 592), new Color(0.07f, 0.082f, 0.057f, 0.72f), true);
+        DrawRect(new Rect2(34, 28, 1084, 592), new Color(0.48f, 0.46f, 0.31f, 0.42f), false, 2f);
+
+        // The opened lid rises behind the box; its inner planks and
+        // framing remain visible above the opening, as with the house cabinets.
+        DrawRevealPolygon(
+            [new(276, 52), new(876, 52), new(930, 260), new(222, 260)],
+            new Color(0.19f, 0.13f, 0.08f), new Color(0.57f, 0.40f, 0.23f), 5f);
+        DrawRevealPolygon(
+            [new(305, 75), new(847, 75), new(884, 228), new(270, 228)],
+            new Color(0.115f, 0.078f, 0.052f), new Color(0.33f, 0.24f, 0.14f), 3f);
+        DrawLine(new Vector2(294, 130), new Vector2(865, 130),
+            new Color(0.29f, 0.19f, 0.12f), 12f, true);
+        DrawLine(new Vector2(282, 184), new Vector2(877, 184),
+            new Color(0.24f, 0.16f, 0.10f), 10f, true);
+        DrawLine(new Vector2(294, 132), new Vector2(865, 132),
+            new Color(0.42f, 0.29f, 0.17f, 0.8f), 2f, true);
+        DrawLine(new Vector2(282, 186), new Vector2(877, 186),
+            new Color(0.39f, 0.26f, 0.15f, 0.72f), 2f, true);
+        DrawRevealPolygon(
+            [new(494, 86), new(658, 86), new(679, 122), new(474, 122)],
+            new Color(0.40f, 0.34f, 0.18f), new Color(0.70f, 0.58f, 0.31f), 3f);
+        DrawRevealLeaf(new Vector2(545, 103), new Vector2(520, 90), 15f);
+        DrawRevealLeaf(new Vector2(575, 103), new Vector2(598, 90), 15f);
+        DrawRevealLeaf(new Vector2(610, 104), new Vector2(628, 117), 13f);
+
+        // Moss and ivy creep over the lid edges, but leave its old grain
+        // and the brasswork legible.
+        DrawLine(new Vector2(310, 91), new Vector2(382, 110), new Color(0.20f, 0.28f, 0.14f), 7f, true);
+        DrawLine(new Vector2(382, 110), new Vector2(443, 101), new Color(0.20f, 0.28f, 0.14f), 7f, true);
+        DrawRevealLeaf(new Vector2(336, 98), new Vector2(321, 78), 18f);
+        DrawRevealLeaf(new Vector2(364, 106), new Vector2(372, 84), 17f);
+        DrawRevealLeaf(new Vector2(397, 108), new Vector2(411, 128), 18f);
+        DrawRevealLeaf(new Vector2(424, 104), new Vector2(440, 85), 16f);
+        DrawLine(new Vector2(782, 97), new Vector2(830, 120), new Color(0.20f, 0.28f, 0.14f), 7f, true);
+        DrawLine(new Vector2(830, 120), new Vector2(847, 164), new Color(0.20f, 0.28f, 0.14f), 7f, true);
+        DrawRevealLeaf(new Vector2(799, 104), new Vector2(790, 82), 17f);
+        DrawRevealLeaf(new Vector2(822, 117), new Vector2(842, 103), 16f);
+        DrawRevealLeaf(new Vector2(836, 139), new Vector2(817, 151), 15f);
+        DrawRevealLeaf(new Vector2(846, 158), new Vector2(862, 171), 14f);
+
+        // Main chest body, with the cavity drawn before the near rim so
+        // the front lip reads as wood in front of the lining.
+        DrawRevealPolygon(
+            [new(218, 244), new(934, 244), new(994, 548), new(158, 548)],
+            new Color(0.20f, 0.135f, 0.084f), new Color(0.56f, 0.39f, 0.22f), 6f);
+
+        // Deep, widening mouth: raised side walls, velvet floor and a
+        // front-facing inner edge make the viewer look down inside it.
+        DrawRevealPolygon(
+            [new(289, 244), new(861, 244), new(950, 402), new(202, 402)],
+            new Color(0.43f, 0.29f, 0.17f), new Color(0.68f, 0.49f, 0.28f), 5f);
+        DrawRevealPolygon(
+            [new(331, 263), new(819, 263), new(884, 378), new(270, 378)],
+            new Color(0.07f, 0.044f, 0.04f), new Color(0.22f, 0.15f, 0.10f), 3f);
+        DrawRevealPolygon(
+            [new(354, 278), new(796, 278), new(851, 364), new(303, 364)],
+            new Color(0.20f, 0.075f, 0.105f), new Color(0.39f, 0.17f, 0.20f), 2f);
+        DrawLine(new Vector2(370, 294), new Vector2(781, 294),
+            new Color(0.34f, 0.15f, 0.17f, 0.85f), 3f, true);
+        DrawLine(new Vector2(323, 349), new Vector2(831, 349),
+            new Color(0.12f, 0.055f, 0.08f, 0.9f), 3f, true);
+
+        // Three spare cells lie across the velvet, with metal ends catching
+        // just a little of the warm light from the room.
+        DrawRevealBattery(new Vector2(425, 315), 0.25f);
+        DrawRevealBattery(new Vector2(574, 321), 0.25f);
+        DrawRevealBattery(new Vector2(721, 315), 0.25f);
+
+        // Near rim and front panel.
+        DrawRevealPolygon(
+            [new(202, 378), new(950, 378), new(994, 414), new(158, 414)],
+            new Color(0.35f, 0.23f, 0.14f), new Color(0.68f, 0.48f, 0.27f), 4f);
+        DrawRevealPolygon(
+            [new(158, 410), new(994, 410), new(905, 573), new(247, 573)],
+            new Color(0.27f, 0.18f, 0.11f), new Color(0.59f, 0.41f, 0.23f), 5f);
+        DrawLine(new Vector2(197, 445), new Vector2(954, 445),
+            new Color(0.15f, 0.10f, 0.063f), 7f, true);
+        DrawLine(new Vector2(232, 533), new Vector2(924, 533),
+            new Color(0.13f, 0.085f, 0.05f), 8f, true);
+
+        // Leaf-carved hasp on the near face, now unlocked.
+        DrawRevealPolygon(
+            [new(510, 418), new(642, 418), new(655, 493), new(498, 493)],
+            new Color(0.42f, 0.34f, 0.18f), new Color(0.72f, 0.59f, 0.32f), 3f);
+        DrawCircle(new Vector2(576, 448), 13f, new Color(0.04f, 0.035f, 0.025f));
+        DrawRect(new Rect2(570, 448, 12, 27), new Color(0.04f, 0.035f, 0.025f), true);
+        for (int side = -1; side <= 1; side += 2)
         {
-            DrawRect(screen, new Color(0.025f, 0.03f, 0.02f, 0.82f), true);
-            DrawTextureRect(_chestRewardTexture, screen, false);
+            Vector2 stem = new(576 + side * 30, 479);
+            DrawLine(stem, stem + new Vector2(side * 22, -25),
+                new Color(0.23f, 0.27f, 0.13f), 4f, true);
+            DrawRevealLeaf(stem + new Vector2(side * 7, -7), stem + new Vector2(side * 25, -26), 13f);
+            DrawRevealLeaf(stem + new Vector2(side * 12, -14), stem + new Vector2(side * 27, -8), 12f);
         }
+
+        // The lid hinges and small brass corner studs anchor the close-up.
+        for (int i = 0; i < 5; i++)
+        {
+            float x = 310f + i * 132f;
+            DrawRect(new Rect2(x, 249, 48, 10), new Color(0.43f, 0.34f, 0.20f), true);
+            DrawCircle(new Vector2(x + 8, 254), 4f, new Color(0.78f, 0.65f, 0.36f));
+            DrawCircle(new Vector2(x + 40, 254), 4f, new Color(0.78f, 0.65f, 0.36f));
+        }
+        DrawRect(new Rect2(0, 0, 1152, 20), new Color(0.015f, 0.018f, 0.012f, 0.48f), true);
+        DrawRect(new Rect2(0, 628, 1152, 20), new Color(0.015f, 0.018f, 0.012f, 0.48f), true);
+    }
+
+    private void DrawRevealPolygon(Vector2[] points, Color fill, Color outline, float outlineWidth = 2f)
+    {
+        DrawColoredPolygon(points, fill);
+        for (int i = 0; i < points.Length; i++)
+            DrawLine(points[i], points[(i + 1) % points.Length], outline, outlineWidth, true);
+    }
+
+    private void DrawRevealLeaf(Vector2 start, Vector2 tip, float width)
+    {
+        Vector2 axis = (tip - start).Normalized();
+        Vector2 side = new(-axis.Y, axis.X);
+        Vector2 mid = start.Lerp(tip, 0.52f);
+        Vector2[] leaf =
+        [
+            start,
+            start.Lerp(tip, 0.26f) + side * width * 0.45f,
+            mid + side * width * 0.5f,
+            tip,
+            mid - side * width * 0.5f,
+            start.Lerp(tip, 0.26f) - side * width * 0.45f,
+        ];
+        DrawRevealPolygon(leaf, new Color(0.25f, 0.34f, 0.16f),
+            new Color(0.105f, 0.15f, 0.075f), 2f);
+        DrawLine(start.Lerp(tip, 0.2f), tip,
+            new Color(0.57f, 0.61f, 0.31f, 0.92f), 2f, true);
+    }
+
+    private void DrawRevealBattery(Vector2 center, float angle)
+    {
+        Vector2 axis = new(Mathf.Cos(angle), Mathf.Sin(angle));
+        Vector2 side = new(-axis.Y, axis.X);
+        Vector2 left = center - axis * 48f;
+        Vector2 right = center + axis * 48f;
+        float half = 12f;
+        DrawRevealPolygon(
+            [left - side * half + new Vector2(2, 4), right - side * half + new Vector2(2, 4),
+             right + side * half + new Vector2(2, 4), left + side * half + new Vector2(2, 4)],
+            new Color(0.025f, 0.02f, 0.018f, 0.8f), new Color(0.025f, 0.02f, 0.018f, 0.8f), 1f);
+        DrawRevealPolygon(
+            [left - side * half, right - side * half, right + side * half, left + side * half],
+            new Color(0.22f, 0.29f, 0.21f), new Color(0.10f, 0.13f, 0.10f), 3f);
+        DrawLine(left + side * 5f, right + side * 5f,
+            new Color(0.48f, 0.55f, 0.35f, 0.8f), 3f, true);
+        DrawLine(left - side * 6f, left + side * 6f,
+            new Color(0.73f, 0.53f, 0.28f), 8f, true);
+        DrawLine(right - side * 6f, right + side * 6f,
+            new Color(0.73f, 0.53f, 0.28f), 8f, true);
+        DrawCircle(right, 6f, new Color(0.76f, 0.77f, 0.68f));
+        DrawCircle(right, 3f, new Color(0.38f, 0.4f, 0.35f));
     }
 
     /// <summary>How far Mara view of the lock is knocked off

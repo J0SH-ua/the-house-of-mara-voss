@@ -56,7 +56,7 @@ public partial class GameUI : CanvasLayer
     private HBoxContainer _clarityPips;
     private Label _shardLabel;
     private Label _flashlightBatteryLabel;
-    private ProgressBar _flashlightBatteryBar;
+    private HBoxContainer _flashlightBatteryBars;
 
     // Bag / inventory (global replacement for the old per-room inventory sprites)
     private Button _bagButton;
@@ -4410,7 +4410,7 @@ public partial class GameUI : CanvasLayer
 
     private void RefreshFlashlightBatteryHud()
     {
-        if (_flashlightBatteryLabel == null || _flashlightBatteryBar == null)
+        if (_flashlightBatteryLabel == null || _flashlightBatteryBars == null)
             return;
 
         var gs = GameState.Instance;
@@ -4418,37 +4418,48 @@ public partial class GameUI : CanvasLayer
         bool infinite = gs != null && gs.DevToolsEnabled &&
             (gs.DevInfiniteFlashlightBattery || gs.DevFreeFlashlight);
         _flashlightBatteryLabel.Visible = show;
-        _flashlightBatteryBar.Visible = show && !infinite;
+        _flashlightBatteryBars.Visible = show;
         if (!show || gs == null)
             return;
 
+        int spares = gs.FlashlightSpareCells;
+        string reserve = spares == 1 ? "1 spare cell" : $"{spares} spare cells";
         if (infinite)
         {
             _flashlightBatteryLabel.Text = "FLASHLIGHT · INFINITE BATTERY";
             _flashlightBatteryLabel.AddThemeColorOverride("font_color", new Color(0.78f, 0.9f, 0.76f));
-            return;
+        }
+        else
+        {
+            _flashlightBatteryLabel.Text = !gs.FlashlightHasCharge
+                ? $"FLASHLIGHT · EMPTY · {reserve}"
+                : gs.FlashlightBatteryLow
+                    ? $"FLASHLIGHT · LOW · {reserve}"
+                    : $"FLASHLIGHT · {reserve}";
+            _flashlightBatteryLabel.AddThemeColorOverride("font_color",
+                !gs.FlashlightHasCharge
+                    ? new Color(1f, 0.44f, 0.34f)
+                    : gs.FlashlightBatteryLow
+                        ? new Color(1f, 0.7f, 0.38f)
+                        : new Color(0.88f, 0.85f, 0.74f));
         }
 
-        int percent = Mathf.CeilToInt(gs.FlashlightBatteryFraction * 100f);
-        int spares = gs.FlashlightSpareCells;
-        string reserve = spares == 1 ? "1 spare" : $"{spares} spares";
-        _flashlightBatteryLabel.Text = !gs.FlashlightHasCharge
-            ? $"FLASHLIGHT · EMPTY · {reserve}"
-            : gs.FlashlightBatteryLow
-                ? $"FLASHLIGHT · LOW {percent}% · {reserve}"
-                : $"FLASHLIGHT · {percent}% · {reserve}";
-        _flashlightBatteryLabel.AddThemeColorOverride("font_color",
-            !gs.FlashlightHasCharge
-                ? new Color(1f, 0.44f, 0.34f)
-                : gs.FlashlightBatteryLow
-                    ? new Color(1f, 0.7f, 0.38f)
-                    : new Color(0.88f, 0.85f, 0.74f));
-        _flashlightBatteryBar.Value = gs.FlashlightBatteryFraction;
-        _flashlightBatteryBar.Modulate = !gs.FlashlightHasCharge
-            ? new Color(1f, 0.38f, 0.3f)
-            : gs.FlashlightBatteryLow
-                ? new Color(1f, 0.68f, 0.34f)
-                : Colors.White;
+        int barCount = _flashlightBatteryBars.GetChildCount();
+        int litBars = infinite
+            ? barCount
+            : Mathf.CeilToInt(gs.FlashlightBatteryFraction * barCount);
+        Color litColor = !gs.FlashlightHasCharge && !infinite
+            ? new Color(0.42f, 0.16f, 0.12f)
+            : gs.FlashlightBatteryLow && !infinite
+                ? new Color(0.92f, 0.57f, 0.25f)
+                : new Color(0.73f, 0.79f, 0.55f);
+        for (int i = 0; i < barCount; i++)
+        {
+            if (_flashlightBatteryBars.GetChild(i) is ColorRect segment)
+                segment.Color = i < litBars
+                    ? litColor
+                    : new Color(0.20f, 0.19f, 0.15f, 0.95f);
+        }
     }
 
     private void RefreshCorruptionShader()
@@ -4962,21 +4973,23 @@ public partial class GameUI : CanvasLayer
         _flashlightBatteryLabel = MakeLabel("", 16);
         _flashlightBatteryLabel.Visible = false;
         statusBox.AddChild(_flashlightBatteryLabel);
-        _flashlightBatteryBar = new ProgressBar
+        _flashlightBatteryBars = new HBoxContainer
         {
-            MinValue = 0,
-            MaxValue = 1,
-            Value = 1,
-            CustomMinimumSize = new Vector2(220, 6),
-            ShowPercentage = false,
+            CustomMinimumSize = new Vector2(190, 14),
             Visible = false,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        _flashlightBatteryBar.AddThemeStyleboxOverride("background",
-            new StyleBoxFlat { BgColor = new Color(0.16f, 0.15f, 0.13f, 0.9f) });
-        _flashlightBatteryBar.AddThemeStyleboxOverride("fill",
-            new StyleBoxFlat { BgColor = new Color(0.84f, 0.78f, 0.62f, 0.95f) });
-        statusBox.AddChild(_flashlightBatteryBar);
+        _flashlightBatteryBars.AddThemeConstantOverride("separation", 4);
+        for (int i = 0; i < 8; i++)
+        {
+            _flashlightBatteryBars.AddChild(new ColorRect
+            {
+                CustomMinimumSize = new Vector2(19, 11),
+                Color = new Color(0.73f, 0.79f, 0.55f),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+        }
+        statusBox.AddChild(_flashlightBatteryBars);
         statusPanel.AddChild(statusBox);
         _hud.AddChild(statusPanel);
 
