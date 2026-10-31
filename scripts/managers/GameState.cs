@@ -2499,7 +2499,8 @@ public partial class GameState : Node
     // camera that leaves Mara's body behind, a free flashlight,
     // walking straight through the hedges, and a plan of the place.
     private bool _devToolsEnabled = true;
-    private bool _devShowCoordinates;
+    private bool _devShowCoordinates = true;
+    private bool _devHideHud;
     private bool _devFreeCamera;
     private bool _devFreeFlashlight;
     private bool _devNoClip;
@@ -2514,6 +2515,7 @@ public partial class GameState : Node
 
     public bool DevToolsEnabled => _devToolsEnabled;
     public bool DevShowCoordinates => _devShowCoordinates;
+    public bool DevHideHud => _devHideHud;
     public bool DevFreeCamera => _devFreeCamera;
     public bool DevFreeFlashlight => _devFreeFlashlight;
     public bool DevNoClip => _devNoClip;
@@ -2536,6 +2538,7 @@ public partial class GameState : Node
     }
 
     public void SetDevShowCoordinates(bool value) => SetDevFlag(ref _devShowCoordinates, value);
+    public void SetDevHideHud(bool value) => SetDevFlag(ref _devHideHud, value);
     public void SetDevFreeCamera(bool value) => SetDevFlag(ref _devFreeCamera, value);
     public void SetDevFreeFlashlight(bool value) => SetDevFlag(ref _devFreeFlashlight, value);
     public void SetDevNoClip(bool value) => SetDevFlag(ref _devNoClip, value);

@@ -838,6 +838,12 @@ public partial class HedgeMaze : Node2D
         bool wantFreeCamera = tools && gs.DevFreeCamera;
         bool wantMap = tools && gs.DevShowMap;
         bool wantCoordinates = tools && gs.DevShowCoordinates;
+        bool hideHud = tools && gs.DevHideHud;
+
+        if (_exitLabel != null)
+            _exitLabel.Visible = !hideHud && !_playWakeIntro;
+        if (_titleLabel != null)
+            _titleLabel.Visible = !hideHud && !_playWakeIntro;
 
         if (wantFreeCamera != _freeCamera)
         {
@@ -926,7 +932,9 @@ public partial class HedgeMaze : Node2D
     {
         if (_devLabel == null)
         {
-            _devLabel = MakeLabel(string.Empty, new Vector2(26, 30), new Vector2(430, 96), 16,
+            // The default map lives in the top-left; keep its readout beside
+            // it, below the main HUD so turning coordinates on adds no overlap.
+            _devLabel = MakeLabel(string.Empty, new Vector2(194, 136), new Vector2(430, 96), 16,
                 new Color(0.72f, 0.92f, 0.72f, 0.92f), HorizontalAlignment.Left);
             _devLabel.Visible = false;
         }

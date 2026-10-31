@@ -719,6 +719,7 @@ public partial class GameUI : CanvasLayer
             gs.StoryFlagsChanged += RefreshHud;
             gs.StoryFlagsChanged += () => { if (_bagPanel?.Visible ?? false) RefreshBag(); };
             gs.DeveloperModeChanged += RefreshDeveloperChrome;
+            gs.DeveloperToolsChanged += RefreshGameplayHudVisibility;
             gs.ToastRequested += ShowToast;
             gs.MemoryShattered += OnMemoryShattered;
             gs.CollapseStarted += OnCollapseStarted;
@@ -2327,6 +2328,16 @@ public partial class GameUI : CanvasLayer
 
     // ================================================================= context
 
+    private void RefreshGameplayHudVisibility()
+    {
+        if (_hud == null)
+            return;
+
+        var gs = GameState.Instance;
+        bool hideHud = gs != null && gs.DevToolsEnabled && gs.DevHideHud;
+        _hud.Visible = _context == UiContext.Game && !hideHud;
+    }
+
     private void UpdateContext(bool force = false)
     {
         string sceneFile = GetTree().CurrentScene?.SceneFilePath ?? string.Empty;
@@ -2341,7 +2352,7 @@ public partial class GameUI : CanvasLayer
             return;
         _context = next;
 
-        _hud.Visible = next == UiContext.Game;
+        RefreshGameplayHudVisibility();
         _corruptionRect.Visible = next == UiContext.Game;
         _menuSettingsButton.Visible = next == UiContext.Menu;
         _menuHowToButton.Visible = next == UiContext.Menu;
@@ -5131,6 +5142,8 @@ public partial class GameUI : CanvasLayer
             v => GameState.Instance?.SetDevFreeFlashlight(v));
         AddDevToggle(toolsRight, "Map overlay", () => GameState.Instance?.DevShowMap ?? false,
             v => GameState.Instance?.SetDevShowMap(v));
+        AddDevToggle(toolsRight, "Hide gameplay UI", () => GameState.Instance?.DevHideHud ?? false,
+            v => GameState.Instance?.SetDevHideHud(v));
 
         AddDevSlider(toolsLeft, "Light circle size", 0.5, 3, 0.1,
             () => GameState.Instance?.DevFlashlightScale ?? 1f,
