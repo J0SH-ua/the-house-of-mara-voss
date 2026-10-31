@@ -250,7 +250,7 @@ figured out.
 9. Esc → pause: save, journal, settings sliders (volumes should respond
    live), quit to menu → **Continue** appears and resumes the room.
 10. Dev Mode: from the main menu or pause menu, press **Settings** five
-    times within ten seconds (the open panel's Settings title counts).
+	times within ten seconds (the open panel's Settings title counts).
     The location picker should open. Jump straight to **Hedge Maze —
     Movement**: Mara should start exploring immediately with the
     flashlight, all practical items/fragments/verbs, full Clarity and
@@ -262,11 +262,11 @@ figured out.
     the dev jumps or pickups written into Continue. The **DEV TOOLS**
     section above the location list should switch them on and off:
     with **Dev tools** on, **Coordinates** shows her position, cell
-    and heading (and the camera's own), **Free roam** lets her walk
-    through the hedges, **Free camera** detaches the view and flies
-    it (W/S, A/D, ←/→, mouse wheel), **Flashlight always on** keeps
-    the torch lit, and **Map overlay** draws a plan of the maze.
-    Leaving Dev Mode should switch the tools off again.
+	and heading (and the camera's own), **Free roam** lets her walk
+	through the hedges, **Free camera** detaches the view and flies
+	it (W/S, A/D, ←/→, mouse wheel), **Flashlight always on** keeps
+	the torch lit, and **Map overlay** draws a plan of the maze.
+	Leaving Dev Mode should switch the tools off again.
 
 ## Known limitations
 

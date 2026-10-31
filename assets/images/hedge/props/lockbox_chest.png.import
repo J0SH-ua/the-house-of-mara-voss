@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b2kbd0zuutdl"
-path="res://.godot/imported/lockbox_chest.png-944ffe5e53c0e7aa57a31be7971f90cb.ctex"
+uid="uid://b2kbd00uutdl"
+path="res://.godot/imported/lockbox_chest.png-3d35eecf408009fb91f6edd9ffe31667.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/images/hedge/props/lockbox_chest.png"
-dest_files=["res://.godot/imported/lockbox_chest.png-944ffe5e53c0e7aa57a31be7971f90cb.ctex"]
+dest_files=["res://.godot/imported/lockbox_chest.png-3d35eecf408009fb91f6edd9ffe31667.ctex"]
 
 [params]
 
