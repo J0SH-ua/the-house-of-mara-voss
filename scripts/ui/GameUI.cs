@@ -2528,6 +2528,21 @@ public partial class GameUI : CanvasLayer
         }
     }
 
+    private void CopyMazeCoordinatesToClipboard()
+    {
+        if (SceneManager.Instance?.CurrentScene is not HedgeMaze maze)
+        {
+            if (_devStatusLabel != null)
+                _devStatusLabel.Text = "Coordinates can be copied while the hedge maze is loaded.";
+            return;
+        }
+
+        string coordinates = maze.GetCoordinatesForClipboard();
+        DisplayServer.ClipboardSet(coordinates);
+        if (_devStatusLabel != null)
+            _devStatusLabel.Text = $"COPIED TO CLIPBOARD — {coordinates}";
+    }
+
     private void TeleportToDeveloperLocation(string label, string scenePath)
     {
         var gs = GameState.Instance;
@@ -5130,6 +5145,12 @@ public partial class GameUI : CanvasLayer
             v => GameState.Instance?.SetDevToolsEnabled(v), isMaster: true);
         AddDevToggle(toolsLeft, "Coordinates", () => GameState.Instance?.DevShowCoordinates ?? false,
             v => GameState.Instance?.SetDevShowCoordinates(v));
+        var copyCoordinates = MakeButton("Copy coordinates", 18);
+        copyCoordinates.CustomMinimumSize = new Vector2(190, 36);
+        copyCoordinates.FocusMode = Control.FocusModeEnum.None;
+        copyCoordinates.TooltipText = "Copy Mara's maze coordinates and heading; also copies the free-camera position when it is detached.";
+        copyCoordinates.Pressed += CopyMazeCoordinatesToClipboard;
+        toolsLeft.AddChild(copyCoordinates);
         AddDevToggle(toolsLeft, "Free roam (walk through hedges)", () => GameState.Instance?.DevNoClip ?? false,
             v => GameState.Instance?.SetDevNoClip(v));
         AddDevToggle(toolsLeft, "Camera follows the mouse", () => GameState.Instance?.DevMouseCamera ?? false,

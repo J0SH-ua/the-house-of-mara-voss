@@ -162,6 +162,25 @@ public partial class HedgeMaze : Node2D
     public float FlashlightBeamRadius => BeamRadiusNow();
     public bool FlashlightBeamActive => _hasFlashlight && _flashlightOn;
 
+    /// <summary>Coordinates suitable for pasting into a dev note. When
+    /// the free camera is away from Mara, include both positions.</summary>
+    public string GetCoordinatesForClipboard()
+    {
+        int cellX = Mathf.FloorToInt(_playerPosition.X);
+        int cellY = Mathf.FloorToInt(_playerPosition.Y);
+        string player = $"player x={_playerPosition.X:0.00}, y={_playerPosition.Y:0.00}, cell=({cellX},{cellY}), heading={HeadingDegrees(_yaw):0}°";
+        if (!_freeCamera)
+            return player;
+
+        return $"{player}; camera x={_cameraPosition.X:0.00}, y={_cameraPosition.Y:0.00}, heading={HeadingDegrees(_cameraYaw):0}°";
+    }
+
+    private static float HeadingDegrees(float radians)
+    {
+        float degrees = Mathf.RadToDeg(radians) % 360f;
+        return degrees < 0f ? degrees + 360f : degrees;
+    }
+
     // The garden lamp is a machine of her own: when it is switched
     // on it throws its own warm light, this far across the path.
     private const float LampLightRadius = 2.9f;
