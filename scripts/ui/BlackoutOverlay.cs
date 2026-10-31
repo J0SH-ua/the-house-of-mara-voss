@@ -41,6 +41,8 @@ public partial class BlackoutOverlay : Control
         {
             var gs = GameState.Instance;
             float radius = gs?.HasFlag("basement_battery_taken") == true ? 198f : 152f;
+            if (gs != null && gs.FlashlightBatteryLow)
+                radius *= Mathf.Lerp(0.72f, 1f, gs.FlashlightBatteryFraction / GameState.FlashlightLowThreshold);
             return gs?.DevToolsEnabled == true ? radius * gs.DevFlashlightScale : radius;
         }
     }
@@ -135,7 +137,7 @@ public partial class BlackoutOverlay : Control
 
         var gs = GameState.Instance;
         bool flickering = gs?.HasFlag("blackout_flickering") ?? false;
-        bool hasLight = gs != null && gs.HasFlag("item_flashlight") &&
+        bool hasLight = gs != null && gs.HasFlag("item_flashlight") && gs.FlashlightLightVisible &&
             (!gs.HasFlag("house_flashlight_off") || (gs.DevToolsEnabled && gs.DevFreeFlashlight));
 
         if (flickering || !hasLight)
@@ -148,6 +150,8 @@ public partial class BlackoutOverlay : Control
         }
 
         float radius = (gs?.HasFlag("basement_battery_taken") ?? false) ? 198f : 152f;
+        if (gs != null && gs.FlashlightBatteryLow)
+            radius *= Mathf.Lerp(0.72f, 1f, gs.FlashlightBatteryFraction / GameState.FlashlightLowThreshold);
         float falloffScale = 1f;
         if (gs != null && gs.DevToolsEnabled)
         {

@@ -62,6 +62,8 @@ public partial class VentCrawl : Node2D
         {
             var gs = GameState.Instance;
             float radius = gs?.HasFlag("basement_battery_taken") == true ? 205f : 172f;
+            if (gs != null && gs.FlashlightBatteryLow)
+                radius *= Mathf.Lerp(0.72f, 1f, gs.FlashlightBatteryFraction / GameState.FlashlightLowThreshold);
             return gs?.DevToolsEnabled == true ? radius * gs.DevFlashlightScale : radius;
         }
     }
@@ -448,13 +450,15 @@ public partial class VentCrawl : Node2D
     {
         Vector2 beam = _beamPosition;
         var gs = GameState.Instance;
-        if (gs == null || !gs.HasFlag("item_flashlight") ||
+        if (gs == null || !gs.HasFlag("item_flashlight") || !gs.FlashlightLightVisible ||
             (gs.HasFlag("house_flashlight_off") && !(gs.DevToolsEnabled && gs.DevFreeFlashlight)))
         {
             DrawRect(new Rect2(0, 0, 1152, 648), new Color(0.003f, 0.003f, 0.005f, 0.94f), true);
             return;
         }
         float radius = gs.HasFlag("basement_battery_taken") ? 205f : 172f;
+        if (gs.FlashlightBatteryLow)
+            radius *= Mathf.Lerp(0.72f, 1f, gs.FlashlightBatteryFraction / GameState.FlashlightLowThreshold);
         float falloffScale = 1f;
         if (gs != null && gs.DevToolsEnabled)
         {
